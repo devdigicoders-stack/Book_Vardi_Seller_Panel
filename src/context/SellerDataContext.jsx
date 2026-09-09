@@ -132,8 +132,27 @@ export const SellerDataProvider = ({ children, approved = true }) => {
 
   // 1. Products
   const [products, setProducts] = useState(() => {
-    const stored = localStorage.getItem('seller_products');
-    return stored ? JSON.parse(stored) : ALL_PRODUCTS;
+    try {
+      const stored = localStorage.getItem('seller_products');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.map(p => {
+          if (!p.approvalStatus) {
+            const mock = ALL_PRODUCTS.find(m => m.id === p.id);
+            return {
+              ...p,
+              approvalStatus: mock?.approvalStatus || (p.id === 3 || p.id === 4 ? 'Pending' : 'Approved'),
+              approvalComment: mock?.approvalComment || p.approvalComment || '',
+              rejectionReason: mock?.rejectionReason || p.rejectionReason || null
+            };
+          }
+          return p;
+        });
+      }
+      return ALL_PRODUCTS;
+    } catch {
+      return ALL_PRODUCTS;
+    }
   });
 
   // 2. Orders
@@ -270,7 +289,10 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       colors: Array.isArray(newProduct.colors) ? newProduct.colors : (newProduct.colors ? String(newProduct.colors).split(',').map(c => c.trim()) : ['Navy Blue', 'White']),
       gender: newProduct.gender || 'Unisex',
       description: newProduct.description || 'Premium quality school uniform & educational product.',
-      sku: newProduct.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`
+      sku: newProduct.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+      approvalStatus: newProduct.approvalStatus || 'Pending',
+      approvalComment: newProduct.approvalComment || 'Submitted for admin review',
+      rejectionReason: null
     };
 
     setProducts(prev => {
@@ -294,6 +316,15 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     setProducts(prev => {
       const updated = prev.map(p => {
         if (Number(p.id) === numericId) {
+          // If the product was previously rejected, editing it resubmits it into the Urgent Approval Queue
+          const isPreviouslyRejected = p.approvalStatus === 'Rejected';
+          const nextApprovalStatus = isPreviouslyRejected 
+            ? 'Pending' 
+            : (updates.approvalStatus !== undefined ? updates.approvalStatus : (p.approvalStatus || 'Approved'));
+          const nextApprovalComment = isPreviouslyRejected 
+            ? 'Resubmitted with modifications for admin review' 
+            : (updates.approvalComment !== undefined ? updates.approvalComment : (p.approvalComment || ''));
+
           return {
             ...p,
             ...updates,
@@ -302,7 +333,10 @@ export const SellerDataProvider = ({ children, approved = true }) => {
             stockQuantity: updates.stockQuantity !== undefined ? Number(updates.stockQuantity) : (p.stockQuantity ?? 50),
             inStock: updates.inStock !== undefined 
               ? updates.inStock 
-              : (updates.stockQuantity !== undefined ? Number(updates.stockQuantity) > 0 : p.inStock)
+              : (updates.stockQuantity !== undefined ? Number(updates.stockQuantity) > 0 : p.inStock),
+            approvalStatus: nextApprovalStatus,
+            approvalComment: nextApprovalComment,
+            rejectionReason: isPreviouslyRejected ? null : (updates.rejectionReason !== undefined ? updates.rejectionReason : p.rejectionReason)
           };
         }
         return p;

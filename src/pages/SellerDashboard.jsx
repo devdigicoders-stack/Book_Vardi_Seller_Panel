@@ -135,7 +135,7 @@ export default function SellerDashboardPage({ onNavigate }) {
     <div className="min-h-screen bg-gray-50/50 pb-20">
       
       {/* Header Banner */}
-      <div className="bg-brand-teal text-white py-6 px-4 border-b border-white/10 relative overflow-hidden">
+      <div className="bg-brand-teal text-white py-4 px-4 border-b border-white/10 relative overflow-hidden sticky top-0 z-40 shadow-sm backdrop-blur-md">
         <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-yellow/10 blur-3xl pointer-events-none" />
         <div className="container mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">

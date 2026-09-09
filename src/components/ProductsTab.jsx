@@ -21,7 +21,9 @@ import {
   ShieldCheck,
   Sparkles,
   ExternalLink,
-  Info
+  Info,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import BulkUpdateModal from './BulkUpdateModal';
@@ -44,6 +46,7 @@ export default function ProductsTab() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all'); // all | in_stock | low_stock | out_of_stock
+  const [approvalFilter, setApprovalFilter] = useState('all'); // all | Approved | Pending | Rejected
   const [sortBy, setSortBy] = useState('newest');
 
   // Modals state
@@ -195,6 +198,11 @@ export default function ProductsTab() {
     toggleProductStatus(product.id);
   };
 
+  // Status Metrics
+  const pendingCount = products.filter(p => p.approvalStatus === 'Pending').length;
+  const approvedCount = products.filter(p => p.approvalStatus === 'Approved' || !p.approvalStatus).length;
+  const rejectedCount = products.filter(p => p.approvalStatus === 'Rejected').length;
+
   // Filter and Sort
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
@@ -211,14 +219,17 @@ export default function ProductsTab() {
       if (stockFilter === 'low_stock') matchesStock = qty > 0 && qty <= 10;
       if (stockFilter === 'out_of_stock') matchesStock = qty <= 0;
 
-      return matchesSearch && matchesCategory && matchesStock;
+      const currentApproval = p.approvalStatus || 'Approved';
+      const matchesApproval = approvalFilter === 'all' || currentApproval === approvalFilter;
+
+      return matchesSearch && matchesCategory && matchesStock && matchesApproval;
     }).sort((a, b) => {
       if (sortBy === 'price_asc') return a.price - b.price;
       if (sortBy === 'price_desc') return b.price - a.price;
       if (sortBy === 'stock_desc') return (b.stockQuantity ?? 50) - (a.stockQuantity ?? 50);
       return b.id - a.id;
     });
-  }, [products, searchTerm, selectedCategory, stockFilter, sortBy]);
+  }, [products, searchTerm, selectedCategory, stockFilter, approvalFilter, sortBy]);
 
   return (
     <div className="space-y-6">
@@ -248,6 +259,96 @@ export default function ProductsTab() {
             <Plus size={16} /> Add Product
           </button>
         </div>
+      </div>
+
+      {/* Admin Rejection Alert Callout */}
+      {rejectedCount > 0 && (
+        <div className="bg-rose-50/90 border border-rose-200/90 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <AlertTriangle size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-xs text-rose-950">Action Needed on Rejected Listings</span>
+                <span className="px-2 py-0.2 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">
+                  {rejectedCount} Rejected
+                </span>
+              </div>
+              <p className="text-[11px] text-rose-800 mt-0.5 max-w-xl">
+                The Book Vardi administrator rejected some product listings with specific remarks. Click below to filter and edit your items to address the feedback.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setApprovalFilter('Rejected')}
+            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer"
+          >
+            View Rejected ({rejectedCount})
+          </button>
+        </div>
+      )}
+
+      {/* Quick Approval Status Filter Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <button
+          type="button"
+          onClick={() => setApprovalFilter('all')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            approvalFilter === 'all'
+              ? 'bg-teal-900 text-white shadow-xs'
+              : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+          }`}
+        >
+          All Products ({products.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setApprovalFilter('Approved')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+            approvalFilter === 'Approved'
+              ? 'bg-emerald-700 text-white shadow-xs'
+              : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+          }`}
+        >
+          <CheckCircle size={13} className="text-emerald-600" />
+          <span>Approved ({approvedCount})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setApprovalFilter('Pending')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+            approvalFilter === 'Pending'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : pendingCount > 0
+                ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+          }`}
+        >
+          <Clock size={13} className={pendingCount > 0 ? 'text-amber-700 animate-spin-slow' : ''} />
+          <span>Under Admin Review ({pendingCount})</span>
+          {pendingCount > 0 && (
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setApprovalFilter('Rejected')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+            approvalFilter === 'Rejected'
+              ? 'bg-rose-700 text-white shadow-xs'
+              : rejectedCount > 0
+                ? 'bg-rose-50 text-rose-900 border border-rose-300 hover:bg-rose-100 font-extrabold'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+          }`}
+        >
+          <AlertTriangle size={13} className="text-rose-600" />
+          <span>Rejected by Admin ({rejectedCount})</span>
+        </button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -319,6 +420,7 @@ export default function ProductsTab() {
                 <th className="py-3 px-3">Price & MRP</th>
                 <th className="py-3 px-3">Stock Units</th>
                 <th className="py-3 px-3">Sizes & Gender</th>
+                <th className="py-3 px-3">Approval</th>
                 <th className="py-3 px-3">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -326,7 +428,7 @@ export default function ProductsTab() {
             <tbody className="divide-y divide-gray-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-gray-500">
+                  <td colSpan="8" className="py-12 text-center text-gray-500">
                     <Package size={40} className="mx-auto text-gray-300 mb-2" />
                     No products found matching your search and filter criteria.
                   </td>
@@ -366,6 +468,14 @@ export default function ProductsTab() {
                               </div>
                               <div className="text-[11px] text-gray-500 truncate">{p.subtitle || p.description || 'Verified product'}</div>
                               <div className="text-[10px] text-teal-700 font-mono mt-0.5">{p.sku || `SKU-${p.id}`}</div>
+                              {p.approvalStatus === 'Rejected' && (
+                                <div className="mt-1 px-2 py-0.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] flex items-start gap-1 shadow-2xs">
+                                  <AlertTriangle size={11} className="shrink-0 text-rose-600 mt-0.5" />
+                                  <span className="truncate" title={p.rejectionReason || p.approvalComment}>
+                                    <strong>Admin:</strong> {p.rejectionReason || p.approvalComment || 'Listing rejected'}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -412,6 +522,26 @@ export default function ProductsTab() {
                           <div className="text-[10px] text-gray-400 mt-0.5">
                             {p.gender || 'Unisex'}
                           </div>
+                        </td>
+
+                        {/* Approval Status */}
+                        <td className="py-3.5 px-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          {p.approvalStatus === 'Rejected' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-800 border border-rose-300" title={p.rejectionReason || p.approvalComment}>
+                              <AlertTriangle size={11} className="text-rose-600" />
+                              <span>Rejected</span>
+                            </span>
+                          ) : p.approvalStatus === 'Pending' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-900 border border-amber-300 animate-pulse" title="Under inspection in urgent approval queue">
+                              <Clock size={11} className="text-amber-600" />
+                              <span>Under Review</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                              <CheckCircle size={11} className="text-emerald-600" />
+                              <span>Approved</span>
+                            </span>
+                          )}
                         </td>
 
                         {/* Status (Click to Toggle) */}
@@ -878,6 +1008,62 @@ export default function ProductsTab() {
                   </p>
                 </div>
               </div>
+
+              {/* Admin Approval & Quality Review Feedback Card */}
+              {selectedProductForDetail.approvalStatus === 'Rejected' ? (
+                <div className="p-4 rounded-2xl border border-rose-300 bg-rose-50/90 text-rose-900 space-y-2.5 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <AlertTriangle size={18} />
+                    </div>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-rose-950">Catalog Listing Rejected by Admin</h5>
+                      <p className="text-[10px] text-rose-700">This product is blocked from appearing on the student marketplace until corrected</p>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white border border-rose-200 text-xs font-medium text-rose-950 shadow-2xs">
+                    <strong className="block text-[10px] uppercase tracking-wider text-rose-800 font-extrabold mb-1">
+                      Mandatory Admin Rejection Remark:
+                    </strong>
+                    <p className="italic">"{selectedProductForDetail.rejectionReason || selectedProductForDetail.approvalComment || 'Quality criteria mismatch. Please update details and images.'}"</p>
+                  </div>
+                  <p className="text-[11px] text-rose-800 font-semibold">
+                    👉 To resolve this: Click <strong>"Edit Full Product"</strong> below, fix the highlighted issues, and save to resubmit into the Urgent Approval Queue.
+                  </p>
+                </div>
+              ) : selectedProductForDetail.approvalStatus === 'Pending' ? (
+                <div className="p-3.5 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 flex items-start gap-3 shadow-xs">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <Clock size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h5 className="font-extrabold text-xs text-amber-950">Pending Administrative Review</h5>
+                      <span className="px-2 py-0.2 rounded-full text-[9px] font-bold bg-amber-200 text-amber-900 uppercase">In Queue</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                      This item is currently under quality and price inspection in the Book Vardi Urgent Approval Queue. You will be notified once approved.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/70 text-emerald-900 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <CheckCircle size={15} />
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-xs block text-emerald-950">Marketplace Catalog Verified & Approved</span>
+                      <span className="text-[10px] text-emerald-800 block opacity-90">
+                        {selectedProductForDetail.approvalComment || 'Complies with Book Vardi educational marketplace quality criteria.'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Live Catalog
+                  </span>
+                </div>
+              )}
 
               {/* Status Alert Banner */}
               <div className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${
