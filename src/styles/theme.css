@@ -1,0 +1,203 @@
+/* =========================================================
+   BOOK VARDI DESIGN SYSTEM - THEME TOKENS (CSS VARIABLES)
+   Strict Project Standard: Always use var(--token-name)
+   Tailwind CSS v4 & CSS Variables Integrated
+   ========================================================= */
+
+/* Tailwind CSS Theme Extensions (Provides bg-brand-teal, text-brand-yellow, font-display, etc.) */
+@theme {
+  --color-brand-teal: #233835;
+  --color-brand-teal-light: #2e4945;
+  --color-brand-teal-dark: #172725;
+  --color-brand-teal-subtle: #e9f0ef;
+
+  --color-brand-yellow: #f5ce42;
+  --color-brand-yellow-hover: #e5bd2e;
+  --color-brand-yellow-light: #fdf3d0;
+  --color-brand-yellow-subtle: #fef9eb;
+
+  --color-brand-pink: #c45a76;
+  --color-brand-pink-hover: #b24d67;
+  --color-brand-pink-light: #f5dce3;
+  --color-brand-pink-subtle: #faecf0;
+
+  --color-brand-ochre: #b99452;
+  --color-brand-ochre-hover: #a58242;
+  --color-brand-ochre-light: #f3e9d8;
+  --color-brand-ochre-subtle: #f8f3ea;
+
+  --color-brand-blue: #5b86e5;
+  --color-brand-blue-hover: #4872ce;
+  --color-brand-blue-light: #dbe4f9;
+  --color-brand-blue-subtle: #eef3fc;
+
+  --color-brand-green: #38a169;
+  --color-brand-green-subtle: #e8f7ee;
+
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+
+:root {
+  /* --- Primary Brand Colors --- */
+  --color-brand-teal: #233835;            /* Dark Forest Teal - Main dark theme & brand anchor */
+  --color-brand-teal-light: #2e4945;      /* Lighter teal for hover & elevated cards */
+  --color-brand-teal-dark: #172725;       /* Deepest teal for contrasting elements */
+  --color-brand-teal-subtle: #e9f0ef;     /* Soft teal background tint */
+
+  --color-brand-yellow: #f5ce42;          /* Primary Action Yellow ('SC' logo) */
+  --color-brand-yellow-hover: #e5bd2e;    /* Yellow hover state */
+  --color-brand-yellow-light: #fdf3d0;    /* Light yellow card accent */
+  --color-brand-yellow-subtle: #fef9eb;   /* Ultra-soft yellow wash */
+
+  --color-brand-pink: #c45a76;            /* Berry Mauve ('HOOL' logo text) */
+  --color-brand-pink-hover: #b24d67;      /* Pink hover state */
+  --color-brand-pink-light: #f5dce3;      /* Soft pink card accent */
+  --color-brand-pink-subtle: #faecf0;     /* Ultra-soft pink wash */
+
+  --color-brand-ochre: #b99452;           /* Warm Ochre / Tan ('ART' logo text) */
+  --color-brand-ochre-hover: #a58242;     /* Ochre hover state */
+  --color-brand-ochre-light: #f3e9d8;     /* Soft ochre card accent */
+  --color-brand-ochre-subtle: #f8f3ea;    /* Ultra-soft ochre wash */
+
+  --color-brand-blue: #5b86e5;            /* Stationery Blue Accent (Pen accents) */
+  --color-brand-blue-hover: #4872ce;      /* Blue hover state */
+  --color-brand-blue-light: #dbe4f9;      /* Light blue accent */
+  --color-brand-blue-subtle: #eef3fc;     /* Soft blue wash */
+
+  --color-brand-green: #38a169;           /* Stock & success green */
+  --color-brand-green-subtle: #e8f7ee;
+
+  /* --- Semantic Background Tokens --- */
+  --bg-primary: #ffffff;                  /* Main canvas background */
+  --bg-secondary: #f8fafb;                /* Alternating section background */
+  --bg-tertiary: #f1f5f4;                 /* Product image canvas & subtle panels */
+  --bg-surface: #ffffff;                  /* Cards, dropdowns, modal windows */
+  --bg-dark: var(--color-brand-teal);     /* Dark navbar/footer/announcements */
+  --bg-dark-surface: var(--color-brand-teal-light); /* Elevated cards on dark surfaces */
+
+  /* --- Semantic Typography Tokens --- */
+  --text-primary: #182724;                /* High-contrast readable body & headings */
+  --text-secondary: #526562;              /* Descriptions, subheadings, labels */
+  --text-muted: #869a96;                  /* Placeholders, disabled text, old prices */
+  --text-inverse: #ffffff;                /* Text on dark surfaces */
+  --text-inverse-muted: #b4c4c1;          /* Secondary text on dark surfaces */
+  --text-accent: var(--color-brand-yellow);/* Glowing accent text */
+
+  /* --- Semantic Border Tokens --- */
+  --border-color: #e2e8e6;                /* Standard divider & input border */
+  --border-subtle: #edf2f0;               /* Extremely soft separator */
+  --border-focus: var(--color-brand-yellow);/* Focus ring token */
+  --border-dark: rgba(255, 255, 255, 0.12); /* Dividers on dark backgrounds */
+
+  /* --- Typography Families, Sizes & Weights --- */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+
+  --font-size-2xs: 0.6875rem; /* 11px */
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-base: 1rem;     /* 16px */
+  --font-size-md: 1.125rem;   /* 18px */
+  --font-size-lg: 1.25rem;    /* 20px */
+  --font-size-xl: 1.5rem;     /* 24px */
+  --font-size-2xl: 1.875rem;  /* 30px */
+  --font-size-3xl: 2.25rem;   /* 36px */
+  --font-size-4xl: 3rem;      /* 48px */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  --line-height-tight: 1.15;
+  --line-height-snug: 1.35;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.65;
+
+  /* --- Spacing Scale --- */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --space-4xl: 80px;
+
+  /* --- Border Radii Tokens --- */
+  --radius-xs: 2px;
+  --radius-sm: 4px;           /* Tags, badges */
+  --radius-md: 8px;           /* Form inputs, default buttons, cards */
+  --radius-lg: 16px;          /* Category cards, feature blocks */
+  --radius-xl: 24px;          /* Hero cards, promo banners, modals */
+  --radius-full: 9999px;      /* Circular icons, pills */
+
+  /* --- Shadows Tokens --- */
+  --shadow-xs: 0 1px 2px rgba(24, 39, 36, 0.04);
+  --shadow-sm: 0 2px 4px rgba(24, 39, 36, 0.06);
+  --shadow-md: 0 4px 12px rgba(24, 39, 36, 0.08);
+  --shadow-lg: 0 12px 24px rgba(24, 39, 36, 0.12);
+  --shadow-card: 0 4px 16px rgba(24, 39, 36, 0.05);
+  --shadow-hover: 0 10px 24px rgba(24, 39, 36, 0.12);
+  --shadow-drawer: -4px 0 24px rgba(24, 39, 36, 0.16);
+
+  /* --- Transitions & Timing --- */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* --- Layout Sizing --- */
+  --container-max-width: 1240px;
+  --container-padding: var(--space-lg);
+  --header-height: 76px;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+/* Keep horizontal scrolling available while hiding the scrollbar UI. */
+.scrollbar-none,
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+body {
+  background-color: #fafbf8;
+  background-image: url('/images/bgimg.jpg');
+  background-position: top center;
+  background-repeat: repeat-y;
+  background-size: 100% auto;
+}
+
+main > div[class*="bg-white"],
+main > section[class*="bg-white"],
+main > div > section[class*="bg-white"] {
+  background-color: color-mix(in srgb, white 78%, transparent) !important;
+}
+
+main > div[class*="bg-gray"],
+main > section[class*="bg-gray"],
+main > div > section[class*="bg-gray"] {
+  background-color: color-mix(in srgb, #f8fafb 78%, transparent) !important;
+}
+
+@media (min-width: 1024px) {
+  body {
+    background-attachment: fixed;
+    background-position: center top;
+    background-repeat: repeat;
+    background-size: 736px auto;
+  }
+}
