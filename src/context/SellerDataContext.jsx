@@ -342,7 +342,9 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       const updated = prev.map(p => Number(p.id) === numericId ? {
         ...p,
         inStock: nextStatus,
-        stockQuantity: nextStatus ? (p.stockQuantity && p.stockQuantity > 0 ? p.stockQuantity : 50) : 0
+        stockQuantity: nextStatus
+          ? (Number(p.stockQuantity) > 0 ? Number(p.stockQuantity) : 50)
+          : Number(p.stockQuantity) || 0
       } : p);
       pushPlatformSync({ products: updated });
       return updated;

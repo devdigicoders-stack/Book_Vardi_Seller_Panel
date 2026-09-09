@@ -583,7 +583,24 @@ export const ALL_PRODUCTS = [
     "rating": 4.6,
     "reviews": 145,
     "image": "https://images.unsplash.com/photo-1503694978374-8a2fa686963a?w=500&auto=format&fit=crop&q=80",
-    "category": "practice_books"
+    "category": "practice_books",
+    "discountBadge": "",
+    "stockQuantity": 1,
+    "sizes": [
+      "S",
+      "M",
+      "L"
+    ],
+    "colors": [
+      "Navy Blue"
+    ],
+    "gender": "Unisex",
+    "images": [
+      "https://images.unsplash.com/photo-1503694978374-8a2fa686963a?w=500&auto=format&fit=crop&q=80"
+    ],
+    "description": "",
+    "sku": "SKU-16",
+    "inStock": true
   },
   {
     "id": 17,
@@ -1067,6 +1084,25 @@ export const ORDERS = [
   }
 ];
 export const PROMOTIONS = [
+  {
+    "id": 1788946464338,
+    "code": "SAVEMORE91",
+    "title": "Special Student Discount",
+    "discountType": "percentage",
+    "discountValue": 15,
+    "minOrderValue": 499,
+    "maxDiscount": 250,
+    "validFrom": "2026-09-09",
+    "validUntil": "2026-12-31",
+    "usageLimit": 500,
+    "usageCount": 0,
+    "status": "active",
+    "scope": "specific_product",
+    "specificProductId": 20,
+    "specificProductName": "Ergonomic Student Backpack (24L)",
+    "specificProductSku": "SKU-20",
+    "specificProductImage": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=500&auto=format&fit=crop&q=80"
+  },
   {
     "id": 1,
     "code": "BACK2SCHOOL25",
