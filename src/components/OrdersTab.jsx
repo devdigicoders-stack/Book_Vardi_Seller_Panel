@@ -182,9 +182,18 @@ export default function OrdersTab() {
             <tbody className="divide-y divide-gray-100">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="py-12 text-center text-gray-500">
-                    <ShoppingBag size={40} className="mx-auto text-gray-300 mb-2" />
-                    No orders found matching the filter.
+                  <td colSpan="6" className="py-14 text-center text-gray-500">
+                    <ShoppingBag size={44} className="mx-auto text-gray-300 mb-3" />
+                    <h4 className="font-extrabold text-base text-gray-900 mb-1">No Orders Found</h4>
+                    <p className="text-xs text-gray-500 max-w-sm mx-auto mb-4">
+                      Customer orders placed on the Book Vardi marketplace will appear here automatically. You can also log manual store sales.
+                    </p>
+                    <button
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
+                    >
+                      <Plus size={16} /> Create Manual Store Order
+                    </button>
                   </td>
                 </tr>
               ) : (

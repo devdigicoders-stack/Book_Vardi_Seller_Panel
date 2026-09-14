@@ -175,9 +175,18 @@ export default function SchoolOrdersTab() {
       {/* School Orders Cards / List */}
       <div className="space-y-4">
         {filteredOrders.length === 0 ? (
-          <div className="p-12 text-center bg-white rounded-2xl border border-gray-100 text-gray-500">
-            <Building2 size={40} className="mx-auto text-gray-300 mb-2" />
-            No school requirements found matching your criteria.
+          <div className="p-14 text-center bg-white rounded-2xl border border-gray-100 text-gray-500">
+            <Building2 size={44} className="mx-auto text-gray-300 mb-3" />
+            <h4 className="font-extrabold text-base text-gray-900 mb-1">No School B2B Orders Found</h4>
+            <p className="text-xs text-gray-500 max-w-sm mx-auto mb-4">
+              Institutional bulk requisitions from schools and colleges will be listed here. You can also log custom school inquiries.
+            </p>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
+            >
+              <Plus size={16} /> Add School Requisition
+            </button>
           </div>
         ) : (
           filteredOrders.map((req) => (

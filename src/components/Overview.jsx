@@ -1,18 +1,142 @@
-import React from 'react';
-import { ArrowUpRight, Bell, CircleDollarSign, Clock3, Package, ShoppingBag, Star } from 'lucide-react';
+import RevenuePerformanceWidget from './RevenuePerformanceWidget';
+import { ArrowUpRight, Bell, CircleDollarSign, Clock3, Package, ShoppingBag, Star, Plus } from 'lucide-react';
+import { useSellerData } from '../context/SellerDataContext';
 
 export default function Overview() {
+  const { products = [], orders = [], schoolOrders = [], notifications = [], sellerUser } = useSellerData();
+
+  const totalRevenue = orders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+  const totalOrdersCount = orders.length;
+  const activeProductsCount = products.filter(p => p.inStock !== false).length;
+  const pendingOrdersCount = orders.filter(o => o.status === 'Pending' || o.status === 'Processing').length;
+  const lowStockCount = products.filter(p => (Number(p.stockQuantity) || 0) > 0 && (Number(p.stockQuantity) || 0) < 10).length;
+  const schoolQuotesCount = schoolOrders.filter(s => s.status === 'Requirement Received' || s.status === 'Quote Requested').length;
+
+  const avgRating = products.length > 0
+    ? (products.reduce((acc, p) => acc + (Number(p.rating) || 5.0), 0) / products.length).toFixed(1)
+    : '5.0';
+
+  const hasNoData = products.length === 0 && orders.length === 0;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1"><p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-pink">Good morning, seller</p><h2 className="font-display text-3xl font-extrabold text-brand-teal">Your store at a glance</h2><p className="text-sm text-gray-500">Here is what needs your attention today.</p></div>
+      <div className="flex flex-col gap-1">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-pink">
+          Welcome back, {sellerUser?.name || 'Partner Merchant'}
+        </p>
+        <h2 className="font-display text-3xl font-extrabold text-brand-teal">
+          Your Store at a Glance
+        </h2>
+        <p className="text-sm text-gray-500">
+          Live merchant operational overview and fulfillment metrics directly from database.
+        </p>
+      </div>
+
+      {hasNoData && (
+        <div className="bg-amber-50/80 border border-amber-200 p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Package className="text-amber-700 shrink-0 mt-0.5" size={24} />
+            <div>
+              <h3 className="font-bold text-sm text-amber-950">No Data Found for Registered Seller Store</h3>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Your catalog currently has 0 products and 0 active orders in the database. Add your first product to start selling on Book Vardi.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              const event = new CustomEvent('openAddProductModal');
+              window.dispatchEvent(event);
+            }}
+            className="px-4 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <Plus size={16} />
+            <span>Add New Product</span>
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[['Revenue this month', '₹1,84,620', '+13.7%', CircleDollarSign, 'text-brand-blue', 'bg-brand-blue-subtle'], ['Orders this month', '284', '+14.1%', ShoppingBag, 'text-brand-green', 'bg-brand-green-subtle'], ['Active products', '126', '+8 this month', Package, 'text-brand-pink', 'bg-brand-pink-subtle'], ['Store rating', '4.8 / 5', '+0.2 this month', Star, 'text-brand-ochre', 'bg-brand-yellow-light']].map(([label, value, change, Icon, color, surface]) => <div key={label} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between"><div className={`rounded-lg p-2.5 ${surface}`}><Icon className={color} size={20} /></div><ArrowUpRight className="text-brand-green" size={17} /></div><p className="mt-4 text-xs font-bold uppercase tracking-wide text-gray-400">{label}</p><p className="mt-1 font-display text-2xl font-extrabold text-brand-teal">{value}</p><p className="mt-1 text-xs font-semibold text-brand-green">{change}</p></div>)}
+        {[
+          ['Total Store Revenue', `₹${totalRevenue.toLocaleString('en-IN')}`, orders.length > 0 ? '+13.7%' : '0 Sales', CircleDollarSign, 'text-brand-blue', 'bg-brand-blue-subtle'],
+          ['Total Customer Orders', String(totalOrdersCount), orders.length > 0 ? '+14.1%' : '0 Orders', ShoppingBag, 'text-brand-green', 'bg-brand-green-subtle'],
+          ['Active Catalog Items', String(activeProductsCount), `${products.length} total SKUs`, Package, 'text-brand-pink', 'bg-brand-pink-subtle'],
+          ['Merchant Store Rating', `${avgRating} / 5`, 'Verified', Star, 'text-brand-ochre', 'bg-brand-yellow-light']
+        ].map(([label, value, change, Icon, color, surface]) => (
+          <div key={label} className="rounded-xl border border-gray-200 bg-white p-5 shadow-xs">
+            <div className="flex items-start justify-between">
+              <div className={`rounded-lg p-2.5 ${surface}`}>
+                <Icon className={color} size={20} />
+              </div>
+              <ArrowUpRight className="text-brand-green" size={17} />
+            </div>
+            <p className="mt-4 text-xs font-bold uppercase tracking-wide text-gray-400">{label}</p>
+            <p className="mt-1 font-display text-2xl font-extrabold text-brand-teal">{value}</p>
+            <p className="mt-1 text-xs font-semibold text-brand-green">{change}</p>
+          </div>
+        ))}
       </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.35fr_1fr]">
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h3 className="font-display text-lg font-bold text-brand-teal">Revenue performance</h3><p className="text-xs text-gray-400">Last 7 days</p></div><span className="rounded-full bg-brand-green-subtle px-2.5 py-1 text-xs font-bold text-brand-green">+13.7%</span></div><div className="mt-6 flex h-44 items-end gap-2 sm:gap-4">{[['Mon', 42], ['Tue', 58], ['Wed', 48], ['Thu', 72], ['Fri', 64], ['Sat', 88], ['Sun', 76]].map(([day, height]) => <div key={day} className="flex flex-1 flex-col items-center gap-2"><div className="flex h-36 w-full items-end"><div className="w-full rounded-t-md bg-brand-teal transition hover:bg-brand-yellow" style={{ height: `${height}%` }} /></div><span className="text-[11px] font-semibold text-gray-400">{day}</span></div>)}</div></div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h3 className="font-display text-lg font-bold text-brand-teal">Needs attention</h3><Bell className="text-brand-pink" size={18} /></div><div className="mt-4 space-y-3">{[['3', 'Orders waiting for confirmation', ShoppingBag], ['2', 'Products are low on stock', Package], ['1', 'School quotation due this week', Clock3]].map(([count, label, Icon]) => <div key={label} className="flex items-center gap-3 rounded-lg bg-gray-50 p-3"><div className="rounded-full bg-brand-yellow px-2 py-1 text-xs font-extrabold text-brand-teal">{count}</div><Icon size={16} className="text-brand-teal" /><span className="text-sm font-semibold text-gray-600">{label}</span></div>)}</div></div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-xs">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-display text-lg font-bold text-brand-teal">Action Items Required</h3>
+            <p className="text-xs text-gray-400">Immediate fulfillment and inventory task queue</p>
+          </div>
+          <Bell className="text-brand-pink" size={18} />
+        </div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            [String(pendingOrdersCount), 'Orders waiting for fulfillment', ShoppingBag],
+            [String(lowStockCount), 'Products low on inventory stock', Package],
+            [String(schoolQuotesCount), 'B2B School quotations pending', Clock3]
+          ].map(([count, label, Icon]) => (
+            <div key={label} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3.5 border border-gray-100">
+              <div className="rounded-full bg-brand-yellow px-2.5 py-1 text-xs font-extrabold text-brand-teal shrink-0">
+                {count}
+              </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <Icon size={16} className="text-brand-teal shrink-0" />
+                <span className="text-xs font-bold text-gray-700 truncate">{label}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-gray-100 p-5"><div><h3 className="font-display text-lg font-bold text-brand-teal">Recent activity</h3><p className="text-xs text-gray-400">Your latest store updates</p></div><button className="text-xs font-bold text-brand-pink hover:underline">View all</button></div><div className="divide-y divide-gray-100">{[['New order #BV-1048 received', 'Aarav Sharma placed an order worth ₹1,249', '10 min ago', ShoppingBag], ['Review received for Camlin Exam Kit', 'Meera Iyer rated your product 5 stars', '1 hour ago', Star], ['Payout scheduled', '₹1,66,158 will be deposited on 17 Jun', 'Yesterday', CircleDollarSign]].map(([title, detail, time, Icon]) => <div key={title} className="flex items-center gap-3 p-5"><div className="rounded-lg bg-brand-teal-subtle p-2.5"><Icon className="text-brand-teal" size={17} /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold text-gray-700">{title}</p><p className="truncate text-xs text-gray-500">{detail}</p></div><span className="text-xs text-gray-400">{time}</span></div>)}</div></div>
+
+      {/* Standalone Full-Width Revenue Performance & Analytics Widget */}
+      <div className="w-full">
+        <RevenuePerformanceWidget />
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white shadow-xs">
+        <div className="flex items-center justify-between border-b border-gray-100 p-5">
+          <div>
+            <h3 className="font-display text-lg font-bold text-brand-teal">Recent Store Activity</h3>
+            <p className="text-xs text-gray-400">Live order & inventory notifications</p>
+          </div>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {orders.length === 0 ? (
+            <div className="p-8 text-center text-xs text-gray-500">
+              No recent activity recorded yet. Orders placed by customers will show up here.
+            </div>
+          ) : (
+            orders.slice(0, 5).map((ord) => (
+              <div key={ord.id} className="flex items-center gap-3 p-5">
+                <div className="rounded-lg bg-brand-teal-subtle p-2.5">
+                  <ShoppingBag className="text-brand-teal" size={17} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-gray-700">Order {ord.id} ({ord.customerName})</p>
+                  <p className="truncate text-xs text-gray-500">Amount: ₹{ord.total} • Status: {ord.status}</p>
+                </div>
+                <span className="text-xs text-gray-400">{ord.date || 'Recent'}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }

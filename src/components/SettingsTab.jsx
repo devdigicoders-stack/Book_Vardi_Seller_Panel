@@ -13,7 +13,7 @@ import {
 import { useSellerData } from '../context/SellerDataContext';
 
 export default function SettingsTab() {
-  const { settings, updateSettings, isApproved } = useSellerData();
+  const { settings, updateSettings, clearAllSellerData, isApproved } = useSellerData();
   const [formData, setFormData] = useState({ ...settings });
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -174,6 +174,27 @@ export default function SettingsTab() {
               </span>
             </label>
           </div>
+        </div>
+
+        {/* Danger Zone: Reset / Purge Data */}
+        <div className="bg-rose-50 p-6 rounded-2xl border border-rose-200 space-y-3 text-xs">
+          <h3 className="font-extrabold text-rose-950 text-sm flex items-center gap-2">
+            <FileText className="text-rose-600" size={18} /> Danger Zone: Delete All Seller Panel Data
+          </h3>
+          <p className="text-rose-800 text-xs">
+            Wipe all cached products, customer orders, promotions, reviews, and registered store data from the Seller Panel.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm('⚠️ Are you sure you want to delete all Seller Panel data? This action cannot be undone.')) {
+                clearAllSellerData();
+              }
+            }}
+            className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
+          >
+            Purge & Delete All Seller Data
+          </button>
         </div>
 
         {/* Save Bar */}

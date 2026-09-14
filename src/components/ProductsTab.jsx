@@ -99,6 +99,12 @@ export default function ProductsTab() {
     setIsAddModalOpen(true);
   };
 
+  React.useEffect(() => {
+    const handleOpen = () => openAddModal();
+    window.addEventListener('openAddProductModal', handleOpen);
+    return () => window.removeEventListener('openAddProductModal', handleOpen);
+  }, []);
+
   const openEditModal = (p, options = {}) => {
     setErrorMsg('');
     setEditingProduct(p);
@@ -428,9 +434,18 @@ export default function ProductsTab() {
             <tbody className="divide-y divide-gray-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="py-12 text-center text-gray-500">
-                    <Package size={40} className="mx-auto text-gray-300 mb-2" />
-                    No products found matching your search and filter criteria.
+                  <td colSpan="8" className="py-14 text-center text-gray-500">
+                    <Package size={44} className="mx-auto text-gray-300 mb-3" />
+                    <h4 className="font-extrabold text-base text-gray-900 mb-1">No Products Listed Yet</h4>
+                    <p className="text-xs text-gray-500 max-w-sm mx-auto mb-4">
+                      Your store database currently has 0 products. Add your school uniforms, textbooks, or stationery to start receiving orders.
+                    </p>
+                    <button
+                      onClick={openAddModal}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
+                    >
+                      <Plus size={16} /> Add First Product
+                    </button>
                   </td>
                 </tr>
               ) : (

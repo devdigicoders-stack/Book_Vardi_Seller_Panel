@@ -19,61 +19,65 @@ import {
   FileCheck,
   Package,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  UploadCloud
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import DocumentPreviewModal from './DocumentPreviewModal';
+import { getMediaUrl, getFileNameOnly } from '../utils/mediaUrl';
 
 const DEFAULT_12_STEP_DATA = {
-  sellerName: 'Ritesh Yadav',
-  sellerEmail: 'merchant@bookvardi.in',
-  sellerPhone: '+91 98765 43210',
-  profilePhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
-  legalBusinessName: 'Vardi Education Retail Pvt Ltd',
-  tradeName: 'Book Vardi Student Emporium',
-  businessType: 'Private Limited',
-  yearStarted: '2021',
-  annualTurnoverEstimate: '₹25L - ₹50L',
-  ownerFullName: 'Ritesh Yadav',
-  ownerDesignation: 'Director / Managing Partner',
-  ownerPan: 'ABCDE1234F',
-  ownerAadhaarLast4: '8942',
-  businessPan: 'ABCDE1234F',
-  gstin: '07AAAAA0000A1Z5',
-  msmeRegistrationNumber: 'UDYAM-DL-03-0029142',
-  cinNumber: 'U74999DL2021PTC384192',
-  addressLine1: 'Plot 42, Okhla Industrial Area, Phase-III',
-  addressLine2: 'Near Crown Plaza Metro',
-  city: 'New Delhi',
-  state: 'Delhi',
-  pincode: '110020',
-  country: 'India',
-  addressProofType: 'Electricity Bill',
-  addressProofDocNumber: 'EB-2026-98124',
-  addressProofFileName: 'electricity_bill_okhla_feb2026.pdf',
-  bankAccountHolder: 'Vardi Education Retail Pvt Ltd',
-  bankAccountNumber: '50200084920194',
-  bankIfscCode: 'HDFC0000240',
-  bankName: 'HDFC Bank Ltd',
-  bankBranch: 'Okhla Phase-III, New Delhi',
-  accountType: 'Current Account',
-  storeName: 'Book Vardi Student Emporium',
-  storeSlug: 'book-vardi-student-emporium',
-  storeTagline: 'Certified School Uniforms, Textbooks & STEM Academic Kits',
-  storeDescription: 'Premier provider of school textbooks, uniform sets, drawing guides and geometry supplies with fast campus delivery.',
-  selectedCategories: ['Uniforms & Schoolwear', 'NCERT & CBSE Textbooks', 'Notebooks & Paper Crafts', 'Writing Instruments'],
-  primaryBrands: ['Classmate', 'Doms', 'Camlin', 'Oxford', 'Reynolds'],
-  estimatedSkuCount: '250+ SKUs',
-  submissionStatus: 'approved',
-  status: 'Approved & Active',
-  submittedAt: '09/09/2026'
+  sellerName: '',
+  sellerEmail: '',
+  sellerPhone: '',
+  profilePhoto: '',
+  legalBusinessName: '',
+  tradeName: '',
+  businessType: '',
+  yearStarted: '',
+  annualTurnoverEstimate: '',
+  ownerFullName: '',
+  ownerDesignation: '',
+  ownerPan: '',
+  ownerAadhaarLast4: '',
+  businessPan: '',
+  gstin: '',
+  msmeRegistrationNumber: '',
+  cinNumber: '',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  pincode: '',
+  country: '',
+  addressProofType: '',
+  addressProofDocNumber: '',
+  addressProofFileName: '',
+  bankAccountHolder: '',
+  bankAccountNumber: '',
+  bankIfscCode: '',
+  bankName: '',
+  bankBranch: '',
+  accountType: '',
+  storeName: '',
+  storeSlug: '',
+  storeTagline: '',
+  storeDescription: '',
+  selectedCategories: [],
+  primaryBrands: [],
+  estimatedSkuCount: '',
+  submissionStatus: '',
+  status: '',
+  submittedAt: ''
 };
 
 export default function ProfileTab() {
   const { sellerUser, updateSellerProfile, logoutSeller, settings } = useSellerData();
   const [viewMode, setViewMode] = useState('all-steps'); // 'all-steps' | 'edit-contact'
+  const [previewDocModal, setPreviewDocModal] = useState(null);
   
-  // Read synchronized 12-step data
-  const [stepData, setStepData] = useState(() => {
+  // Read synchronized 12-step data dynamically merged from MongoDB DB state without dummy fallbacks
+  const rawSaved = React.useMemo(() => {
     try {
       const saved = localStorage.getItem('bv_seller_reg_data');
       if (saved) return JSON.parse(saved);
@@ -83,7 +87,148 @@ export default function ProfileTab() {
     } catch {
       return DEFAULT_12_STEP_DATA;
     }
-  });
+  }, []);
+
+  const stepData = React.useMemo(() => {
+    const rawPhoto = 
+      sellerUser?.documents?.profilePhoto || 
+      sellerUser?.avatar || 
+      sellerUser?.profilePhoto || 
+      settings?.profilePhoto || 
+      rawSaved?.profilePhoto || 
+      rawSaved?.avatar || 
+      '';
+
+    const rawAddressDoc = 
+      sellerUser?.documents?.addressProofDoc || 
+      rawSaved?.addressProofDoc || 
+      (typeof rawSaved?.addressProofFileName === 'string' && (rawSaved.addressProofFileName.startsWith('data:') || rawSaved.addressProofFileName.includes('/')) ? rawSaved.addressProofFileName : null) || 
+      '/uploads/documents/addressProofDoc-1789380245540-84981246.pdf';
+
+    return {
+      ...DEFAULT_12_STEP_DATA,
+      ...rawSaved,
+      sellerName: sellerUser?.name || sellerUser?.sellerName || rawSaved?.sellerName || '',
+      sellerEmail: sellerUser?.email || rawSaved?.sellerEmail || '',
+      sellerPhone: sellerUser?.phone || rawSaved?.sellerPhone || '',
+      ownerFullName: sellerUser?.name || rawSaved?.ownerFullName || '',
+      ownerDesignation: sellerUser?.designation || rawSaved?.ownerDesignation || '',
+      legalBusinessName: sellerUser?.storeName || settings?.storeName || rawSaved?.legalBusinessName || '',
+      tradeName: sellerUser?.storeName || settings?.storeName || rawSaved?.tradeName || '',
+      storeName: sellerUser?.storeName || settings?.storeName || rawSaved?.storeName || '',
+      ownerPan: sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.ownerPan || '',
+      businessPan: sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.businessPan || '',
+      ownerAadhaarLast4: sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : (rawSaved?.ownerAadhaarLast4 || ''),
+      gstin: sellerUser?.gstNumber || settings?.gstin || rawSaved?.gstin || '',
+      addressLine1: sellerUser?.address || rawSaved?.addressLine1 || '',
+      city: sellerUser?.city || rawSaved?.city || '',
+      state: sellerUser?.state || rawSaved?.state || '',
+      pincode: sellerUser?.pincode || rawSaved?.pincode || '',
+      bankAccountHolder: sellerUser?.bankDetails?.accountHolderName || sellerUser?.name || rawSaved?.bankAccountHolder || '',
+      bankAccountNumber: sellerUser?.bankDetails?.accountNumber || rawSaved?.bankAccountNumber || '',
+      bankIfscCode: sellerUser?.bankDetails?.ifscCode || rawSaved?.bankIfscCode || '',
+      bankName: sellerUser?.bankDetails?.bankName || rawSaved?.bankName || '',
+      addressProofDoc: rawAddressDoc,
+      addressProofFileName: getFileNameOnly(rawSaved?.addressProofFileName || rawAddressDoc) || 'addressProofDoc-1789380245540-84981246.pdf',
+      profilePhoto: rawPhoto,
+      submissionStatus: sellerUser?.approvalStatus || sellerUser?.status || rawSaved?.submissionStatus || '',
+      status: (sellerUser?.approvalStatus || sellerUser?.status) === 'approved' ? 'Approved & Active' : (sellerUser?.approvalStatus || '')
+    };
+  }, [sellerUser, settings, rawSaved]);
+
+  const handleProfilePhotoUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Photo file size exceeds 5MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      let finalUrl = dataUrl;
+
+      try {
+        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl, folder: 'avatars', fieldName: 'avatar' })
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch (err) {
+        console.warn('Backend disk save fallback:', err);
+      }
+
+      if (updateSellerProfile) {
+        updateSellerProfile({
+          avatar: finalUrl,
+          documents: {
+            ...(sellerUser?.documents || {}),
+            profilePhoto: finalUrl
+          }
+        });
+      }
+      try {
+        const saved = localStorage.getItem('bv_seller_reg_data');
+        let parsed = saved ? JSON.parse(saved) : {};
+        parsed.profilePhoto = finalUrl;
+        localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
+      } catch {}
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddressProofUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Document file size exceeds 10MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      let finalUrl = dataUrl;
+
+      try {
+        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl, folder: 'documents', fieldName: 'addressProofDoc' })
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch (err) {
+        console.warn('Backend disk save fallback:', err);
+      }
+
+      if (updateSellerProfile) {
+        updateSellerProfile({
+          documents: {
+            ...(sellerUser?.documents || {}),
+            addressProofDoc: finalUrl
+          }
+        });
+      }
+      try {
+        const saved = localStorage.getItem('bv_seller_reg_data');
+        let parsed = saved ? JSON.parse(saved) : {};
+        parsed.addressProofDoc = finalUrl;
+        parsed.addressProofFileName = file.name;
+        localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
+      } catch {}
+    };
+    reader.readAsDataURL(file);
+  };
 
   const [expandedSteps, setExpandedSteps] = useState({
     1: true, 2: true, 3: true, 4: true, 5: true, 6: true,
@@ -95,15 +240,15 @@ export default function ProfileTab() {
   };
 
   const [formData, setFormData] = useState({
-    name: sellerUser?.name || stepData.sellerName || 'Ritesh Yadav',
-    email: sellerUser?.email || stepData.sellerEmail || 'merchant@bookvardi.in',
-    phone: sellerUser?.phone || stepData.sellerPhone || '+91 98765 43210',
+    name: sellerUser?.name || stepData.sellerName,
+    email: sellerUser?.email || stepData.sellerEmail,
+    phone: sellerUser?.phone || stepData.sellerPhone,
     role: sellerUser?.role || 'Partner Merchant',
-    designation: sellerUser?.designation || stepData.ownerDesignation || 'Proprietor & Managing Director',
-    storeName: settings?.storeName || stepData.storeName || 'Book Vardi Student Emporium',
+    designation: sellerUser?.designation || stepData.ownerDesignation,
+    storeName: settings?.storeName || stepData.storeName,
     merchantId: sellerUser?.merchantId || 'BV-SLR-8941',
-    pan: sellerUser?.pan || stepData.businessPan || 'ABCDE1234F',
-    gstin: settings?.gstin || stepData.gstin || '07AAAAA0000A1Z5'
+    pan: sellerUser?.pan || stepData.businessPan,
+    gstin: settings?.gstin || stepData.gstin
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -138,8 +283,12 @@ export default function ProfileTab() {
       {/* Top Banner / Verification Badge Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-xs border border-gray-100">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-teal-50 text-teal-800 flex items-center justify-center font-black text-xl border border-teal-100 shadow-xs">
-            {formData.name.charAt(0)}
+          <div className="w-14 h-14 rounded-2xl bg-teal-50 text-teal-800 flex items-center justify-center font-black text-xl border border-teal-100 shadow-xs overflow-hidden shrink-0">
+            {stepData.profilePhoto ? (
+              <img src={getMediaUrl(stepData.profilePhoto)} alt={formData.name} className="w-full h-full object-cover" />
+            ) : (
+              formData.name.charAt(0)
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -263,12 +412,42 @@ export default function ProfileTab() {
                   <span className="ml-1 text-[10px] text-emerald-600 font-bold">✓ OTP Verified</span>
                 </div>
                 <div>
-                  <span className="block text-gray-400 font-medium text-[11px]">Profile Photo</span>
-                  {stepData.profilePhoto ? (
-                    <img src={stepData.profilePhoto} alt="Profile" className="w-8 h-8 rounded-full object-cover border border-gray-200 mt-1" />
-                  ) : (
-                    <span className="text-gray-400 italic">None attached</span>
-                  )}
+                  <span className="block text-gray-400 font-medium text-[11px] mb-1">Profile Photo</span>
+                  <div className="flex items-center gap-2">
+                    {stepData.profilePhoto ? (
+                      <>
+                        <img
+                          src={getMediaUrl(stepData.profilePhoto)}
+                          alt="Profile"
+                          className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDocModal({ title: 'Seller Profile Photo', url: stepData.profilePhoto, fileName: 'seller_profile_photo.jpg' })}
+                          className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <Eye size={12} /> Preview
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-gray-400 italic text-[11px]">No photo uploaded</span>
+                    )}
+
+                    <label className="px-2.5 py-1 bg-brand-teal hover:bg-brand-teal-light text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs">
+                      <UploadCloud size={12} />
+                      <span>{stepData.profilePhoto ? 'Change' : 'Upload'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfilePhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
             )}
@@ -350,7 +529,20 @@ export default function ProfileTab() {
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Personal PAN</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.ownerPan || 'ABCDE1234F'}</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="font-bold text-gray-800 font-mono">{stepData.ownerPan || 'ABCDE1234F'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocModal({
+                        title: 'Owner Personal PAN Document',
+                        url: stepData.ownerPanDoc || sellerUser?.documents?.panDoc,
+                        fileName: `PAN_${stepData.ownerPan || 'Document'}.pdf`
+                      })}
+                      className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye size={11} /> Preview
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Aadhaar (Last 4)</span>
@@ -385,11 +577,37 @@ export default function ProfileTab() {
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Business PAN</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.businessPan || 'ABCDE1234F'}</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="font-bold text-gray-800 font-mono">{stepData.businessPan || 'ABCDE1234F'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocModal({
+                        title: 'Business PAN Document',
+                        url: stepData.businessPanDoc || sellerUser?.documents?.panDoc,
+                        fileName: `Business_PAN_${stepData.businessPan || 'Document'}.pdf`
+                      })}
+                      className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye size={11} /> Preview
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">GSTIN Number</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.gstin || '07AAAAA0000A1Z5'}</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="font-bold text-gray-800 font-mono">{stepData.gstin || '07AAAAA0000A1Z5'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocModal({
+                        title: 'GSTIN Registration Certificate',
+                        url: stepData.gstDoc || sellerUser?.documents?.gstCertificate,
+                        fileName: `GSTIN_${stepData.gstin || 'Certificate'}.pdf`
+                      })}
+                      className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye size={11} /> Preview
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">MSME Udyam ID</span>
@@ -474,11 +692,40 @@ export default function ProfileTab() {
                   <span className="font-bold text-gray-800 font-mono">{stepData.addressProofDocNumber || 'EB-2026-98124'}</span>
                 </div>
                 <div>
-                  <span className="block text-gray-400 font-medium text-[11px]">Uploaded File</span>
-                  <span className="font-semibold text-teal-800 flex items-center gap-1 mt-0.5">
-                    <FileCheck size={14} />
-                    <span>{stepData.addressProofFileName || 'electricity_bill_okhla_feb2026.pdf'}</span>
-                  </span>
+                  <span className="block text-gray-400 font-medium text-[11px] mb-1">Uploaded Address Proof</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-teal-800 flex items-center gap-1 truncate max-w-[150px]" title={stepData.addressProofFileName}>
+                      <FileCheck size={14} className="shrink-0" />
+                      <span className="truncate">{stepData.addressProofFileName}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetUrl = 
+                          stepData.addressProofDoc || 
+                          sellerUser?.documents?.addressProofDoc || 
+                          '/uploads/documents/addressProofDoc-1789380245540-84981246.pdf';
+                        setPreviewDocModal({
+                          title: `Address Proof (${stepData.addressProofType || 'Utility Bill'})`,
+                          url: targetUrl,
+                          fileName: stepData.addressProofFileName
+                        });
+                      }}
+                      className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[10px] font-bold border border-teal-200 flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Eye size={12} /> Preview
+                    </button>
+                    <label className="px-2.5 py-1 bg-brand-teal hover:bg-brand-teal-light text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs">
+                      <UploadCloud size={12} />
+                      <span>Upload File</span>
+                      <input
+                        type="file"
+                        accept=".pdf,image/*"
+                        onChange={handleAddressProofUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
             )}
@@ -521,7 +768,9 @@ export default function ProfileTab() {
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">IFSC & Account Type</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.bankIfscCode || 'HDFC0000240'} ({stepData.accountType || 'Current'})</span>
+                  <span className="font-bold text-gray-800 font-mono mt-0.5 block">
+                    {stepData.bankIfscCode || 'HDFC0000240'} ({stepData.accountType || 'Current'})
+                  </span>
                 </div>
               </div>
             )}
@@ -983,6 +1232,13 @@ export default function ProfileTab() {
 
       </div>
       )}
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={Boolean(previewDocModal)}
+        onClose={() => setPreviewDocModal(null)}
+        doc={previewDocModal}
+      />
 
     </div>
   );

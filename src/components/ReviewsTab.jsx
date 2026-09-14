@@ -11,7 +11,7 @@ import {
 import { useSellerData } from '../context/SellerDataContext';
 
 export default function ReviewsTab() {
-  const { reviews, replyToReview, deleteReview } = useSellerData();
+  const { reviews, approveReview, replyToReview, deleteReview } = useSellerData();
   const [replyInputs, setReplyInputs] = useState({});
   const [activeReplyId, setActiveReplyId] = useState(null);
 
@@ -22,49 +22,72 @@ export default function ReviewsTab() {
     setActiveReplyId(null);
   };
 
+  const reviewsList = Array.isArray(reviews) ? reviews : Object.values(reviews).flat();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between bg-white p-5 rounded-2xl shadow-xs border border-gray-100">
         <div>
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Star className="text-amber-500 fill-amber-500" size={24} /> Customer Ratings & Reviews
+            <Star className="text-amber-500 fill-amber-500" size={24} /> Customer Ratings & Reviews Moderation
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Monitor feedback from parents and students, address queries, and post official store replies
+            Approve customer reviews to make them visible on the main website, address queries, and post store responses.
           </p>
         </div>
       </div>
 
       <div className="space-y-4">
-        {reviews.length === 0 ? (
+        {reviewsList.length === 0 ? (
           <div className="p-12 text-center bg-white rounded-2xl border border-gray-100 text-gray-500 text-xs">
             No customer reviews posted yet.
           </div>
         ) : (
-          reviews.map((rev) => (
-            <div key={rev.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-3 text-xs">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                    <span>{rev.customerName}</span>
-                    <span className="flex items-center text-amber-500">
-                      {[...Array(rev.rating || 5)].map((_, i) => (
-                        <Star key={i} size={13} className="fill-amber-400 text-amber-400" />
-                      ))}
-                    </span>
+          reviewsList.map((rev) => {
+            const isApproved = rev.status === 'Approved' || rev.status === 'approved';
+            return (
+              <div key={rev.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                      <span>{rev.customerName || rev.name || 'Verified Customer'}</span>
+                      <span className="flex items-center text-amber-500">
+                        {[...Array(rev.rating || 5)].map((_, i) => (
+                          <Star key={i} size={13} className="fill-amber-400 text-amber-400" />
+                        ))}
+                      </span>
+                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                        isApproved
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}>
+                        {isApproved ? 'Approved & Live' : 'Pending Approval'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-teal-800 font-medium mt-0.5">{rev.productName || 'Product Review'}</div>
+                    <div className="text-[10px] text-gray-400">{rev.date || 'Recently'}</div>
                   </div>
-                  <div className="text-[11px] text-teal-800 font-medium mt-0.5">{rev.productName}</div>
-                  <div className="text-[10px] text-gray-400">{rev.date}</div>
-                </div>
 
-                <button
-                  onClick={() => deleteReview(rev.id)}
-                  className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50"
-                  title="Remove Review"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+                  <div className="flex items-center gap-2">
+                    {!isApproved && (
+                      <button
+                        onClick={() => approveReview(rev.id)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Approve & Publish to Website"
+                      >
+                        <CheckCircle2 size={14} /> Approve & Publish
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => deleteReview(rev.id)}
+                      className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 cursor-pointer"
+                      title="Remove Review"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
 
               <p className="text-gray-700 leading-relaxed bg-gray-50/70 p-3 rounded-xl border border-gray-100">
                 "{rev.comment}"
@@ -112,7 +135,8 @@ export default function ReviewsTab() {
                 </div>
               )}
             </div>
-          ))
+          );
+        })
         )}
       </div>
     </div>
