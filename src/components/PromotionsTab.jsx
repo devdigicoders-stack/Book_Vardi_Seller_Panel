@@ -141,8 +141,23 @@ export default function PromotionsTab() {
       </div>
 
       {/* Coupons Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredPromotions.map((p) => {
+      {filteredPromotions.length === 0 ? (
+        <div className="p-14 text-center bg-white rounded-2xl border border-gray-100 text-gray-500 col-span-full">
+          <Tag size={44} className="mx-auto text-gray-300 mb-3" />
+          <h4 className="font-extrabold text-base text-gray-900 mb-1">No Active Coupons or Promotions</h4>
+          <p className="text-xs text-gray-500 max-w-sm mx-auto mb-4">
+            Boost customer checkout conversions by offering custom promotional discount codes or storewide coupons.
+          </p>
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
+          >
+            <Plus size={16} /> Create First Coupon Code
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredPromotions.map((p) => {
           const isActive = p.status === 'active';
           return (
             <div key={p.id} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-teal-200 transition-all">
@@ -238,6 +253,7 @@ export default function PromotionsTab() {
           );
         })}
       </div>
+      )}
 
       {/* Add Modal */}
       {isAddModalOpen && (

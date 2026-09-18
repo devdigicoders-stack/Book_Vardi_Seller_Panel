@@ -161,15 +161,17 @@ body,
   min-height: 100%;
 }
 
-/* Keep horizontal scrolling available while hiding the scrollbar UI. */
+/* Keep scrolling available while hiding the scrollbar UI. */
 .scrollbar-none,
-.hide-scrollbar {
+.hide-scrollbar,
+.no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
 .scrollbar-none::-webkit-scrollbar,
-.hide-scrollbar::-webkit-scrollbar {
+.hide-scrollbar::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 

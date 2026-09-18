@@ -7,23 +7,38 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Node & Build Outputs
+node_modules/
+dist/
+dist-ssr/
+build/
+coverage/
+
+# Environment Files
 *.local
 .env
+.env.*
 
-# AI tooling
+# Custom Script & Temporary Directories
+script/
+scripts/
+scratch/
+tmp/
+temp/
+
+# AI Tooling & CLI
 .gemini/
+.antigravity/
 .oxlintrc.json
 
-# Editor directories and files
+# Editor Directories and Files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+Thumbs.db
