@@ -1,23 +1,26 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Node & Build Outputs
+# Node & Package Manager Dependencies
 node_modules/
+
+# Build & Output Directories
 dist/
 dist-ssr/
 build/
+out/
 coverage/
 
-# Environment Files
-*.local
+# Environment & Secret files
 .env
 .env.*
+*.local
+!.env.example
+
+# User Uploaded Assets & Images
+uploads/
+uploads/**/*
+!uploads/**/.gitkeep
+public/uploads/
+public/uploads/**/*
+!public/uploads/**/.gitkeep
 
 # Custom Script & Temporary Directories
 script/
@@ -26,19 +29,31 @@ scratch/
 tmp/
 temp/
 
-# AI Tooling & CLI
-.gemini/
-.antigravity/
-.oxlintrc.json
+# Log files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Editor Directories and Files
+# IDE & OS System Files
 .vscode/*
 !.vscode/extensions.json
 .idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-Thumbs.db
+
+# AI Tooling & Configs
+.gemini/
+.antigravity/
+.oxlintrc.json
+
+# Documentation
+*.md

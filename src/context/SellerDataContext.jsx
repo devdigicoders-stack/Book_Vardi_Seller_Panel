@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { pushPlatformSync, usePlatformSyncListener } from '../utils/syncBridge';
 import {
   sendPhoneOtpApi,
   verifyPhoneOtpApi,
@@ -24,13 +23,15 @@ import {
   fetchSellerWalletApi,
   requestPayoutApi,
   fetchSellerReviewsApi,
-  approveReviewApi,
-  replyToReviewApi,
+  approveSellerReviewApi,
+  replySellerReviewApi,
+  deleteSellerReviewApi,
   fetchSellerProfileApi,
   updateSellerProfileApi,
   fetchSellerSettingsApi,
   updateSellerSettingsApi,
-  fetchSellerCustomersApi
+  fetchSellerCustomersApi,
+  downloadSellerInvoiceApi
 } from '../utils/api';
 
 export const APPROVED_SELLER_ROLES = [
@@ -42,56 +43,138 @@ export const APPROVED_SELLER_ROLES = [
 
 const SellerDataContext = createContext();
 
-export const useSellerData = () => useContext(SellerDataContext);
+export const useSellerData = () => useContext(SellerDataContext) || {};
+
+// Helper to resolve active seller profile from active user session keys first
+// Helper to resolve active seller profile from active user session keys first
+export const readActiveSellerProfile = () => {
+  try {
+    const sellerUserSaved = localStorage.getItem('seller_user_profile');
+    if (sellerUserSaved) {
+      const parsed = JSON.parse(sellerUserSaved);
+      if (parsed && (parsed.name || parsed.phone || parsed.email)) {
+        return parsed;
+      }
+    }
+
+    const regDataSaved = localStorage.getItem('bv_seller_reg_data');
+    const sellerProfSaved = localStorage.getItem('book_vardi_seller_profile');
+
+    const regData = regDataSaved ? JSON.parse(regDataSaved) : null;
+    const sellerProf = sellerProfSaved ? JSON.parse(sellerProfSaved) : null;
+
+    const activeName = regData?.sellerName || regData?.ownerFullName || sellerProf?.name || sellerProf?.sellerName || '';
+    const activeEmail = regData?.sellerEmail || sellerProf?.email || sellerProf?.sellerEmail || '';
+    const activePhone = regData?.sellerPhone ? `+91 ${regData.sellerPhone.replace(/\D/g, '').slice(-10)}` : (sellerProf?.phone || '');
+
+    return {
+      name: activeName,
+      email: activeEmail,
+      phone: activePhone,
+      role: sellerProf?.role || regData?.role || 'Seller',
+      designation: regData?.ownerDesignation || sellerProf?.designation || '',
+      merchantId: regData?.merchantId || sellerProf?.merchantId || '',
+      pan: regData?.ownerPan || regData?.businessPan || sellerProf?.pan || '',
+      avatar: regData?.profilePhoto || sellerProf?.avatar || '',
+      lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    };
+  } catch {
+    return {
+      name: '',
+      email: '',
+      phone: '',
+      role: '',
+      designation: '',
+      merchantId: '',
+      pan: '',
+      avatar: '',
+      lastLogin: ''
+    };
+  }
+};
+
+export const readActiveSellerSettings = () => {
+  try {
+    const settingsSaved = localStorage.getItem('seller_settings');
+    if (settingsSaved) {
+      const parsed = JSON.parse(settingsSaved);
+      if (parsed && (parsed.storeName || parsed.email || parsed.phone)) {
+        return parsed;
+      }
+    }
+
+    const regDataSaved = localStorage.getItem('bv_seller_reg_data');
+    const sellerProfSaved = localStorage.getItem('book_vardi_seller_profile');
+
+    const regData = regDataSaved ? JSON.parse(regDataSaved) : null;
+    const sellerProf = sellerProfSaved ? JSON.parse(sellerProfSaved) : null;
+
+    const activeStoreName = regData?.storeName || regData?.tradeName || regData?.legalBusinessName || sellerProf?.storeName || sellerProf?.businessName || '';
+    const activeEmail = regData?.sellerEmail || sellerProf?.email || sellerProf?.sellerEmail || '';
+    const activePhone = regData?.sellerPhone ? `+91 ${regData.sellerPhone.replace(/\D/g, '').slice(-10)}` : (sellerProf?.phone || '');
+
+    return {
+      storeName: activeStoreName,
+      legalName: regData?.legalBusinessName || sellerProf?.legalName || activeStoreName,
+      email: activeEmail,
+      phone: activePhone,
+      gstin: regData?.gstin || sellerProf?.gstin || '',
+      pan: regData?.ownerPan || regData?.businessPan || sellerProf?.pan || '',
+      address: regData?.registeredAddress || regData?.addressLine1 || sellerProf?.address || '',
+      city: regData?.city || sellerProf?.city || '',
+      pincode: regData?.pincode || sellerProf?.pincode || ''
+    };
+  } catch {
+    return {
+      storeName: '',
+      legalName: '',
+      email: '',
+      phone: '',
+      gstin: '',
+      pan: '',
+      address: '',
+      city: '',
+      pincode: ''
+    };
+  }
+};
 
 export const SellerDataProvider = ({ children, approved = true }) => {
   const isApproved = approved === true;
 
-  // Authentication state for Seller Hub
+  // Authentication state for Seller Hub (persisted in localStorage so seller stays logged in on page refresh)
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     try {
       const saved = localStorage.getItem('seller_is_authenticated');
-      return saved !== null ? JSON.parse(saved) : true;
+      const token = localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('book_vardi_auth_token');
+      const userProfStr = localStorage.getItem('seller_user_profile') || localStorage.getItem('bv_seller_reg_data');
+
+      if (saved === 'true' && (token || userProfStr)) {
+        return true;
+      }
+      if (saved === 'false') {
+        return false;
+      }
+      return Boolean(token || userProfStr);
     } catch {
-      return true;
+      return false;
     }
   });
 
-  // Current Seller Profile & Role
-  const [sellerUser, setSellerUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('seller_user_profile');
-      return saved ? JSON.parse(saved) : {
-        name: '',
-        email: '',
-        phone: '',
-        role: 'Partner Merchant',
-        designation: '',
-        merchantId: '',
-        pan: '',
-        avatar: '',
-        lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-      };
-    } catch {
-      return {
-        name: '',
-        email: '',
-        phone: '',
-        role: 'Partner Merchant',
-        designation: '',
-        merchantId: '',
-        pan: '',
-        avatar: '',
-        lastLogin: 'Today'
-      };
-    }
-  });
+  // Current Seller Profile & Role (Resolves active user credentials)
+  const [sellerUser, setSellerUser] = useState(() => readActiveSellerProfile());
 
   // Seller status state ('approved' | 'pending' | 'in_review' | 'rejected')
   const [sellerStatus, setSellerStatus] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_seller_status');
-      return saved || 'approved';
+      if (saved) return saved;
+      const regData = localStorage.getItem('bv_seller_reg_data');
+      if (regData) {
+        const parsed = JSON.parse(regData);
+        if (parsed.submissionStatus || parsed.status) return parsed.submissionStatus || parsed.status;
+      }
+      return 'approved';
     } catch {
       return 'approved';
     }
@@ -103,76 +186,47 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     setTimeout(() => setToastMessage(null), 4000);
   }, []);
 
-  // 1. Products State (No hardcoded mock fallbacks - pure DB / local seller state)
+  // Clean up any old mock/abc registration data from localStorage if present
+  useEffect(() => {
+    try {
+      const keysToCheck = ['bv_seller_reg_data', 'book_vardi_seller_profile', 'seller_user_profile'];
+      keysToCheck.forEach(key => {
+        const item = localStorage.getItem(key);
+        if (item) {
+          const lower = item.toLowerCase();
+          if (lower.includes('"abc"') || lower.includes('abc books') || lower.includes('seller_abc') || lower.includes('merchant abc')) {
+            localStorage.removeItem(key);
+          }
+        }
+      });
+    } catch {}
+  }, []);
+
+  // Loading state for product fetching directly from backend MongoDB
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+
+  // Domain Entity States (Directly backed by MongoDB)
   const [products, setProducts] = useState(() => {
     try {
-      const stored = localStorage.getItem('seller_products');
-      return stored ? JSON.parse(stored) : [];
+      const saved = localStorage.getItem('bv_seller_products');
+      return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
-
-  // 2. Orders State
   const [orders, setOrders] = useState(() => {
     try {
-      const stored = localStorage.getItem('seller_orders');
-      return stored ? JSON.parse(stored) : [];
+      const saved = localStorage.getItem('bv_seller_orders');
+      return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
-
-  // 3. Promotions State
-  const [promotions, setPromotions] = useState(() => {
-    try {
-      const stored = localStorage.getItem('seller_promotions');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // 4. School Orders State
-  const [schoolOrders, setSchoolOrders] = useState(() => {
-    try {
-      const stored = localStorage.getItem('seller_school_orders');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // 5. Customers State
-  const [customers, setCustomers] = useState(() => {
-    try {
-      const stored = localStorage.getItem('seller_customers');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // 6. Finance State
-  const [finance, setFinance] = useState(() => {
-    try {
-      const stored = localStorage.getItem('seller_finance');
-      return stored ? JSON.parse(stored) : { totalRevenue: 0, netProfit: 0, pendingPayout: 0, availableBalance: 0, recentTransactions: [] };
-    } catch {
-      return { totalRevenue: 0, netProfit: 0, pendingPayout: 0, availableBalance: 0, recentTransactions: [] };
-    }
-  });
-
-  // 7. Reviews State
-  const [reviews, setReviews] = useState(() => {
-    try {
-      const stored = localStorage.getItem('seller_reviews');
-      const parsed = stored ? JSON.parse(stored) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
+  const [promotions, setPromotions] = useState([]);
+  const [schoolOrders, setSchoolOrders] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [finance, setFinance] = useState({ totalRevenue: 0, netProfit: 0, pendingPayout: 0, availableBalance: 0, recentTransactions: [] });
+  const [reviews, setReviews] = useState([]);
 
   // 8. Notifications State (Dynamic Real-time DB Alerts)
   const [readIds, setReadIds] = useState(() => {
@@ -223,15 +277,35 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       }
     });
 
+    const formatNotifTime = (rawDate, createdAt) => {
+      const source = createdAt || rawDate;
+      if (!source) return 'N/A';
+      if (source === 'Urgent Alert' || source === 'Live Stock Warning') return source;
+      try {
+        const d = new Date(source);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+        }
+      } catch (e) {}
+      return String(rawDate || 'N/A');
+    };
+
     // Orders requiring fulfillment
     safeOrders.forEach(o => {
       if (o.status === 'Pending' || o.status === 'Processing') {
         list.push({
           id: `notif-order-${o.id}`,
           title: `Order Fulfillment Required (${o.id})`,
-          message: `Customer ${o.customerName || 'Buyer'} placed order worth ₹${Number(o.total || 0).toLocaleString('en-IN')}. Status: ${o.status}`,
+          message: `Customer ${o.customerName || 'N/A'} placed order worth ₹${Number(o.total || 0).toLocaleString('en-IN')}. Status: ${o.status}`,
           type: 'finance',
-          date: o.date || 'Recent Order'
+          date: formatNotifTime(o.date, o.createdAt)
         });
       }
     });
@@ -240,22 +314,35 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     safeSchoolOrders.forEach(s => {
       list.push({
         id: `notif-school-${s.id || s._id}`,
-        title: `B2B School Quote: ${s.schoolName || s.school || 'Partner School'}`,
-        message: `Quotation requested for ${s.quantity || s.units || 1} units of ${s.category || 'uniforms'}.`,
+        title: `B2B School Quote: ${s.schoolName || s.school || 'N/A'}`,
+        message: `Quotation requested for ${s.quantity || s.units || 1} units of ${s.category || 'N/A'}.`,
         type: 'school',
-        date: s.date || 'Recent B2B Order'
+        date: formatNotifTime(s.date, s.createdAt)
       });
     });
 
+    // Seller product IDs set for verifying review notification ownership
+    const sellerProductIdSet = new Set(
+      safeProducts.flatMap(p => [
+        p.id ? String(p.id) : null,
+        p._id ? String(p._id) : null
+      ]).filter(Boolean)
+    );
+
     // Reviews needing response
     safeReviews.forEach(r => {
-      if (!r.reply) {
+      const isSellerProduct =
+        (r.productId && sellerProductIdSet.has(String(r.productId))) ||
+        (r.sellerId && sellerUser?.id && String(r.sellerId) === String(sellerUser.id)) ||
+        (!r.productId && sellerProductIdSet.size === 0);
+
+      if (!r.reply && isSellerProduct) {
         list.push({
           id: `notif-review-${r.id || r._id}`,
           title: `New Customer Rating (${r.rating || 5}★)`,
-          message: `${r.customerName || 'Customer'}: "${r.comment || 'Great quality product'}"`,
+          message: `${r.customerName || 'N/A'}: "${r.comment || 'N/A'}"`,
           type: 'review',
-          date: r.date || 'Recent Review'
+          date: formatNotifTime(r.date, r.createdAt)
         });
       }
     });
@@ -272,35 +359,45 @@ export const SellerDataProvider = ({ children, approved = true }) => {
   const [shippingPartners, setShippingPartners] = useState(() => {
     try {
       const stored = localStorage.getItem('seller_shipping_partners');
-      return stored ? JSON.parse(stored) : [
-        { id: 1, name: 'Delhivery Surface & Express', active: true, trackingPrefix: 'DLH' },
-        { id: 2, name: 'BlueDart Air Logistics', active: true, trackingPrefix: 'BLU' },
-        { id: 3, name: 'India Post SpeedPost', active: true, trackingPrefix: 'IND' }
-      ];
+      return stored ? JSON.parse(stored) : [];
     } catch {
       return [];
     }
   });
 
-  // 10. Settings State
-  const [settings, setSettings] = useState(() => {
-    try {
-      const stored = localStorage.getItem('seller_settings');
-      return stored ? JSON.parse(stored) : {
-        storeName: 'Book Vardi Partner Store',
-        email: 'merchant@bookvardi.in',
-        phone: '+91 98765 43210',
-        gstin: '07AAAAA0000A1Z5'
-      };
-    } catch {
-      return {};
-    }
-  });
+  // 10. Settings State (Resolves active store settings)
+  const [settings, setSettings] = useState(() => readActiveSellerSettings());
+
+  // Listen to active user changes / tab focus / status updates to keep seller user in sync
+  useEffect(() => {
+    const handleActiveUserChange = () => {
+      const activeUser = readActiveSellerProfile();
+      const activeSettings = readActiveSellerSettings();
+      setSellerUser(activeUser);
+      setSettings(activeSettings);
+      try {
+        localStorage.setItem('seller_user_profile', JSON.stringify(activeUser));
+        localStorage.setItem('seller_settings', JSON.stringify(activeSettings));
+      } catch (e) {}
+    };
+
+    handleActiveUserChange();
+    window.addEventListener('storage', handleActiveUserChange);
+    window.addEventListener('focus', handleActiveUserChange);
+    window.addEventListener('bv_seller_status_updated', handleActiveUserChange);
+
+    return () => {
+      window.removeEventListener('storage', handleActiveUserChange);
+      window.removeEventListener('focus', handleActiveUserChange);
+      window.removeEventListener('bv_seller_status_updated', handleActiveUserChange);
+    };
+  }, []);
 
   // Initial API Data Sync on mount directly from backend DB
   useEffect(() => {
     let isMounted = true;
     async function loadBackendData() {
+      setIsLoadingProducts(true);
       try {
         const [
           statusRes,
@@ -330,15 +427,27 @@ export const SellerDataProvider = ({ children, approved = true }) => {
 
         if (statusRes.status === 'fulfilled' && statusRes.value?.status) {
           setSellerStatus(statusRes.value.status);
-          localStorage.setItem('bv_seller_status', statusRes.value.status);
         }
 
         if (productsRes.status === 'fulfilled' && Array.isArray(productsRes.value)) {
-          setProducts(productsRes.value);
+          const normalized = productsRes.value.map(p => ({
+            ...p,
+            id: p._id || p.id,
+            _id: p._id || p.id,
+            stockQuantity: p.stockQuantity ?? p.stock ?? 50,
+            inStock: p.inStock !== undefined ? p.inStock : ((p.stockQuantity ?? p.stock ?? 50) > 0)
+          }));
+          setProducts(normalized);
+          try {
+            localStorage.setItem('bv_seller_products', JSON.stringify(normalized));
+          } catch (e) {}
         }
 
         if (ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value)) {
           setOrders(ordersRes.value);
+          try {
+            localStorage.setItem('bv_seller_orders', JSON.stringify(ordersRes.value));
+          } catch (e) {}
         }
 
         if (customersRes.status === 'fulfilled' && Array.isArray(customersRes.value)) {
@@ -362,7 +471,12 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         }
 
         if (profileRes.status === 'fulfilled' && profileRes.value) {
-          setSellerUser(prev => ({ ...prev, ...profileRes.value }));
+          setSellerUser(prev => {
+            const backendPhone = (profileRes.value.phone || profileRes.value.sellerPhone || '').replace(/\D/g, '');
+            const prevPhone = (prev.phone || '').replace(/\D/g, '');
+            const isMatch = !prevPhone || !backendPhone || prevPhone.slice(-8) === backendPhone.slice(-8) || !prev.name;
+            return isMatch ? { ...prev, ...profileRes.value } : prev;
+          });
         }
 
         if (settingsRes.status === 'fulfilled' && settingsRes.value) {
@@ -370,59 +484,19 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         }
       } catch (err) {
         console.debug('Backend offline or empty:', err.message);
+      } finally {
+        if (isMounted) setIsLoadingProducts(false);
       }
     }
 
     if (isAuthenticated) {
       loadBackendData();
+    } else {
+      setIsLoadingProducts(false);
     }
 
     return () => { isMounted = false; };
   }, [isAuthenticated]);
-
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem('seller_products', JSON.stringify(products));
-  }, [products]);
-
-  useEffect(() => {
-    localStorage.setItem('seller_orders', JSON.stringify(orders));
-  }, [orders]);
-
-  useEffect(() => {
-    localStorage.setItem('seller_promotions', JSON.stringify(promotions));
-  }, [promotions]);
-
-  useEffect(() => {
-    localStorage.setItem('seller_school_orders', JSON.stringify(schoolOrders));
-  }, [schoolOrders]);
-
-  useEffect(() => {
-    localStorage.setItem('seller_customers', JSON.stringify(customers));
-  }, [customers]);
-
-  useEffect(() => {
-    localStorage.setItem('seller_reviews', JSON.stringify(reviews));
-  }, [reviews]);
-
-  useEffect(() => {
-    localStorage.setItem('seller_notifications', JSON.stringify(notifications));
-  }, [notifications]);
-
-  useEffect(() => {
-    localStorage.setItem('seller_settings', JSON.stringify(settings));
-  }, [settings]);
-
-  // Subscribe to real-time sync across user and admin portals
-  usePlatformSyncListener((incoming) => {
-    if (!incoming) return;
-    if (incoming.products) setProducts(incoming.products);
-    if (incoming.orders) setOrders(incoming.orders);
-    if (incoming.promotions) setPromotions(incoming.promotions);
-    if (incoming.schoolOrders) setSchoolOrders(incoming.schoolOrders);
-    if (incoming.customers) setCustomers(incoming.customers);
-    if (incoming.reviews) setReviews(incoming.reviews);
-  });
 
   const checkPermission = useCallback(() => {
     if (!isApproved) {
@@ -442,12 +516,14 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       if (apiRes && apiRes.token) {
         setIsAuthenticated(true);
         if (apiRes.seller) {
+          const resolvedName = apiRes.seller.name || apiRes.seller.sellerName || apiRes.seller.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
+          const resolvedEmail = apiRes.seller.email || apiRes.seller.sellerEmail || `seller_${cleanPhone}@bookvardi.in`;
           const u = {
             ...sellerUser,
-            name: apiRes.seller.sellerName || apiRes.seller.ownerFullName || sellerUser.name,
+            name: resolvedName,
             phone: `+91 ${cleanPhone}`,
-            email: apiRes.seller.sellerEmail || sellerUser.email,
-            pan: apiRes.seller.ownerPan || sellerUser.pan
+            email: resolvedEmail,
+            pan: apiRes.seller.pan || apiRes.seller.ownerPan || sellerUser.pan || ''
           };
           setSellerUser(u);
           setSellerStatus(apiRes.seller.approvalStatus || apiRes.seller.status || 'approved');
@@ -455,6 +531,9 @@ export const SellerDataProvider = ({ children, approved = true }) => {
           localStorage.setItem('bv_seller_status', apiRes.seller.approvalStatus || 'approved');
         }
         localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
+        setTimeout(() => {
+          if (typeof window !== 'undefined') window.location.reload();
+        }, 50);
         return { success: true, token: apiRes.token, seller: apiRes.seller };
       }
     } catch (e) {
@@ -467,20 +546,30 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       if (saved) savedApp = JSON.parse(saved);
     } catch {}
 
-    const matchedName = savedApp?.sellerName || savedApp?.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
-    const matchedEmail = savedApp?.sellerEmail || `seller_${cleanPhone}@bookvardi.in`;
-    const matchedStoreName = savedApp?.tradeName || savedApp?.storeName || savedApp?.legalBusinessName || settings?.storeName || 'Book Vardi Partner Store';
-    const status = savedApp?.status || savedApp?.submissionStatus || 'approved';
+    const savedPhoneClean = (savedApp?.sellerPhone || savedApp?.phone || '').replace(/\D/g, '');
+    const isPhoneMatch = savedApp && savedPhoneClean && savedPhoneClean.slice(-8) === cleanPhone.slice(-8);
+
+    if (savedApp && !isPhoneMatch) {
+      try {
+        localStorage.removeItem('bv_seller_reg_data');
+        localStorage.removeItem('book_vardi_seller_profile');
+      } catch {}
+    }
+
+    const matchedName = isPhoneMatch ? (savedApp?.sellerName || savedApp?.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`) : `Merchant ${cleanPhone.slice(-4)}`;
+    const matchedEmail = isPhoneMatch ? (savedApp?.sellerEmail || `seller_${cleanPhone}@bookvardi.in`) : `seller_${cleanPhone}@bookvardi.in`;
+    const matchedStoreName = isPhoneMatch ? (savedApp?.tradeName || savedApp?.storeName || savedApp?.legalBusinessName || `${matchedName}'s Vardi Store`) : `${matchedName}'s Vardi Store`;
+    const status = isPhoneMatch ? (savedApp?.status || savedApp?.submissionStatus || 'approved') : 'approved';
 
     const updatedUser = {
       ...sellerUser,
       name: matchedName,
       email: matchedEmail,
       phone: `+91 ${cleanPhone}`,
-      role: 'Partner Merchant',
-      designation: savedApp?.ownerDesignation || sellerUser.designation || 'Proprietor & Authorized Signatory',
-      pan: savedApp?.ownerPan || savedApp?.businessPan || sellerUser.pan || 'ABCDE1234F',
-      avatar: savedApp?.profilePhoto || sellerUser.avatar,
+      role: 'Seller',
+      designation: isPhoneMatch ? (savedApp?.ownerDesignation || sellerUser.designation || '') : '',
+      pan: isPhoneMatch ? (savedApp?.ownerPan || savedApp?.businessPan || sellerUser.pan || '') : '',
+      avatar: isPhoneMatch ? (savedApp?.profilePhoto || sellerUser.avatar) : '',
       lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     };
 
@@ -489,8 +578,8 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       storeName: matchedStoreName,
       email: matchedEmail,
       phone: `+91 ${cleanPhone}`,
-      gstin: savedApp?.gstin || settings.gstin,
-      pan: savedApp?.ownerPan || savedApp?.businessPan || settings.pan
+      gstin: isPhoneMatch ? (savedApp?.gstin || settings.gstin) : '',
+      pan: isPhoneMatch ? (savedApp?.ownerPan || savedApp?.businessPan || settings.pan) : ''
     };
 
     setSellerUser(updatedUser);
@@ -501,6 +590,10 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     localStorage.setItem('seller_settings', JSON.stringify(updatedSettings));
     localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
     localStorage.setItem('bv_seller_status', status);
+
+    setTimeout(() => {
+      if (typeof window !== 'undefined') window.location.reload();
+    }, 50);
 
     return { success: true, seller: updatedUser, status };
   };
@@ -566,11 +659,26 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     adminApproveTestApi().catch(() => {});
   };
 
+  const checkSellerStatus = useCallback(async () => {
+    try {
+      const res = await fetchSellerStatusApi();
+      if (res && (res.status || res.approvalStatus)) {
+        const newStatus = res.approvalStatus || res.status || 'approved';
+        setSellerStatus(newStatus);
+        localStorage.setItem('bv_seller_status', newStatus);
+        return newStatus;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return sellerStatus;
+  }, [sellerStatus]);
+
   const loginSeller = ({ email, role }) => {
     const updated = {
       ...sellerUser,
       email: email || sellerUser.email,
-      role: role || 'Partner Merchant',
+      role: role || 'Seller',
       lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     };
     setSellerUser(updated);
@@ -579,12 +687,27 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     localStorage.setItem('seller_user_profile', JSON.stringify(updated));
     localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
     localStorage.setItem('bv_seller_status', 'approved');
+    setTimeout(() => {
+      if (typeof window !== 'undefined') window.location.reload();
+    }, 50);
   };
 
   const logoutSeller = () => {
     setIsAuthenticated(false);
-    localStorage.setItem('seller_is_authenticated', JSON.stringify(false));
-    localStorage.removeItem('bv_seller_jwt_token');
+    try {
+      localStorage.setItem('seller_is_authenticated', JSON.stringify(false));
+      localStorage.removeItem('seller_user_profile');
+      localStorage.removeItem('seller_settings');
+      localStorage.removeItem('bv_seller_reg_data');
+      localStorage.removeItem('book_vardi_seller_profile');
+      localStorage.removeItem('bv_seller_status');
+      localStorage.removeItem('bv_seller_jwt_token');
+      localStorage.removeItem('seller_read_notif_ids');
+      localStorage.removeItem('seller_dismissed_notif_ids');
+    } catch {}
+    setTimeout(() => {
+      if (typeof window !== 'undefined') window.location.reload();
+    }, 50);
   };
 
   const updateSellerProfile = (updates) => {
@@ -615,35 +738,75 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       price: price,
       originalPrice: Number(newProduct.originalPrice) || Math.round(price * 1.25),
       discountBadge: newProduct.discountBadge || 'NEW',
-      rating: Number(newProduct.rating) || 5.0,
+      rating: newProduct.rating !== undefined ? Number(newProduct.rating) : 0,
       reviewsCount: Number(newProduct.reviewsCount) || 0,
-      inStock: newProduct.inStock !== false,
-      stockQuantity: Number(newProduct.stockQuantity) || 50,
-      image: newProduct.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80',
+      stock: newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : 50,
+      stockQuantity: newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : 50,
+      inStock: newProduct.inStock !== undefined ? Boolean(newProduct.inStock) : ((newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : 50) > 0),
+      image: newProduct.image || '',
       images: Array.isArray(newProduct.images) ? newProduct.images : (newProduct.image ? [newProduct.image] : []),
       sizes: Array.isArray(newProduct.sizes) ? newProduct.sizes : (newProduct.sizes ? String(newProduct.sizes).split(',').map(s => s.trim()) : ['S', 'M', 'L', 'XL']),
       colors: Array.isArray(newProduct.colors) ? newProduct.colors : (newProduct.colors ? String(newProduct.colors).split(',').map(c => c.trim()) : ['Navy Blue', 'White']),
       gender: newProduct.gender || 'Unisex',
       description: newProduct.description || 'Premium quality school uniform & educational product.',
       sku: newProduct.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+      paymentMethodAllowed: newProduct.paymentMethodAllowed || 'Both',
+      paymentMethodsAllowed: newProduct.paymentMethodsAllowed || (newProduct.paymentMethodAllowed === 'COD_Only' ? ['COD'] : newProduct.paymentMethodAllowed === 'Online_Only' ? ['Online'] : ['COD', 'Online']),
       approvalStatus: newProduct.approvalStatus || 'Pending',
       approvalComment: newProduct.approvalComment || 'Submitted for admin review',
       rejectionReason: null
     };
 
-    setProducts(prev => {
-      const updated = [createdProduct, ...prev];
-      pushPlatformSync({ products: updated });
-      return updated;
-    });
+    setProducts(prev => [createdProduct, ...prev]);
+    showToast(`Product "${createdProduct.name}" submitted for Admin Approval!`);
 
-    createSellerProductApi(createdProduct).catch(() => {});
+    createSellerProductApi(createdProduct)
+      .then(res => {
+        if (res && res.product && (res.product._id || res.product.id)) {
+          const realId = res.product._id || res.product.id;
+          setProducts(prev => {
+            const updated = prev.map(p => (p.id === createdProduct.id || p.name === createdProduct.name) ? { ...p, ...res.product, id: realId, _id: realId } : p);
+            return updated;
+          });
+
+          // Trigger Admin Notification & Storage Sync for product approval
+          try {
+            const savedNotifs = localStorage.getItem('admin_notifications');
+            let notifList = savedNotifs ? JSON.parse(savedNotifs) : [];
+            const newNotif = {
+              id: Date.now(),
+              title: "New Product Submitted for Approval",
+              message: `Seller "${sellerUser?.storeName || sellerUser?.name || 'Partner Merchant'}" submitted product "${createdProduct.name}" for review.`,
+              type: "product_approval",
+              productId: realId,
+              time: "Just now",
+              unread: true
+            };
+            notifList = [newNotif, ...notifList];
+            localStorage.setItem('admin_notifications', JSON.stringify(notifList));
+
+            // Sync with admin products list
+            const savedAdminProds = localStorage.getItem('admin_products');
+            let adminProds = savedAdminProds ? JSON.parse(savedAdminProds) : [];
+            adminProds = [{ ...createdProduct, id: realId, _id: realId, approvalStatus: 'Pending', sellerName: sellerUser?.storeName || sellerUser?.name || 'Seller' }, ...adminProds];
+            localStorage.setItem('admin_products', JSON.stringify(adminProds));
+
+            window.dispatchEvent(new CustomEvent('adminNotificationReceived', { detail: newNotif }));
+            window.dispatchEvent(new CustomEvent('adminProductsUpdated', { detail: adminProds }));
+          } catch (e) {
+            console.warn('Admin notification sync error:', e);
+          }
+        }
+      })
+      .catch(err => {
+        console.error('Failed to create product on server:', err);
+      });
     return createdProduct;
   };
 
   const editProduct = (id, updates) => {
     checkPermission();
-    const numericId = Number(id);
+    const strId = String(id);
     if (updates.name !== undefined && String(updates.name).trim() === '') {
       throw new Error('Validation failed: Product name cannot be empty.');
     }
@@ -653,7 +816,7 @@ export const SellerDataProvider = ({ children, approved = true }) => {
 
     setProducts(prev => {
       const updated = prev.map(p => {
-        if (Number(p.id) === numericId) {
+        if (String(p.id || p._id) === strId) {
           const isPreviouslyRejected = p.approvalStatus === 'Rejected';
           const nextApprovalStatus = isPreviouslyRejected 
             ? 'Pending' 
@@ -678,62 +841,54 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         }
         return p;
       });
-      pushPlatformSync({ products: updated });
       return updated;
     });
 
     updateSellerProductApi(id, updates).catch(() => {});
+    showToast('Product updated successfully!');
   };
 
   const toggleProductStatus = (id, overrideStock = null) => {
     checkPermission();
-    const numericId = Number(id);
+    const strId = String(id);
+    const target = products.find(p => String(p.id || p._id) === strId);
+    if (!target) return;
+
+    const currentQty = Number(target.stockQuantity ?? target.stock ?? 0);
+    const isCurrentlyActive = Boolean(target.inStock) && currentQty > 0;
+
+    if (!isCurrentlyActive && currentQty === 0) {
+      if (overrideStock === null || overrideStock === undefined || Number(overrideStock) <= 0) {
+        throw new Error('Validation failed: Product stock must be a positive stock count before activating an out-of-stock product.');
+      }
+    }
+
+    const nextStock = overrideStock !== null && overrideStock !== undefined
+      ? Number(overrideStock)
+      : (isCurrentlyActive ? 0 : (currentQty > 0 ? currentQty : 50));
+    const nextStatus = nextStock > 0;
 
     setProducts(prev => {
-      const target = prev.find(p => Number(p.id) === numericId);
-      if (!target) return prev;
-
-      const currentQty = Number(target.stockQuantity ?? (target.inStock !== false ? 50 : 0));
-      const currentStatus = target.inStock !== false && currentQty > 0;
-
-      if (!currentStatus && currentQty === 0) {
-        const nextStockValue = Number(overrideStock);
-        if (!Number.isFinite(nextStockValue) || nextStockValue <= 0) {
-          throw new Error('Validation failed: Product stock must be greater than 0 before activating an out-of-stock product.');
-        }
-
-        const updated = prev.map(p => Number(p.id) === numericId ? {
-          ...p,
-          inStock: true,
-          stockQuantity: nextStockValue
-        } : p);
-        pushPlatformSync({ products: updated });
-        updateStockApi(id, nextStockValue).catch(() => {});
-        return updated;
-      }
-
-      const nextStatus = !currentStatus;
-      const nextStock = nextStatus ? (Number(target.stockQuantity) > 0 ? Number(target.stockQuantity) : 50) : 0;
-      const updated = prev.map(p => Number(p.id) === numericId ? {
+      const updated = prev.map(p => String(p.id || p._id) === strId ? {
         ...p,
         inStock: nextStatus,
         stockQuantity: nextStock
       } : p);
-      pushPlatformSync({ products: updated });
-      updateStockApi(id, nextStock).catch(() => {});
       return updated;
     });
+    updateStockApi(id, nextStock).catch(() => {});
+    showToast(nextStatus ? 'Product activated' : 'Product deactivated');
   };
 
   const deleteProduct = (id) => {
     checkPermission();
-    const numericId = Number(id);
+    const strId = String(id);
     setProducts(prev => {
-      const updated = prev.filter(p => Number(p.id) !== numericId);
-      pushPlatformSync({ products: updated });
+      const updated = prev.filter(p => String(p.id || p._id) !== strId);
       return updated;
     });
     deleteSellerProductApi(id).catch(() => {});
+    showToast('Product deleted successfully!');
   };
 
   const bulkAddOrUpdateProducts = (productList) => {
@@ -762,13 +917,12 @@ export const SellerDataProvider = ({ children, approved = true }) => {
           sizes: Array.isArray(item.sizes) ? item.sizes : (item.sizes ? String(item.sizes).split(',').map(s => s.trim()) : (current.sizes || ['M', 'L'])),
           colors: Array.isArray(item.colors) ? item.colors : (item.colors ? String(item.colors).split(',').map(c => c.trim()) : (current.colors || ['Blue'])),
           gender: item.gender || current.gender || 'Unisex',
-          image: item.image || current.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80',
+          image: item.image || current.image || '',
           sku: item.sku || current.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`
         });
       });
 
       const updated = Array.from(existingMap.values());
-      pushPlatformSync({ products: updated });
       return updated;
     });
   };
@@ -801,7 +955,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     };
     setOrders(prev => {
       const updated = [newOrder, ...prev];
-      pushPlatformSync({ orders: updated });
       return updated;
     });
     return newOrder;
@@ -811,24 +964,33 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setOrders(prev => {
       const updated = prev.map(o => (o.id === id ? { ...o, ...updates } : o));
-      pushPlatformSync({ orders: updated });
       return updated;
     });
   };
 
-  const updateOrderStatus = (id, status) => {
+  const updateOrderStatus = (id, status, details = {}) => {
     checkPermission();
-    editOrder(id, { status });
-    updateOrderStatusApi(id, status).catch(() => {});
+    editOrder(id, { status, ...details });
+    updateOrderStatusApi(id, status, details).catch(() => {});
+    showToast(`Order #${id} status updated to ${status}`);
   };
 
   const deleteOrder = (id) => {
     checkPermission();
     setOrders(prev => {
       const updated = prev.filter(o => o.id !== id);
-      pushPlatformSync({ orders: updated });
       return updated;
     });
+  };
+
+  const downloadSellerInvoice = async (id) => {
+    checkPermission();
+    const res = await downloadSellerInvoiceApi(id);
+    if (res?.success) {
+      showToast(`Tax invoice PDF downloaded for Order #${id}`);
+    } else {
+      showToast(res?.message || 'Failed to download tax invoice PDF');
+    }
   };
 
   // Promotions Actions
@@ -860,7 +1022,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
 
     setPromotions(prev => {
       const updated = [newPromo, ...prev];
-      pushPlatformSync({ promotions: updated });
       return updated;
     });
 
@@ -872,7 +1033,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setPromotions(prev => {
       const updated = prev.map(p => (p.id === id ? { ...p, ...updates } : p));
-      pushPlatformSync({ promotions: updated });
       return updated;
     });
   };
@@ -881,7 +1041,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setPromotions(prev => {
       const updated = prev.filter(p => p.id !== id);
-      pushPlatformSync({ promotions: updated });
       return updated;
     });
     deletePromotionApi(id).catch(() => {});
@@ -891,7 +1050,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setPromotions(prev => {
       const updated = prev.map(p => (p.id === id ? { ...p, status: p.status === 'active' ? 'expired' : 'active' } : p));
-      pushPlatformSync({ promotions: updated });
       return updated;
     });
     togglePromotionStatusApi(id).catch(() => {});
@@ -916,7 +1074,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     };
     setSchoolOrders(prev => {
       const updated = [newReq, ...prev];
-      pushPlatformSync({ schoolOrders: updated });
       return updated;
     });
     createSchoolOrderApi(newReq).catch(() => {});
@@ -927,7 +1084,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setSchoolOrders(prev => {
       const updated = prev.map(s => (s.id === id ? { ...s, ...updates } : s));
-      pushPlatformSync({ schoolOrders: updated });
       return updated;
     });
     updateSchoolOrderApi(id, updates).catch(() => {});
@@ -937,7 +1093,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setSchoolOrders(prev => {
       const updated = prev.filter(s => s.id !== id);
-      pushPlatformSync({ schoolOrders: updated });
       return updated;
     });
     deleteSchoolOrderApi(id).catch(() => {});
@@ -960,7 +1115,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     };
     setCustomers(prev => {
       const updated = [newCust, ...prev];
-      pushPlatformSync({ customers: updated });
       return updated;
     });
     return newCust;
@@ -970,7 +1124,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setCustomers(prev => {
       const updated = prev.map(c => (c.id === id ? { ...c, ...updates } : c));
-      pushPlatformSync({ customers: updated });
       return updated;
     });
   };
@@ -979,7 +1132,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     checkPermission();
     setCustomers(prev => {
       const updated = prev.filter(c => c.id !== id);
-      pushPlatformSync({ customers: updated });
       return updated;
     });
   };
@@ -988,30 +1140,28 @@ export const SellerDataProvider = ({ children, approved = true }) => {
   const approveReview = (reviewId) => {
     checkPermission();
     setReviews(prev => {
-      const updated = prev.map(r => (r.id === reviewId || String(r.id) === String(reviewId) ? { ...r, status: 'Approved', approvalStatus: 'Approved' } : r));
-      pushPlatformSync({ reviews: updated });
+      const updated = prev.map(r => (r.id === reviewId || String(r.id) === String(reviewId) || r._id === reviewId ? { ...r, status: 'Approved', approvalStatus: 'Approved' } : r));
       return updated;
     });
-    approveReviewApi(reviewId).catch(() => {});
+    approveSellerReviewApi(reviewId).catch(() => {});
   };
 
   const replyToReview = (reviewId, replyText) => {
     checkPermission();
     setReviews(prev => {
-      const updated = prev.map(r => (r.id === reviewId ? { ...r, reply: replyText } : r));
-      pushPlatformSync({ reviews: updated });
+      const updated = prev.map(r => (r.id === reviewId || r._id === reviewId ? { ...r, reply: replyText } : r));
       return updated;
     });
-    replyToReviewApi(reviewId, replyText).catch(() => {});
+    replySellerReviewApi(reviewId, replyText).catch(() => {});
   };
 
   const deleteReview = (reviewId) => {
     checkPermission();
     setReviews(prev => {
-      const updated = prev.filter(r => r.id !== reviewId);
-      pushPlatformSync({ reviews: updated });
+      const updated = prev.filter(r => r.id !== reviewId && r._id !== reviewId);
       return updated;
     });
+    deleteSellerReviewApi(reviewId).catch(() => {});
   };
 
   // Notifications Actions
@@ -1173,15 +1323,19 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         sellerUser,
         sellerStatus,
         setSellerStatus,
+        checkSellerStatus,
         submitSellerApplication,
         approveSellerApplication,
         loginSellerByPhone,
         showToast,
+        toastMessage,
         loginSeller,
         logoutSeller,
         updateSellerProfile,
         requestPayout,
         clearAllSellerData,
+        // Loading state
+        isLoadingProducts,
         // State
         products,
         orders,
@@ -1205,6 +1359,7 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         editOrder,
         updateOrderStatus,
         deleteOrder,
+        downloadSellerInvoice,
         // Promo actions
         addPromotion,
         editPromotion,

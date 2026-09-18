@@ -192,6 +192,40 @@ export default function RevenuePerformanceWidget() {
 
   const totalFilteredRev = chartData.reduce((acc, c) => acc + c.rev, 0);
   const maxSlotRev = Math.max(...chartData.map(c => c.rev), 1);
+
+  // Dynamic SVG Line Trend Chart path computation
+  const linePoints = useMemo(() => {
+    if (!chartData || chartData.length === 0) return [];
+    const n = chartData.length;
+    return chartData.map((d, i) => {
+      const x = n > 1 ? 30 + (i / (n - 1)) * 440 : 250;
+      const ratio = maxSlotRev > 0 ? d.rev / maxSlotRev : 0;
+      const y = 125 - ratio * 95;
+      return { x, y, label: d.label, rev: d.rev, val: d.val };
+    });
+  }, [chartData, maxSlotRev]);
+
+  const linePathD = useMemo(() => {
+    if (linePoints.length === 0) return '';
+    if (linePoints.length === 1) return `M 30 ${linePoints[0].y} L 470 ${linePoints[0].y}`;
+    return linePoints.reduce((acc, pt, i) => {
+      if (i === 0) return `M ${pt.x} ${pt.y}`;
+      const prev = linePoints[i - 1];
+      const cx1 = prev.x + (pt.x - prev.x) / 2;
+      const cy1 = prev.y;
+      const cx2 = prev.x + (pt.x - prev.x) / 2;
+      const cy2 = pt.y;
+      return `${acc} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${pt.x} ${pt.y}`;
+    }, '');
+  }, [linePoints]);
+
+  const fillPathD = useMemo(() => {
+    if (linePoints.length === 0) return '';
+    const firstX = linePoints[0].x;
+    const lastX = linePoints[linePoints.length - 1].x;
+    return `${linePathD} L ${lastX} 135 L ${firstX} 135 Z`;
+  }, [linePathD, linePoints]);
+
   const peakSlot = useMemo(() => {
     if (totalFilteredRev === 0) return null;
     return chartData.reduce((max, d) => d.rev > max.rev ? d : max, chartData[0]);
@@ -414,28 +448,64 @@ export default function RevenuePerformanceWidget() {
                   No sales recorded in database for this range.
                 </div>
               ) : (
-                <svg className="w-full h-full overflow-visible" viewBox="0 0 500 150">
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 500 160">
                   <defs>
                     <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#0f766e" stopOpacity="0.4" />
                       <stop offset="100%" stopColor="#0f766e" stopOpacity="0.0" />
                     </linearGradient>
                   </defs>
-                  <path
-                    d="M 0 110 Q 80 40, 160 80 T 320 30 T 500 60 L 500 150 L 0 150 Z"
-                    fill="url(#lineGrad)"
-                  />
-                  <path
-                    d="M 0 110 Q 80 40, 160 80 T 320 30 T 500 60"
-                    fill="none"
-                    stroke="#0f766e"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                  />
-                  {[
-                    [0, 110], [80, 40], [160, 80], [240, 50], [320, 30], [400, 70], [500, 60]
-                  ].map(([x, y], idx) => (
-                    <circle key={idx} cx={x} cy={y} r="5" className="fill-brand-yellow stroke-brand-teal stroke-2" />
+                  {fillPathD && (
+                    <path
+                      d={fillPathD}
+                      fill="url(#lineGrad)"
+                    />
+                  )}
+                  {linePathD && (
+                    <path
+                      d={linePathD}
+                      fill="none"
+                      stroke="#0f766e"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                    />
+                  )}
+                  {linePoints.map((pt, idx) => (
+                    <g key={idx} className="group/pt cursor-pointer">
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r="5.5"
+                        className="fill-brand-yellow stroke-brand-teal stroke-2 hover:r-7 transition-all"
+                      />
+                      <text
+                        x={pt.x}
+                        y="152"
+                        textAnchor="middle"
+                        className="text-[10px] font-bold fill-gray-500"
+                      >
+                        {pt.label}
+                      </text>
+                      {/* Interactive hover tooltip */}
+                      <g className="opacity-0 group-hover/pt:opacity-100 transition-opacity pointer-events-none z-30">
+                        <rect
+                          x={Math.max(5, Math.min(395, pt.x - 50))}
+                          y={Math.max(2, pt.y - 30)}
+                          width="100"
+                          height="22"
+                          rx="5"
+                          className="fill-gray-900 shadow-md"
+                        />
+                        <text
+                          x={Math.max(55, Math.min(445, pt.x))}
+                          y={Math.max(16, pt.y - 15)}
+                          textAnchor="middle"
+                          className="text-[10px] font-bold fill-white"
+                        >
+                          ₹{pt.rev.toLocaleString('en-IN')} ({pt.val} items)
+                        </text>
+                      </g>
+                    </g>
                   ))}
                 </svg>
               )}

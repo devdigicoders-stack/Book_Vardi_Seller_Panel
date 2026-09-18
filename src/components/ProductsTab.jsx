@@ -28,6 +28,7 @@ import {
 import { useSellerData } from '../context/SellerDataContext';
 import BulkUpdateModal from './BulkUpdateModal';
 import ImageUploadDropzone from './ImageUploadDropzone';
+import SellerProductFormPage from './SellerProductFormPage';
 
 const CATEGORIES = [
   { id: 'all', label: 'All Categories' },
@@ -42,16 +43,18 @@ const CATEGORIES = [
 ];
 
 export default function ProductsTab() {
-  const { products, addProduct, editProduct, toggleProductStatus, deleteProduct, isApproved } = useSellerData();
+  const { isLoadingProducts, products, addProduct, editProduct, toggleProductStatus, deleteProduct, isApproved } = useSellerData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all'); // all | in_stock | low_stock | out_of_stock
   const [approvalFilter, setApprovalFilter] = useState('all'); // all | Approved | Pending | Rejected
   const [sortBy, setSortBy] = useState('newest');
 
+  // Page view mode: 'catalog' | 'form'
+  const [viewMode, setViewMode] = useState('catalog');
+
   // Modals state
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [deletingProductId, setDeletingProductId] = useState(null);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
@@ -59,125 +62,40 @@ export default function ProductsTab() {
   const [errorMsg, setErrorMsg] = useState('');
   const stockInputRef = useRef(null);
 
-  // Form State for Add / Edit
-  const [formData, setFormData] = useState({
-    name: '',
-    subtitle: '',
-    category: 'uniforms',
-    price: '',
-    originalPrice: '',
-    discountBadge: 'NEW',
-    stockQuantity: 50,
-    sizes: 'S, M, L, XL',
-    colors: 'Navy Blue, White',
-    gender: 'Unisex',
-    image: '',
-    images: [],
-    description: '',
-    sku: ''
-  });
-
   const openAddModal = () => {
     setErrorMsg('');
-    const defaultImg = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80';
-    setFormData({
-      name: '',
-      subtitle: '',
-      category: 'uniforms',
-      price: '',
-      originalPrice: '',
-      discountBadge: 'NEW',
-      stockQuantity: 50,
-      sizes: 'S, M, L, XL',
-      colors: 'Navy Blue, White',
-      gender: 'Unisex',
-      image: defaultImg,
-      images: [defaultImg],
-      description: 'Authentic school product made with premium materials.',
-      sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`
-    });
-    setIsAddModalOpen(true);
+    setEditingProduct(null);
+    setViewMode('form');
   };
 
   React.useEffect(() => {
     const handleOpen = () => openAddModal();
     window.addEventListener('openAddProductModal', handleOpen);
-    return () => window.removeEventListener('openAddProductModal', handleOpen);
+    window.addEventListener('openAddProductModalInternal', handleOpen);
+    return () => {
+      window.removeEventListener('openAddProductModal', handleOpen);
+      window.removeEventListener('openAddProductModalInternal', handleOpen);
+    };
   }, []);
 
-  const openEditModal = (p, options = {}) => {
+  const openEditModal = (p) => {
     setErrorMsg('');
     setEditingProduct(p);
-    const prodImages = Array.isArray(p.images) && p.images.length > 0 
-      ? p.images 
-      : (p.image ? [p.image] : []);
-    const stockValue = options.forcePositiveStock && Number(p.stockQuantity ?? 0) <= 0 ? 1 : (p.stockQuantity ?? (p.inStock ? 50 : 0));
-
-    setFormData({
-      name: p.name || '',
-      subtitle: p.subtitle || '',
-      category: p.category || 'uniforms',
-      price: p.price ?? '',
-      originalPrice: p.originalPrice ?? '',
-      discountBadge: p.discountBadge || '',
-      stockQuantity: stockValue,
-      sizes: Array.isArray(p.sizes) ? p.sizes.join(', ') : (p.sizes || 'S, M, L'),
-      colors: Array.isArray(p.colors) ? p.colors.join(', ') : (p.colors || 'Navy Blue'),
-      gender: p.gender || 'Unisex',
-      image: prodImages[0] || p.image || '',
-      images: prodImages,
-      description: p.description || '',
-      sku: p.sku || `SKU-${p.id}`
-    });
-
-    if (options.focusStock) {
-      setTimeout(() => {
-        stockInputRef.current?.focus();
-        stockInputRef.current?.select();
-      }, 80);
-    }
+    setViewMode('form');
   };
 
-  const handleSaveProduct = (e) => {
-    e.preventDefault();
-    setErrorMsg('');
-
+  const handleSaveProduct = async (payload) => {
     try {
-      if (!formData.name.trim()) {
-        setErrorMsg('Product name is required.');
-        return;
-      }
-      if (!formData.price || Number(formData.price) <= 0) {
-        setErrorMsg('Product price must be greater than ₹0.');
-        return;
-      }
-
-      const imagesList = (formData.images && formData.images.length > 0)
-        ? formData.images
-        : (formData.image ? [formData.image] : []);
-      const primaryImg = imagesList[0] || formData.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80';
-
-      const payload = {
-        ...formData,
-        image: primaryImg,
-        images: imagesList,
-        price: Number(formData.price),
-        originalPrice: Number(formData.originalPrice) || Math.round(Number(formData.price) * 1.25),
-        stockQuantity: Number(formData.stockQuantity) || 0,
-        inStock: Number(formData.stockQuantity) > 0,
-        sizes: formData.sizes.split(',').map(s => s.trim()).filter(Boolean),
-        colors: formData.colors.split(',').map(c => c.trim()).filter(Boolean)
-      };
-
       if (editingProduct) {
-        editProduct(editingProduct.id, payload);
-        setEditingProduct(null);
+        await editProduct(editingProduct.id || editingProduct._id, payload);
       } else {
-        addProduct(payload);
-        setIsAddModalOpen(false);
+        await addProduct(payload);
       }
+      setViewMode('catalog');
+      setEditingProduct(null);
     } catch (err) {
-      setErrorMsg(err.message);
+      console.error('Failed to save product:', err);
+      throw err;
     }
   };
 
@@ -230,12 +148,28 @@ export default function ProductsTab() {
 
       return matchesSearch && matchesCategory && matchesStock && matchesApproval;
     }).sort((a, b) => {
-      if (sortBy === 'price_asc') return a.price - b.price;
-      if (sortBy === 'price_desc') return b.price - a.price;
-      if (sortBy === 'stock_desc') return (b.stockQuantity ?? 50) - (a.stockQuantity ?? 50);
-      return b.id - a.id;
+      if (sortBy === 'price_asc') return (a.price || 0) - (b.price || 0);
+      if (sortBy === 'price_desc') return (b.price || 0) - (a.price || 0);
+      if (sortBy === 'stock_desc') return (b.stockQuantity ?? b.stock ?? 0) - (a.stockQuantity ?? a.stock ?? 0);
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : (typeof a.id === 'number' ? a.id : 0);
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : (typeof b.id === 'number' ? b.id : 0);
+      if (dateA !== dateB) return dateB - dateA;
+      return String(b.id || b._id || '').localeCompare(String(a.id || a._id || ''));
     });
   }, [products, searchTerm, selectedCategory, stockFilter, approvalFilter, sortBy]);
+
+  if (viewMode === 'form') {
+    return (
+      <SellerProductFormPage
+        product={editingProduct}
+        onSave={handleSaveProduct}
+        onBack={() => {
+          setViewMode('catalog');
+          setEditingProduct(null);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -297,7 +231,7 @@ export default function ProductsTab() {
       )}
 
       {/* Quick Approval Status Filter Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar scrollbar-none">
         <button
           type="button"
           onClick={() => setApprovalFilter('all')}
@@ -417,7 +351,7 @@ export default function ProductsTab() {
 
       {/* Products Table */}
       <div className="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto no-scrollbar scrollbar-none">
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 text-gray-600 uppercase font-semibold tracking-wider border-b border-gray-100">
               <tr>
@@ -432,7 +366,16 @@ export default function ProductsTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredProducts.length === 0 ? (
+              {isLoadingProducts ? (
+                <tr>
+                  <td colSpan="8" className="py-16 text-center text-gray-500">
+                    <div className="flex flex-col items-center justify-center space-y-3">
+                      <div className="w-10 h-10 border-4 border-teal-700 border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-xs font-bold text-teal-800">Fetching products directly from database...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="py-14 text-center text-gray-500">
                     <Package size={44} className="mx-auto text-gray-300 mb-3" />
@@ -508,11 +451,22 @@ export default function ProductsTab() {
                           {p.originalPrice && p.originalPrice > p.price && (
                             <div className="text-[10px] text-gray-400 line-through">₹{p.originalPrice}</div>
                           )}
-                          {p.discountBadge && (
-                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">
-                              {p.discountBadge}
+                          <div className="flex flex-col gap-0.5 mt-0.5">
+                            {p.discountBadge && (
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">
+                                {p.discountBadge}
+                              </span>
+                            )}
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${
+                              p.paymentMethodAllowed === 'Online_Only'
+                                ? 'bg-purple-50 text-purple-900 border-purple-200'
+                                : p.paymentMethodAllowed === 'COD_Only'
+                                ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                : 'bg-teal-50 text-teal-900 border-teal-200'
+                            }`}>
+                              {p.paymentMethodAllowed === 'Online_Only' ? '⚡ Online Only' : p.paymentMethodAllowed === 'COD_Only' ? '💵 COD Only' : '💳 Online & COD'}
                             </span>
-                          )}
+                          </div>
                         </td>
 
                         {/* Stock Units */}
@@ -613,204 +567,6 @@ export default function ProductsTab() {
         </div>
       </div>
 
-      {/* Add / Edit Product Modal */}
-      {(isAddModalOpen || editingProduct) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
-            
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-              <h3 className="font-bold text-gray-900 text-base">
-                {editingProduct ? 'Edit Product Details' : 'Add New Product'}
-              </h3>
-              <button
-                onClick={() => { setIsAddModalOpen(false); setEditingProduct(null); }}
-                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveProduct} className="p-6 overflow-y-auto space-y-4 text-xs">
-              
-              {errorMsg && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
-                  <AlertCircle size={15} /> {errorMsg}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Product Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g. Navy Blue Winter Blazer"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Subtitle / Highlights</label>
-                  <input
-                    type="text"
-                    value={formData.subtitle}
-                    onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
-                    placeholder="e.g. 100% Wool • Class 6-10"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Category *</label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  >
-                    {CATEGORIES.filter(c => c.id !== 'all').map(c => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Gender</label>
-                  <select
-                    value={formData.gender}
-                    onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  >
-                    <option value="Unisex">Unisex</option>
-                    <option value="Boys">Boys</option>
-                    <option value="Girls">Girls</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Selling Price (₹) *</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    placeholder="949"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">MRP / Original Price (₹)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formData.originalPrice}
-                    onChange={(e) => setFormData({ ...formData, originalPrice: e.target.value })}
-                    placeholder="1299"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Stock Quantity Units</label>
-                  <input
-                    ref={stockInputRef}
-                    type="number"
-                    min="1"
-                    value={formData.stockQuantity}
-                    onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })}
-                    placeholder="50"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Discount Badge</label>
-                  <input
-                    type="text"
-                    value={formData.discountBadge}
-                    onChange={(e) => setFormData({ ...formData, discountBadge: e.target.value })}
-                    placeholder="25% OFF or BESTSELLER"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Available Sizes (Comma-separated)</label>
-                  <input
-                    type="text"
-                    value={formData.sizes}
-                    onChange={(e) => setFormData({ ...formData, sizes: e.target.value })}
-                    placeholder="S (32), M (34), L (36), XL (38)"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Available Colors</label>
-                  <input
-                    type="text"
-                    value={formData.colors}
-                    onChange={(e) => setFormData({ ...formData, colors: e.target.value })}
-                    placeholder="Navy Blue, White, Grey"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-gray-700 block text-xs">
-                  Product Photos (Drag & Drop Multiple Images) *
-                </label>
-                <ImageUploadDropzone
-                  images={formData.images || []}
-                  onChange={(newImgs) => {
-                    setFormData({
-                      ...formData,
-                      images: newImgs,
-                      image: newImgs[0] || ''
-                    });
-                  }}
-                  maxImages={8}
-                  helperText="Drag & drop product photos here, or browse files"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold text-gray-700">Product Description</label>
-                <textarea
-                  rows="2"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Detailed material, school compliance, and wash care instructions..."
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-teal-600 focus:outline-none"
-                ></textarea>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => { setIsAddModalOpen(false); setEditingProduct(null); }}
-                  className="px-4 py-2 font-semibold text-gray-600 hover:bg-gray-100 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs"
-                >
-                  {editingProduct ? 'Update Product' : 'Save Product'}
-                </button>
-              </div>
-
-            </form>
-
-          </div>
-        </div>
-      )}
-
       {/* Delete Confirmation Modal */}
       {deletingProductId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
@@ -900,7 +656,7 @@ export default function ProductsTab() {
                     onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=300&auto=format&fit=crop&q=80'; }}
                   />
                   {Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images.length > 1 && (
-                    <div className="flex gap-1.5 max-w-[120px] overflow-x-auto pb-1">
+                    <div className="flex gap-1.5 max-w-[120px] overflow-x-auto pb-1 no-scrollbar scrollbar-none">
                       {selectedProductForDetail.images.map((img, idx) => (
                         <button
                           key={idx}
@@ -967,7 +723,7 @@ export default function ProductsTab() {
                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <span className="block text-[10px] font-bold uppercase text-gray-400">Marketplace Rating</span>
                   <span className="text-sm font-extrabold text-amber-700 flex items-center gap-1 mt-0.5">
-                    ★ {selectedProductForDetail.rating || 5.0} ({selectedProductForDetail.reviewsCount || 0})
+                    ★ {selectedProductForDetail.rating ?? 0} ({selectedProductForDetail.reviewsCount || 0})
                   </span>
                 </div>
 

@@ -1,9 +1,40 @@
-const API_BASE_URL = 'http://localhost:5000/api/seller';
+const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = `${SERVER_URL}/seller`;
 
-// Helper to get auth header
+// Helper to get auth header dynamically for whichever user is logged in
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('bv_seller_jwt_token');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
+  const token = localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  const userProfStr = localStorage.getItem('seller_user_profile') || localStorage.getItem('book_vardi_user_profile') || localStorage.getItem('bv_seller_reg_data') || localStorage.getItem('book_vardi_seller_profile');
+  let userPhone = localStorage.getItem('bv_user_phone') || localStorage.getItem('user_phone') || '';
+  let sellerId = localStorage.getItem('bv_seller_id') || localStorage.getItem('seller_id') || '';
+
+  if (userProfStr) {
+    try {
+      const u = JSON.parse(userProfStr);
+      if (!userPhone) userPhone = u.phone || u.sellerPhone || u.mobile || u.registeredMobile || '';
+      if (!sellerId) sellerId = u.id || u._id || u.sellerId || '';
+    } catch (e) {}
+  }
+
+  return {
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(userPhone ? { 'x-user-phone': userPhone } : {}),
+    ...(sellerId ? { 'x-seller-id': sellerId } : {})
+  };
+};
+
+// Central Request Logger Helper Function
+const loggedFetch = async (url, options = {}) => {
+  const method = options.method || 'GET';
+  console.log(`🌐 [FRONTEND API OUTGOING] ${method} ${url}`, options.body ? options.body : '');
+  try {
+    const res = await fetch(url, options);
+    console.log(`📥 [FRONTEND API RESPONSE] ${res.status} ${res.statusText} from ${method} ${url}`);
+    return res;
+  } catch (err) {
+    console.error(`❌ [FRONTEND API NETWORK ERROR] ${method} ${url}:`, err);
+    throw err;
+  }
 };
 
 // ==========================================
@@ -11,7 +42,7 @@ const getAuthHeaders = () => {
 // ==========================================
 export const sendPhoneOtpApi = async (phone) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/send-otp`, {
+    const res = await loggedFetch(`${API_BASE_URL}/auth/send-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone })
@@ -24,7 +55,7 @@ export const sendPhoneOtpApi = async (phone) => {
 
 export const verifyPhoneOtpApi = async (phone, otp) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
+    const res = await loggedFetch(`${API_BASE_URL}/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone, otp })
@@ -41,7 +72,22 @@ export const verifyPhoneOtpApi = async (phone, otp) => {
 
 export const submitSellerApplicationApi = async (formData) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/register`, {
+    const token = localStorage.getItem('bv_seller_jwt_token');
+    if (token) {
+      const updateRes = await loggedFetch(`${API_BASE_URL}/auth/application`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(formData)
+      });
+      if (updateRes.ok) {
+        return await updateRes.json();
+      }
+    }
+
+    const res = await loggedFetch(`${API_BASE_URL}/register`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -55,12 +101,13 @@ export const submitSellerApplicationApi = async (formData) => {
   }
 };
 
-export const fetchSellerStatusApi = async () => {
+export const fetchSellerStatusApi = async (phone) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/status`, {
+    const url = phone ? `${API_BASE_URL}/auth/status?phone=${encodeURIComponent(phone)}` : `${API_BASE_URL}/auth/status`;
+    const res = await loggedFetch(url, {
       headers: getAuthHeaders()
     });
-    if (!res.ok) throw new Error('Network response error');
+    if (!res.ok) return null;
     return await res.json();
   } catch (error) {
     return null;
@@ -69,7 +116,7 @@ export const fetchSellerStatusApi = async () => {
 
 export const adminApproveTestApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/admin-approve-test`, {
+    const res = await loggedFetch(`${API_BASE_URL}/auth/admin-approve-test`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -87,7 +134,7 @@ export const adminApproveTestApi = async () => {
 // ==========================================
 export const fetchSellerProductsApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/products`, {
+    const res = await loggedFetch(`${API_BASE_URL}/products`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -99,7 +146,7 @@ export const fetchSellerProductsApi = async () => {
 
 export const fetchSellerCategoriesApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/products/categories`, {
+    const res = await loggedFetch(`${API_BASE_URL}/products/categories`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -111,7 +158,7 @@ export const fetchSellerCategoriesApi = async () => {
 
 export const fetchSellerCustomersApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/customers`, {
+    const res = await loggedFetch(`${API_BASE_URL}/customers`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -123,7 +170,7 @@ export const fetchSellerCustomersApi = async () => {
 
 export const createSellerProductApi = async (productData) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/products`, {
+    const res = await loggedFetch(`${API_BASE_URL}/products`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -139,7 +186,7 @@ export const createSellerProductApi = async (productData) => {
 
 export const updateSellerProductApi = async (id, updates) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/products/${id}`, {
+    const res = await loggedFetch(`${API_BASE_URL}/products/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -155,7 +202,7 @@ export const updateSellerProductApi = async (id, updates) => {
 
 export const deleteSellerProductApi = async (id) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/products/${id}`, {
+    const res = await loggedFetch(`${API_BASE_URL}/products/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -167,7 +214,7 @@ export const deleteSellerProductApi = async (id) => {
 
 export const updateStockApi = async (id, stockQuantity) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/inventory/${id}/stock`, {
+    const res = await loggedFetch(`${API_BASE_URL}/inventory/${id}/stock`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -186,7 +233,7 @@ export const updateStockApi = async (id, stockQuantity) => {
 // ==========================================
 export const fetchSellerOrdersApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/orders`, {
+    const res = await loggedFetch(`${API_BASE_URL}/orders`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -196,15 +243,15 @@ export const fetchSellerOrdersApi = async () => {
   }
 };
 
-export const updateOrderStatusApi = async (orderId, status) => {
+export const updateOrderStatusApi = async (orderId, status, details = {}) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
+    const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/status`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders()
       },
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ status, ...details })
     });
     return await res.json();
   } catch (error) {
@@ -212,9 +259,31 @@ export const updateOrderStatusApi = async (orderId, status) => {
   }
 };
 
+export const downloadSellerInvoiceApi = async (orderId) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/invoice`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Failed to download tax invoice PDF');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Tax_Invoice_${orderId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    return { success: true };
+  } catch (error) {
+    console.error('Download invoice error:', error);
+    return { success: false, message: error.message };
+  }
+};
+
 export const fetchSchoolOrdersApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/school-orders`, {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -226,7 +295,7 @@ export const fetchSchoolOrdersApi = async () => {
 
 export const createSchoolOrderApi = async (data) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/school-orders`, {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -242,7 +311,7 @@ export const createSchoolOrderApi = async (data) => {
 
 export const updateSchoolOrderApi = async (id, updates) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/school-orders/${id}`, {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -258,7 +327,7 @@ export const updateSchoolOrderApi = async (id, updates) => {
 
 export const deleteSchoolOrderApi = async (id) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/school-orders/${id}`, {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -273,7 +342,7 @@ export const deleteSchoolOrderApi = async (id) => {
 // ==========================================
 export const fetchPromotionsApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/promotions`, {
+    const res = await loggedFetch(`${API_BASE_URL}/promotions`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -285,7 +354,7 @@ export const fetchPromotionsApi = async () => {
 
 export const createPromotionApi = async (promoData) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/promotions`, {
+    const res = await loggedFetch(`${API_BASE_URL}/promotions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -301,7 +370,7 @@ export const createPromotionApi = async (promoData) => {
 
 export const deletePromotionApi = async (id) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/promotions/${id}`, {
+    const res = await loggedFetch(`${API_BASE_URL}/promotions/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -313,7 +382,7 @@ export const deletePromotionApi = async (id) => {
 
 export const togglePromotionStatusApi = async (id) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/promotions/${id}/status`, {
+    const res = await loggedFetch(`${API_BASE_URL}/promotions/${id}/status`, {
       method: 'PATCH',
       headers: getAuthHeaders()
     });
@@ -328,7 +397,7 @@ export const togglePromotionStatusApi = async (id) => {
 // ==========================================
 export const fetchSellerWalletApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/wallet`, {
+    const res = await loggedFetch(`${API_BASE_URL}/wallet`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -340,7 +409,7 @@ export const fetchSellerWalletApi = async () => {
 
 export const requestPayoutApi = async (amount, bankDetails) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/payout-request`, {
+    const res = await loggedFetch(`${API_BASE_URL}/payout-request`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -354,55 +423,14 @@ export const requestPayoutApi = async (amount, bankDetails) => {
   }
 };
 
-// ==========================================
-// 6. Reviews & Ratings APIs
-// ==========================================
-export const fetchSellerReviewsApi = async () => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/reviews`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('API Error');
-    return await res.json();
-  } catch (error) {
-    return null;
-  }
-};
 
-export const approveReviewApi = async (id) => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/reviews/${id}/approve`, {
-      method: 'PATCH',
-      headers: getAuthHeaders()
-    });
-    return await res.json();
-  } catch (error) {
-    return { success: false, message: error.message };
-  }
-};
-
-export const replyToReviewApi = async (id, replyText) => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/reviews/${id}/reply`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders()
-      },
-      body: JSON.stringify({ replyText })
-    });
-    return await res.json();
-  } catch (error) {
-    return { success: false, message: error.message };
-  }
-};
 
 // ==========================================
 // 7. Profile & Settings APIs
 // ==========================================
 export const fetchSellerProfileApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/profile`, {
+    const res = await loggedFetch(`${API_BASE_URL}/profile`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -414,7 +442,7 @@ export const fetchSellerProfileApi = async () => {
 
 export const updateSellerProfileApi = async (updates) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/profile`, {
+    const res = await loggedFetch(`${API_BASE_URL}/profile`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -430,7 +458,7 @@ export const updateSellerProfileApi = async (updates) => {
 
 export const fetchSellerSettingsApi = async () => {
   try {
-    const res = await fetch(`${API_BASE_URL}/settings`, {
+    const res = await loggedFetch(`${API_BASE_URL}/settings`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('API Error');
@@ -442,13 +470,72 @@ export const fetchSellerSettingsApi = async () => {
 
 export const updateSellerSettingsApi = async (updates) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/settings`, {
+    const res = await loggedFetch(`${API_BASE_URL}/settings`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders()
       },
       body: JSON.stringify(updates)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+// ==========================================
+// Review Management APIs
+// ==========================================
+export const fetchSellerReviewsApi = async () => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/reviews/seller`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('API Error');
+    return await res.json();
+  } catch (error) {
+    return [];
+  }
+};
+
+export const approveSellerReviewApi = async (id) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/reviews/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ status: 'approved' })
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const replySellerReviewApi = async (id, replyText) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/reviews/${id}/reply`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ replyText })
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const deleteSellerReviewApi = async (id) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/reviews/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
     });
     return await res.json();
   } catch (error) {

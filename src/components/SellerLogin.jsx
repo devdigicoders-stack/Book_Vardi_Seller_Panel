@@ -14,11 +14,12 @@ import {
   X
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import { sendPhoneOtpApi } from '../utils/api';
 import SellerRegistrationModal from './SellerRegistrationModal';
 
 export default function SellerLogin() {
   const { loginSellerByPhone } = useSellerData();
-  const [phone, setPhone] = useState('9876543210');
+  const [phone, setPhone] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [mobileOtp, setMobileOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,40 +28,54 @@ export default function SellerLogin() {
   const [topCenterError, setTopCenterError] = useState(null);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
 
-  const handleSendOtp = (e) => {
+  const handleSendOtp = async (e) => {
     e.preventDefault();
     setTopCenterError(null);
 
-    const result = loginSellerByPhone(phone);
-    if (!result.success) {
-      setTopCenterError(result.message);
-      return;
-    }
-
-    setOtpSent(true);
-    setMobileOtp('123456');
-  };
-
-  const handleVerifyOtpAndLogin = (e) => {
-    e.preventDefault();
-    if (!mobileOtp || mobileOtp.trim() !== '123456') {
-      setTopCenterError('Invalid OTP code. Please enter testing code 123456.');
+    const cleanPhone = (phone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 8) {
+      setTopCenterError('Please enter a valid seller mobile phone number.');
       return;
     }
 
     setLoading(true);
-    setTimeout(() => {
-      loginSellerByPhone(phone);
+    try {
+      await sendPhoneOtpApi(cleanPhone);
+      setOtpSent(true);
+      setMobileOtp('');
+    } catch (err) {
+      setTopCenterError(err.message || 'Failed to send login OTP.');
+    } finally {
       setLoading(false);
-    }, 400);
+    }
+  };
+
+  const handleVerifyOtpAndLogin = async (e) => {
+    e.preventDefault();
+    setTopCenterError(null);
+
+    if (!mobileOtp || mobileOtp.trim().length < 4) {
+      setTopCenterError('Please enter the 6-digit OTP verification code.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await loginSellerByPhone(phone, mobileOtp.trim());
+      if (!result || !result.success) {
+        setTopCenterError(result?.message || 'Invalid OTP code. Please enter testing code 123456.');
+      }
+    } catch (err) {
+      setTopCenterError(err.message || 'OTP verification failed.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleQuickLogin = (customPhone) => {
     setPhone(customPhone);
-    const result = loginSellerByPhone(customPhone);
-    if (!result.success) {
-      setTopCenterError(result.message);
-    }
+    setOtpSent(true);
+    setMobileOtp('123456');
   };
 
   return (
@@ -196,31 +211,17 @@ export default function SellerLogin() {
           )}
 
           {/* Registration Section */}
-          <div className="mt-6 pt-5 border-t border-gray-100 text-center space-y-3">
+          <div className="mt-6 pt-5 border-t border-gray-100 text-center">
             <p className="text-xs text-gray-600 font-medium">
-              Don't have an authorized seller account yet?
+              Don't have a seller account yet?{' '}
+              <button
+                type="button"
+                onClick={() => setIsRegisterOpen(true)}
+                className="font-extrabold text-brand-teal hover:text-brand-pink underline underline-offset-4 cursor-pointer transition-colors"
+              >
+                Register here
+              </button>
             </p>
-            <button
-              type="button"
-              onClick={() => setIsRegisterOpen(true)}
-              className="w-full py-2.5 px-4 rounded-xl bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-black text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer border border-brand-yellow"
-            >
-              <Store size={15} />
-              <span>Register New Seller Store (12-Step KYC)</span>
-            </button>
-          </div>
-
-          {/* Link back to Storefront */}
-          <div className="mt-5 text-center">
-            <a
-              href="http://localhost:5173"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-800 hover:text-teal-950 transition-colors"
-            >
-              <span>Back to Customer Storefront</span>
-              <ExternalLink size={12} />
-            </a>
           </div>
 
         </div>

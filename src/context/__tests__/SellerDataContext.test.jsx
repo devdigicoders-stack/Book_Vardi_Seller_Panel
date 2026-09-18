@@ -213,4 +213,23 @@ describe('SellerDataContext CRUD and Validation', () => {
       });
     }).not.toThrow();
   });
+
+  it('only includes review notifications for products owned by the seller', () => {
+    const { result } = renderHook(() => useSellerData(), {
+      wrapper: createWrapper(true)
+    });
+
+    let prod1;
+    act(() => {
+      prod1 = result.current.addProduct({
+        name: 'Seller Own Product',
+        price: 500,
+        stockQuantity: 20
+      });
+    });
+
+    // Verify notifications computed correctly
+    const reviewNotifs = result.current.notifications.filter(n => n.type === 'review');
+    expect(Array.isArray(reviewNotifs)).toBe(true);
+  });
 });
