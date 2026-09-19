@@ -119,6 +119,11 @@ export default function FinanceTab() {
       return;
     }
 
+    if (bankForm.confirmAccountNumber && bankForm.accountNumber !== bankForm.confirmAccountNumber) {
+      if (showToast) showToast('⚠️ Bank account numbers do not match. Please re-enter to confirm.');
+      return;
+    }
+
     const updatedBankDetails = {
       bankName: bankForm.bankName,
       accountHolderName: bankForm.accountHolder,
@@ -156,9 +161,21 @@ export default function FinanceTab() {
     return orders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
   }, [orders]);
 
+  // Dynamic platform commission & seller net margin
+  const commissionRate = useMemo(() => {
+    if (typeof sellerUser?.commissionPercentage === 'number') return sellerUser.commissionPercentage;
+    if (typeof sellerUser?.commissionRate === 'number') return sellerUser.commissionRate;
+    if (typeof finance?.wallet?.commissionPercentage === 'number') return finance.wallet.commissionPercentage;
+    if (typeof finance?.wallet?.commissionRate === 'number') return finance.wallet.commissionRate;
+    if (typeof finance?.commissionPercentage === 'number') return finance.commissionPercentage;
+    return 5;
+  }, [sellerUser, finance]);
+
+  const sellerPayoutPercentage = 100 - commissionRate;
+
   const netMargin = useMemo(() => {
-    return Math.round(totalGross * 0.92);
-  }, [totalGross]);
+    return Math.round(totalGross * (sellerPayoutPercentage / 100));
+  }, [totalGross, sellerPayoutPercentage]);
 
   const pendingEscrow = useMemo(() => {
     return orders
@@ -230,7 +247,7 @@ export default function FinanceTab() {
             <CreditCard className="text-teal-700" size={24} /> Finance & Bank Settlements
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Track gross sales, net seller margins (92%), GST deductions, and automated bank deposits
+            Track gross sales, net seller margins ({sellerPayoutPercentage}%), platform commission ({commissionRate}%), and automated bank deposits
           </p>
         </div>
 
@@ -266,11 +283,11 @@ export default function FinanceTab() {
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Net Seller Margin (92% Payout)</div>
+          <div className="text-[11px] font-semibold text-gray-500">Net Seller Margin ({sellerPayoutPercentage}% Payout)</div>
           <div className="text-2xl font-extrabold text-teal-800 mt-1">
             ₹{netMargin.toLocaleString('en-IN')}
           </div>
-          <div className="text-[10px] text-teal-700 mt-1">After 8% platform fee & GST</div>
+          <div className="text-[10px] text-teal-700 mt-1">After {commissionRate}% platform fee & GST</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
@@ -505,13 +522,32 @@ export default function FinanceTab() {
               <div className="space-y-1">
                 <label className="font-bold text-gray-700">Bank Account Number *</label>
                 <input
-                  type="text"
+                  type="password"
                   required
                   value={bankForm.accountNumber}
                   onChange={(e) => setBankForm({ ...bankForm, accountNumber: e.target.value })}
                   placeholder="e.g. 50200084920194"
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono focus:outline-none focus:border-teal-700"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-gray-700">Confirm Bank Account Number *</label>
+                <input
+                  type="text"
+                  required
+                  value={bankForm.confirmAccountNumber || ''}
+                  onChange={(e) => setBankForm({ ...bankForm, confirmAccountNumber: e.target.value })}
+                  placeholder="Re-enter Bank Account Number to Confirm"
+                  className={`w-full px-3 py-2 rounded-xl border font-mono focus:outline-none focus:border-teal-700 ${
+                    bankForm.confirmAccountNumber && bankForm.confirmAccountNumber !== bankForm.accountNumber
+                      ? 'border-red-500 bg-red-50/50'
+                      : 'border-gray-200'
+                  }`}
+                />
+                {bankForm.confirmAccountNumber && bankForm.confirmAccountNumber !== bankForm.accountNumber && (
+                  <p className="text-[11px] font-bold text-red-600 mt-1">⚠️ Bank account numbers do not match!</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

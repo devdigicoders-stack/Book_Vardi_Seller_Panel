@@ -20,10 +20,14 @@ import {
   Package,
   ChevronDown,
   ChevronUp,
-  UploadCloud
+  UploadCloud,
+  Crosshair,
+  Navigation,
+  Loader2
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import LocationPickerModal from './LocationPickerModal';
 import { getMediaUrl, getFileNameOnly } from '../utils/mediaUrl';
 
 const DEFAULT_12_STEP_DATA = {
@@ -89,6 +93,8 @@ export default function ProfileTab() {
     }
   }, []);
 
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
+
   const stepData = React.useMemo(() => {
     const rawPhoto = 
       sellerUser?.documents?.profilePhoto || 
@@ -111,23 +117,34 @@ export default function ProfileTab() {
       sellerName: sellerUser?.name || sellerUser?.sellerName || rawSaved?.sellerName || '',
       sellerEmail: sellerUser?.email || rawSaved?.sellerEmail || '',
       sellerPhone: sellerUser?.phone || rawSaved?.sellerPhone || '',
-      ownerFullName: sellerUser?.name || rawSaved?.ownerFullName || '',
-      ownerDesignation: sellerUser?.designation || rawSaved?.ownerDesignation || '',
+      ownerFullName: sellerUser?.ownerDetails?.ownerFullName || sellerUser?.name || rawSaved?.ownerFullName || '',
+      ownerDesignation: sellerUser?.ownerDetails?.ownerDesignation || sellerUser?.designation || rawSaved?.ownerDesignation || '',
       legalBusinessName: sellerUser?.storeName || settings?.storeName || rawSaved?.legalBusinessName || '',
       tradeName: sellerUser?.storeName || settings?.storeName || rawSaved?.tradeName || '',
       storeName: sellerUser?.storeName || settings?.storeName || rawSaved?.storeName || '',
-      ownerPan: sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.ownerPan || '',
-      businessPan: sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.businessPan || '',
-      ownerAadhaarLast4: sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : (rawSaved?.ownerAadhaarLast4 || ''),
-      gstin: sellerUser?.gstNumber || settings?.gstin || rawSaved?.gstin || '',
-      addressLine1: sellerUser?.address || rawSaved?.addressLine1 || '',
-      city: sellerUser?.city || rawSaved?.city || '',
-      state: sellerUser?.state || rawSaved?.state || '',
-      pincode: sellerUser?.pincode || rawSaved?.pincode || '',
+      yearStarted: sellerUser?.yearStarted || sellerUser?.establishedYear || rawSaved?.yearStarted || '',
+      businessType: sellerUser?.businessType || rawSaved?.businessType || 'Proprietorship',
+      annualTurnoverEstimate: sellerUser?.annualTurnoverEstimate || rawSaved?.annualTurnoverEstimate || '',
+      ownerPan: sellerUser?.ownerDetails?.ownerPan || sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.ownerPan || '',
+      businessPan: sellerUser?.businessPan || sellerUser?.documents?.businessPan || sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.businessPan || '',
+      ownerAadhaarLast4: sellerUser?.ownerDetails?.ownerAadhaarLast4 || (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : (rawSaved?.ownerAadhaarLast4 || '')),
+      gstin: sellerUser?.gstNumber || sellerUser?.gstin || rawSaved?.gstin || '',
+      msmeRegistrationNumber: sellerUser?.msmeRegistrationNumber || sellerUser?.documents?.msmeRegistrationNumber || rawSaved?.msmeRegistrationNumber || '',
+      cinNumber: sellerUser?.cinNumber || sellerUser?.documents?.cinNumber || rawSaved?.cinNumber || '',
+      hasGstExemption: sellerUser?.hasGstExemption || sellerUser?.documents?.hasGstExemption || rawSaved?.hasGstExemption || false,
+      addressLine1: sellerUser?.addressDetails?.addressLine1 || sellerUser?.addressLine1 || sellerUser?.address || rawSaved?.addressLine1 || '',
+      addressLine2: sellerUser?.addressDetails?.addressLine2 || sellerUser?.addressLine2 || sellerUser?.colony || rawSaved?.addressLine2 || rawSaved?.colony || '',
+      colony: sellerUser?.addressDetails?.addressLine2 || sellerUser?.addressLine2 || sellerUser?.colony || rawSaved?.colony || rawSaved?.addressLine2 || '',
+      landmark: sellerUser?.addressDetails?.landmark || sellerUser?.landmark || rawSaved?.landmark || '',
+      city: sellerUser?.city || sellerUser?.addressDetails?.city || rawSaved?.city || '',
+      state: sellerUser?.state || sellerUser?.addressDetails?.state || rawSaved?.state || '',
+      pincode: sellerUser?.pincode || sellerUser?.addressDetails?.pincode || rawSaved?.pincode || '',
+      country: sellerUser?.addressDetails?.country || rawSaved?.country || 'India',
       bankAccountHolder: sellerUser?.bankDetails?.accountHolderName || sellerUser?.name || rawSaved?.bankAccountHolder || '',
       bankAccountNumber: sellerUser?.bankDetails?.accountNumber || rawSaved?.bankAccountNumber || '',
       bankIfscCode: sellerUser?.bankDetails?.ifscCode || rawSaved?.bankIfscCode || '',
-      bankName: sellerUser?.bankDetails?.bankName || rawSaved?.bankName || '',
+      bankName: sellerUser?.bankDetails?.bankName || sellerUser?.bankName || rawSaved?.bankName || '',
+      bankBranch: sellerUser?.bankDetails?.branchName || sellerUser?.bankDetails?.bankBranch || rawSaved?.bankBranch || rawSaved?.branchName || '',
       addressProofDoc: rawAddressDoc,
       addressProofFileName: getFileNameOnly(rawSaved?.addressProofFileName || rawAddressDoc) || 'addressProofDoc-1789380245540-84981246.pdf',
       profilePhoto: rawPhoto,
@@ -151,9 +168,13 @@ export default function ProfileTab() {
       let finalUrl = dataUrl;
 
       try {
+        const token = localStorage.getItem('bv_seller_jwt_token');
         const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({ dataUrl, folder: 'avatars', fieldName: 'avatar' })
         });
         const data = await res.json();
@@ -198,9 +219,13 @@ export default function ProfileTab() {
       let finalUrl = dataUrl;
 
       try {
+        const token = localStorage.getItem('bv_seller_jwt_token');
         const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({ dataUrl, folder: 'documents', fieldName: 'addressProofDoc' })
         });
         const data = await res.json();
@@ -240,15 +265,23 @@ export default function ProfileTab() {
   };
 
   const [formData, setFormData] = useState({
-    name: sellerUser?.name || stepData.sellerName,
-    email: sellerUser?.email || stepData.sellerEmail,
-    phone: sellerUser?.phone || stepData.sellerPhone,
-    role: sellerUser?.role || 'Partner Merchant',
-    designation: sellerUser?.designation || stepData.ownerDesignation,
-    storeName: settings?.storeName || stepData.storeName,
-    merchantId: sellerUser?.merchantId || 'BV-SLR-8941',
-    pan: sellerUser?.pan || stepData.businessPan,
-    gstin: settings?.gstin || stepData.gstin
+    name: sellerUser?.name || stepData.sellerName || '',
+    email: sellerUser?.email || stepData.sellerEmail || '',
+    phone: sellerUser?.phone || stepData.sellerPhone || '',
+    role: sellerUser?.role || 'Seller',
+    designation: sellerUser?.ownerDetails?.ownerDesignation || sellerUser?.designation || stepData.ownerDesignation || '',
+    storeName: settings?.storeName || stepData.storeName || '',
+    merchantId: sellerUser?.merchantId || '',
+    pan: sellerUser?.ownerDetails?.ownerPan || sellerUser?.pan || stepData.businessPan || '',
+    gstin: settings?.gstin || stepData.gstin || '',
+    yearStarted: sellerUser?.yearStarted || sellerUser?.establishedYear || stepData.yearStarted || '',
+    addressLine1: sellerUser?.addressDetails?.addressLine1 || sellerUser?.addressLine1 || sellerUser?.address || stepData.addressLine1 || '',
+    addressLine2: sellerUser?.addressDetails?.addressLine2 || sellerUser?.addressLine2 || sellerUser?.colony || stepData.addressLine2 || '',
+    colony: sellerUser?.addressDetails?.addressLine2 || sellerUser?.addressLine2 || sellerUser?.colony || stepData.colony || '',
+    landmark: sellerUser?.addressDetails?.landmark || sellerUser?.landmark || stepData.landmark || '',
+    city: sellerUser?.city || stepData.city || 'Lucknow',
+    state: sellerUser?.state || stepData.state || 'Uttar Pradesh',
+    pincode: sellerUser?.pincode || stepData.pincode || ''
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -259,9 +292,35 @@ export default function ProfileTab() {
   });
   const [securityMsg, setSecurityMsg] = useState(null);
 
+  const handleSelectLocationFromMap = (loc) => {
+    const updated = {
+      addressLine1: loc.street || loc.addressLine1 || '',
+      addressLine2: loc.colony || loc.addressLine2 || '',
+      colony: loc.colony || loc.addressLine2 || '',
+      landmark: loc.landmark || '',
+      city: loc.city || '',
+      state: loc.state || '',
+      pincode: loc.pincode || '',
+      latitude: loc.lat,
+      longitude: loc.lng
+    };
+    updateSellerProfile(updated);
+    setFormData(prev => ({ ...prev, ...updated }));
+    try {
+      const saved = localStorage.getItem('bv_seller_reg_data');
+      let parsed = saved ? JSON.parse(saved) : {};
+      localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...parsed, ...updated }));
+    } catch {}
+  };
+
   const handleProfileSubmit = (e) => {
     e.preventDefault();
     updateSellerProfile(formData);
+    try {
+      const saved = localStorage.getItem('bv_seller_reg_data');
+      let parsed = saved ? JSON.parse(saved) : {};
+      localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...parsed, ...formData }));
+    } catch {}
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
   };
@@ -330,13 +389,6 @@ export default function ProfileTab() {
               <span>Quick Edit</span>
             </button>
           </div>
-
-          <button
-            onClick={logoutSeller}
-            className="px-3.5 py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <LogOut size={13} /> Sign Out
-          </button>
         </div>
       </div>
 
@@ -399,16 +451,16 @@ export default function ProfileTab() {
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Seller Full Name</span>
-                  <span className="font-bold text-gray-800">{stepData.sellerName || 'Ritesh Yadav'}</span>
+                  <span className="font-bold text-gray-800">{stepData.sellerName || sellerUser?.name || 'Not Provided'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Primary Email</span>
-                  <span className="font-bold text-gray-800">{stepData.sellerEmail || 'merchant@bookvardi.in'}</span>
+                  <span className="font-bold text-gray-800">{stepData.sellerEmail || sellerUser?.email || 'Not Provided'}</span>
                   <span className="ml-1 text-[10px] text-emerald-600 font-bold">✓ Verified</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Mobile Phone</span>
-                  <span className="font-bold text-gray-800">{stepData.sellerPhone || '+91 98765 43210'}</span>
+                  <span className="font-bold text-gray-800">{stepData.sellerPhone || sellerUser?.phone || 'Not Provided'}</span>
                   <span className="ml-1 text-[10px] text-emerald-600 font-bold">✓ OTP Verified</span>
                 </div>
                 <div>
@@ -478,19 +530,19 @@ export default function ProfileTab() {
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Legal Business Name</span>
-                  <span className="font-bold text-gray-800">{stepData.legalBusinessName || 'Vardi Education Retail Pvt Ltd'}</span>
+                  <span className="font-bold text-gray-800">{stepData.legalBusinessName || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Trade / Brand Name</span>
-                  <span className="font-bold text-gray-800">{stepData.tradeName || 'Book Vardi Student Emporium'}</span>
+                  <span className="font-bold text-gray-800">{stepData.tradeName || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Business Entity Type</span>
-                  <span className="font-bold text-gray-800">{stepData.businessType || 'Private Limited'}</span>
+                  <span className="font-bold text-gray-800">{stepData.businessType || 'N/A'}</span>
                 </div>
                 <div>
-                  <span className="block text-gray-400 font-medium text-[11px]">Year Started & Turnover</span>
-                  <span className="font-bold text-gray-800">{stepData.yearStarted || '2021'} • {stepData.annualTurnoverEstimate || '₹25L - ₹50L'}</span>
+                  <span className="block text-gray-400 font-medium text-[11px]">Year Started</span>
+                  <span className="font-bold text-gray-800">{stepData.yearStarted || 'N/A'}</span>
                 </div>
               </div>
             )}
@@ -521,32 +573,34 @@ export default function ProfileTab() {
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Signatory Full Name</span>
-                  <span className="font-bold text-gray-800">{stepData.ownerFullName || stepData.sellerName || 'Ritesh Yadav'}</span>
+                  <span className="font-bold text-gray-800">{stepData.ownerFullName || stepData.sellerName || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Designation</span>
-                  <span className="font-bold text-gray-800">{stepData.ownerDesignation || 'Director / Managing Partner'}</span>
+                  <span className="font-bold text-gray-800">{stepData.ownerDesignation || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Personal PAN</span>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="font-bold text-gray-800 font-mono">{stepData.ownerPan || 'ABCDE1234F'}</span>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewDocModal({
-                        title: 'Owner Personal PAN Document',
-                        url: stepData.ownerPanDoc || sellerUser?.documents?.panDoc,
-                        fileName: `PAN_${stepData.ownerPan || 'Document'}.pdf`
-                      })}
-                      className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Eye size={11} /> Preview
-                    </button>
+                    <span className="font-bold text-gray-800 font-mono">{stepData.ownerPan || 'N/A'}</span>
+                    {(stepData.ownerPanDoc || sellerUser?.documents?.panDoc) && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          title: 'Owner Personal PAN Document',
+                          url: stepData.ownerPanDoc || sellerUser?.documents?.panDoc,
+                          fileName: `PAN_${stepData.ownerPan || 'Document'}.pdf`
+                        })}
+                        className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye size={11} /> Preview
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Aadhaar (Last 4)</span>
-                  <span className="font-bold text-gray-800 font-mono">•••• •••• {stepData.ownerAadhaarLast4 || '8942'}</span>
+                  <span className="font-bold text-gray-800 font-mono">{stepData.ownerAadhaarLast4 ? `•••• •••• ${stepData.ownerAadhaarLast4}` : 'N/A'}</span>
                 </div>
               </div>
             )}
@@ -578,44 +632,48 @@ export default function ProfileTab() {
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Business PAN</span>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="font-bold text-gray-800 font-mono">{stepData.businessPan || 'ABCDE1234F'}</span>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewDocModal({
-                        title: 'Business PAN Document',
-                        url: stepData.businessPanDoc || sellerUser?.documents?.panDoc,
-                        fileName: `Business_PAN_${stepData.businessPan || 'Document'}.pdf`
-                      })}
-                      className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Eye size={11} /> Preview
-                    </button>
+                    <span className="font-bold text-gray-800 font-mono">{stepData.businessPan || 'N/A'}</span>
+                    {(stepData.businessPanDoc || sellerUser?.documents?.panDoc) && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          title: 'Business PAN Document',
+                          url: stepData.businessPanDoc || sellerUser?.documents?.panDoc,
+                          fileName: `Business_PAN_${stepData.businessPan || 'Document'}.pdf`
+                        })}
+                        className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye size={11} /> Preview
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">GSTIN Number</span>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="font-bold text-gray-800 font-mono">{stepData.gstin || '07AAAAA0000A1Z5'}</span>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewDocModal({
-                        title: 'GSTIN Registration Certificate',
-                        url: stepData.gstDoc || sellerUser?.documents?.gstCertificate,
-                        fileName: `GSTIN_${stepData.gstin || 'Certificate'}.pdf`
-                      })}
-                      className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Eye size={11} /> Preview
-                    </button>
+                    <span className="font-bold text-gray-800 font-mono">{stepData.gstin || (stepData.hasGstExemption ? 'GST Exempted' : 'N/A')}</span>
+                    {(stepData.gstDoc || sellerUser?.documents?.gstCertificate) && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          title: 'GSTIN Registration Certificate',
+                          url: stepData.gstDoc || sellerUser?.documents?.gstCertificate,
+                          fileName: `GSTIN_${stepData.gstin || 'Certificate'}.pdf`
+                        })}
+                        className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye size={11} /> Preview
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">MSME Udyam ID</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.msmeRegistrationNumber || 'UDYAM-DL-03-0029142'}</span>
+                  <span className="font-bold text-gray-800 font-mono">{stepData.msmeRegistrationNumber || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">CIN Registration</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.cinNumber || 'U74999DL2021PTC384192'}</span>
+                  <span className="font-bold text-gray-800 font-mono">{stepData.cinNumber || 'N/A'}</span>
                 </div>
               </div>
             )}
@@ -643,18 +701,45 @@ export default function ProfileTab() {
               {expandedSteps[5] ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
             </button>
             {expandedSteps[5] && (
-              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
-                <div className="sm:col-span-2">
-                  <span className="block text-gray-400 font-medium text-[11px]">Registered Address</span>
-                  <span className="font-bold text-gray-800">
-                    {stepData.addressLine1} {stepData.addressLine2 ? `, ${stepData.addressLine2}` : ''}
-                  </span>
+              <div className="p-5 space-y-4 text-xs">
+                {/* Live Formatted Address Preview Banner */}
+                <div className="p-3.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-extrabold text-teal-900 flex items-center gap-1.5 uppercase text-[11px]">
+                      <Navigation size={14} className="text-teal-700" /> Live Address Preview:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsMapPickerOpen(true)}
+                      className="px-3 py-1 bg-brand-teal hover:bg-brand-teal-light text-white font-bold rounded-lg text-[11px] flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                    >
+                      <MapPin size={13} /> Pick / Adjust on Map
+                    </button>
+                  </div>
+                  <p className="font-bold text-gray-800 text-xs leading-relaxed pt-0.5">
+                    {[stepData.addressLine1, stepData.colony || stepData.addressLine2, stepData.landmark, stepData.city, stepData.state].filter(Boolean).join(', ')} {stepData.pincode ? `- ${stepData.pincode}` : ''}
+                  </p>
                 </div>
-                <div>
-                  <span className="block text-gray-400 font-medium text-[11px]">City, State & Pincode</span>
-                  <span className="font-bold text-gray-800">
-                    {stepData.city || 'New Delhi'}, {stepData.state || 'Delhi'} - {stepData.pincode || '110020'}
-                  </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <span className="block text-gray-400 font-medium text-[11px]">Street / Building</span>
+                    <span className="font-bold text-gray-800">{stepData.addressLine1 || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400 font-medium text-[11px]">Colony / Area / Locality</span>
+                    <span className="font-bold text-gray-800">{stepData.colony || stepData.addressLine2 || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400 font-medium text-[11px]">Landmark</span>
+                    <span className="font-bold text-gray-800">{stepData.landmark || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-400 font-medium text-[11px]">City, State & PIN</span>
+                    <span className="font-bold text-gray-800">
+                      {stepData.city || 'Lucknow'}, {stepData.state || 'Uttar Pradesh'} - {stepData.pincode || 'N/A'}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -756,20 +841,22 @@ export default function ProfileTab() {
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Account Holder</span>
-                  <span className="font-bold text-gray-800">{stepData.bankAccountHolder || 'Vardi Education Retail Pvt Ltd'}</span>
+                  <span className="font-bold text-gray-800">{stepData.bankAccountHolder || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Bank Name & Branch</span>
-                  <span className="font-bold text-gray-800">{stepData.bankName || 'HDFC Bank Ltd'} ({stepData.bankBranch || 'Okhla'})</span>
+                  <span className="font-bold text-gray-800">
+                    {stepData.bankName || 'N/A'} {stepData.bankBranch ? `(${stepData.bankBranch})` : ''}
+                  </span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Account Number</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.bankAccountNumber || '50200084920194'}</span>
+                  <span className="font-bold text-gray-800 font-mono">{stepData.bankAccountNumber || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">IFSC & Account Type</span>
                   <span className="font-bold text-gray-800 font-mono mt-0.5 block">
-                    {stepData.bankIfscCode || 'HDFC0000240'} ({stepData.accountType || 'Current'})
+                    {stepData.bankIfscCode || 'N/A'} ({stepData.accountType || 'Current'})
                   </span>
                 </div>
               </div>
@@ -792,31 +879,27 @@ export default function ProfileTab() {
                     <span>Step 8: Store Details</span>
                     <CheckCircle2 size={15} className="text-emerald-600" />
                   </h3>
-                  <p className="text-[11px] text-gray-500">Public store name, handle, description & branding</p>
+                  <p className="text-[11px] text-gray-500">Public store name, description & branding</p>
                 </div>
               </div>
               {expandedSteps[8] ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
             </button>
             {expandedSteps[8] && (
               <div className="p-5 space-y-4 text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <span className="block text-gray-400 font-medium text-[11px]">Public Store Name</span>
-                    <span className="font-bold text-gray-800 text-sm">{stepData.storeName || 'Book Vardi Student Emporium'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-gray-400 font-medium text-[11px]">Store Handle / Slug</span>
-                    <span className="font-bold text-teal-800 font-mono">bookvardi.in/store/{stepData.storeSlug || 'book-vardi-student-emporium'}</span>
+                    <span className="font-bold text-gray-800 text-sm">{stepData.storeName || 'N/A'}</span>
                   </div>
                   <div>
                     <span className="block text-gray-400 font-medium text-[11px]">Store Tagline</span>
-                    <span className="font-semibold text-gray-700">{stepData.storeTagline || 'Certified School Uniforms & Kits'}</span>
+                    <span className="font-semibold text-gray-700">{stepData.storeTagline || 'N/A'}</span>
                   </div>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Store Bio</span>
                   <p className="text-gray-700 leading-relaxed mt-1">
-                    {stepData.storeDescription || 'Premier provider of school textbooks, uniform sets, drawing guides and geometry supplies with fast campus delivery.'}
+                    {stepData.storeDescription || 'No description provided.'}
                   </p>
                 </div>
               </div>
@@ -901,7 +984,7 @@ export default function ProfileTab() {
                 </div>
                 <div className="flex items-center gap-2 p-2.5 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200/80 font-medium">
                   <CheckCircle2 size={15} className="text-emerald-700 shrink-0" />
-                  <span>Marketplace Commission Schedule Accepted (8% Uniforms / 10% Kits)</span>
+                  <span>Marketplace Commission Schedule Accepted ({sellerUser?.commissionPercentage ?? sellerUser?.commissionRate ?? 5}% Platform Fee)</span>
                 </div>
                 <div className="flex items-center gap-2 p-2.5 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200/80 font-medium">
                   <CheckCircle2 size={15} className="text-emerald-700 shrink-0" />
@@ -1101,6 +1184,102 @@ export default function ProfileTab() {
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 font-mono text-gray-700 cursor-not-allowed"
                   />
                 </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Year Started / Established *</label>
+                  <input
+                    type="text"
+                    value={formData.yearStarted || ''}
+                    onChange={(e) => setFormData({ ...formData, yearStarted: e.target.value })}
+                    placeholder="e.g. 2018"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                  />
+                </div>
+              </div>
+
+              {/* Address Quick Edit Section */}
+              <div className="pt-3 border-t border-gray-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <MapPin size={15} className="text-teal-700" /> Business Address Details
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsMapPickerOpen(true)}
+                    className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Crosshair size={12} /> Choose on Map
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Street / Building *</label>
+                    <input
+                      type="text"
+                      value={formData.addressLine1 || ''}
+                      onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
+                      placeholder="Street / Building No."
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Colony / Area / Locality *</label>
+                    <input
+                      type="text"
+                      value={formData.colony || formData.addressLine2 || ''}
+                      onChange={(e) => setFormData({ ...formData, colony: e.target.value, addressLine2: e.target.value })}
+                      placeholder="Colony / Locality"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Landmark</label>
+                    <input
+                      type="text"
+                      value={formData.landmark || ''}
+                      onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
+                      placeholder="Near landmark"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">City *</label>
+                    <input
+                      type="text"
+                      value={formData.city || ''}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      placeholder="City"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">State *</label>
+                    <input
+                      type="text"
+                      value={formData.state || ''}
+                      onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                      placeholder="State"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Pincode *</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={formData.pincode || ''}
+                      onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                      placeholder="Pincode"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="pt-2 flex justify-end">
@@ -1108,7 +1287,7 @@ export default function ProfileTab() {
                   type="submit"
                   className="px-5 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
                 >
-                  <Save size={15} /> Save Contact Details
+                  <Save size={15} /> Save Profile & Address Details
                 </button>
               </div>
             </form>
@@ -1238,6 +1417,21 @@ export default function ProfileTab() {
         isOpen={Boolean(previewDocModal)}
         onClose={() => setPreviewDocModal(null)}
         doc={previewDocModal}
+      />
+
+      {/* Location Picker Modal */}
+      <LocationPickerModal
+        isOpen={isMapPickerOpen}
+        onClose={() => setIsMapPickerOpen(false)}
+        onSelectLocation={handleSelectLocationFromMap}
+        initialAddress={{
+          street: formData.addressLine1 || stepData.addressLine1,
+          colony: formData.colony || formData.addressLine2 || stepData.colony || stepData.addressLine2,
+          landmark: formData.landmark || stepData.landmark,
+          city: formData.city || stepData.city,
+          state: formData.state || stepData.state,
+          pincode: formData.pincode || stepData.pincode
+        }}
       />
 
     </div>

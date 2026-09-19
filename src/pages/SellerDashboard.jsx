@@ -37,7 +37,11 @@ import {
   User,
   LogOut,
   Clock,
-  Edit3
+  Edit3,
+  CheckCircle,
+  CheckCircle2,
+  RefreshCw,
+  LayoutDashboard
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import SellerRegistrationModal from '../components/SellerRegistrationModal';
@@ -53,16 +57,52 @@ const getMediaUrl = (path) => {
 export default function SellerDashboardPage({ onNavigate }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const [isDashboardUnlocked, setIsDashboardUnlocked] = useState(false);
+
   const { 
     notifications, 
     isApproved, 
     sellerStatus, 
+    checkSellerStatus,
     approveSellerApplication, 
     settings, 
     isAuthenticated, 
     sellerUser, 
-    logoutSeller 
+    logoutSeller,
+    showToast,
+    toastMessage
   } = useSellerData();
+
+  const handleCheckApprovalStatus = async () => {
+    setIsRefreshingStatus(true);
+    try {
+      if (checkSellerStatus) {
+        const latest = await checkSellerStatus();
+        if (latest === 'approved') {
+          if (showToast) showToast('🎉 Congratulations! Your seller application is APPROVED!');
+        } else {
+          if (showToast) showToast(`ℹ️ Application Status: ${latest || 'pending'}. Our onboarding team is reviewing your details.`);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsRefreshingStatus(false);
+    }
+  };
+
+  React.useEffect(() => {
+    const handleAddProductEvent = () => {
+      setActiveTab('products');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('openAddProductModalInternal'));
+      }, 100);
+    };
+
+    window.addEventListener('openAddProductModal', handleAddProductEvent);
+    return () => window.removeEventListener('openAddProductModal', handleAddProductEvent);
+  }, []);
 
   if (!isAuthenticated) {
     return <SellerLogin />;
@@ -156,6 +196,17 @@ export default function SellerDashboardPage({ onNavigate }) {
 
   return (
     <div className="relative min-h-screen">
+      {/* Top-Center Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 bg-gray-900/95 text-white rounded-2xl shadow-2xl border border-gray-700/60 backdrop-blur-md transition-all duration-300">
+          <div className="w-7 h-7 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/30">
+            <CheckCircle size={16} />
+          </div>
+          <div className="text-xs font-bold tracking-wide">
+            {toastMessage}
+          </div>
+        </div>
+      )}
       <div className={`min-h-screen bg-gray-50/50 pb-20 transition-all duration-300 ${!isSellerApproved ? 'filter blur-md opacity-40 pointer-events-none select-none' : ''}`}>
         
         {/* Header Banner */}
@@ -180,7 +231,7 @@ export default function SellerDashboardPage({ onNavigate }) {
                   )}
                 </div>
                 <h1 className="font-display text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-                  {settings?.storeName || 'Book Vardi Seller Hub'}
+                  {settings?.storeName || sellerUser?.storeName || 'Seller Hub'}
                 </h1>
               </div>
             </div>
@@ -224,7 +275,7 @@ export default function SellerDashboardPage({ onNavigate }) {
                 </div>
                 <div className="text-left hidden sm:block">
                   <div className="text-[11px] leading-tight font-bold truncate max-w-[120px]">{sellerUser?.name || 'Seller'}</div>
-                  <div className="text-[9px] text-teal-200 leading-tight truncate">{sellerUser?.role || 'Partner Merchant'}</div>
+                  <div className="text-[9px] text-teal-200 leading-tight truncate">{sellerUser?.role || 'Seller'}</div>
                 </div>
               </button>
 
@@ -276,8 +327,8 @@ export default function SellerDashboardPage({ onNavigate }) {
           <div className="flex flex-col lg:flex-row items-start gap-6">
             
             {/* Sticky Left Sidebar (Desktop) */}
-            <aside className="hidden lg:block w-64 xl:w-72 shrink-0 self-start sticky top-20 z-30">
-              <div className="bg-white rounded-2xl border border-gray-200/80 shadow-xs p-3.5 space-y-4 h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)] overflow-y-auto hide-scrollbar no-scrollbar scrollbar-none">
+            <aside className="hidden lg:block w-64 xl:w-72 shrink-0 self-start sticky top-[84px] z-30">
+              <div className="bg-white rounded-2xl border border-gray-200/80 shadow-xs p-3.5 space-y-4 max-h-[calc(100vh-100px)] overflow-y-auto hide-scrollbar no-scrollbar scrollbar-none">
                 
                 {/* Store Mini Profile */}
                 <div 
@@ -291,7 +342,7 @@ export default function SellerDashboardPage({ onNavigate }) {
                 >
                   <div className="flex items-center justify-between">
                     <div className={`font-bold text-xs truncate ${activeTab === 'profile' ? 'text-white' : 'text-teal-950'}`}>
-                      {settings?.storeName || 'Book Vardi Seller Hub'}
+                      {settings?.storeName || sellerUser?.storeName || 'Seller Hub'}
                     </div>
                     <UserCheck size={13} className={activeTab === 'profile' ? 'text-brand-yellow' : 'text-teal-600'} />
                   </div>
@@ -301,11 +352,11 @@ export default function SellerDashboardPage({ onNavigate }) {
                   <div className={`mt-2 pt-1.5 border-t flex items-center justify-between text-[10px] ${
                     activeTab === 'profile' ? 'border-white/20 text-teal-100' : 'border-teal-200/50 text-teal-900'
                   }`}>
-                    <span className="truncate max-w-[120px] font-semibold">{sellerUser?.name || 'Seller'}</span>
+                    <span className="truncate max-w-[120px] font-semibold">{sellerUser?.name || 'N/A'}</span>
                     <span className={`text-[9px] px-1.5 py-0.2 rounded font-extrabold ${
                       activeTab === 'profile' ? 'bg-white/20 text-white' : 'bg-teal-200/60 text-teal-950'
                     }`}>
-                      {sellerUser?.role || 'Partner'}
+                      {sellerUser?.role || 'Seller'}
                     </span>
                   </div>
                 </div>
@@ -373,7 +424,7 @@ export default function SellerDashboardPage({ onNavigate }) {
             </aside>
 
             {/* Main Dashboard Workspace Content */}
-            <main className="flex-1 w-full min-w-0">
+            <main className="flex-1 w-full min-w-0 min-h-[calc(100vh-100px)]">
               {renderContent()}
             </main>
 
@@ -389,11 +440,11 @@ export default function SellerDashboardPage({ onNavigate }) {
             {/* Status Accent Bar */}
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500" />
 
-            <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto mb-4 border border-amber-200/60 shadow-inner">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border shadow-inner bg-amber-100 text-amber-700 border-amber-200/60">
               <Clock size={32} className="animate-pulse" />
             </div>
 
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 mb-3">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border mb-3 bg-amber-50 text-amber-800 border-amber-200">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
               Application Status: {sellerStatus ? sellerStatus.replace('_', ' ').toUpperCase() : 'PENDING'}
             </span>
@@ -403,53 +454,52 @@ export default function SellerDashboardPage({ onNavigate }) {
             </h2>
 
             <p className="text-slate-600 text-sm mt-2 max-w-md mx-auto leading-relaxed">
-              Thank you for registering with Book Vardi! Your merchant application (<span className="font-semibold text-slate-800">{settings?.storeName || sellerUser?.name || 'Partner Store'}</span>) is currently under review by our onboarding team.
+              Thank you for registering with Book Vardi! Your merchant application (<span className="font-semibold text-slate-800">{settings?.storeName || sellerUser?.storeName || sellerUser?.name || 'Rahul Enterprices'}</span>) is currently under review by our onboarding team.
             </p>
 
-            <div className="mt-5 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-left text-xs space-y-2">
+            <div className="mt-5 p-4 rounded-2xl border text-left text-xs space-y-2 bg-slate-50 border-slate-200/80">
               <div className="flex justify-between items-center text-slate-600">
                 <span>Applicant Name:</span>
-                <span className="font-bold text-slate-800">{sellerUser?.name || 'Partner Seller'}</span>
+                <span className="font-bold text-slate-800">{sellerUser?.name || 'Rahul'}</span>
               </div>
               <div className="flex justify-between items-center text-slate-600">
                 <span>Registered Mobile:</span>
-                <span className="font-bold text-slate-800">{sellerUser?.phone || 'Verified'}</span>
+                <span className="font-bold text-slate-800">{sellerUser?.phone || '+91 3213213212'}</span>
               </div>
               <div className="flex justify-between items-center text-slate-600">
                 <span>Application State:</span>
-                <span className="font-bold text-amber-600 uppercase tracking-wide text-[11px] bg-amber-100 px-2 py-0.5 rounded-full">
-                  {sellerStatus || 'Pending Review'}
+                <span className="font-bold text-amber-600 uppercase tracking-wide text-[11px] bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                  {sellerStatus || 'pending'}
                 </span>
               </div>
             </div>
 
             <div className="mt-6 flex flex-col gap-2.5">
               <button
-                onClick={() => setIsEditModalOpen(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-teal-800 hover:bg-teal-900 text-white font-bold text-sm shadow-md transition-all cursor-pointer"
+                onClick={handleCheckApprovalStatus}
+                disabled={isRefreshingStatus}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
               >
-                <Edit3 size={16} /> Edit Application / Update Details
+                <RefreshCw size={14} className={isRefreshingStatus ? 'animate-spin' : ''} />
+                {isRefreshingStatus ? 'Checking Status with Server...' : 'Check Approval Status'}
               </button>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    if (onNavigate) onNavigate('home');
-                    else window.location.href = 'http://localhost:5173';
-                  }}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
-                >
-                  <ArrowLeft size={14} /> Back to Storefront
-                </button>
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-teal-800 hover:bg-teal-900 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer"
+              >
+                <Edit3 size={15} /> Edit Application / Update Details
+              </button>
 
-                <button
-                  onClick={approveSellerApplication}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs border border-amber-300/80 transition-all cursor-pointer"
-                  title="Testing shortcut to simulate admin approval"
-                >
-                  <ShieldCheck size={14} className="text-amber-600" /> Instant Admin Approve (Testing)
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  if (onNavigate) onNavigate('home');
+                  else window.location.href = 'http://localhost:5173';
+                }}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
+              >
+                <ArrowLeft size={14} /> Back to Storefront
+              </button>
             </div>
           </div>
         </div>

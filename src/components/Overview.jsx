@@ -5,31 +5,41 @@ import { useSellerData } from '../context/SellerDataContext';
 export default function Overview() {
   const { products = [], orders = [], schoolOrders = [], notifications = [], sellerUser } = useSellerData();
 
-  const totalRevenue = orders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+  const validOrders = orders.filter(o => o.status !== 'Cancelled');
+  const totalRevenue = validOrders.reduce((acc, o) => acc + (Number(o.total ?? o.sellerSubtotal ?? o.totalAmount ?? o.subtotal) || 0), 0);
   const totalOrdersCount = orders.length;
   const activeProductsCount = products.filter(p => p.inStock !== false).length;
   const pendingOrdersCount = orders.filter(o => o.status === 'Pending' || o.status === 'Processing').length;
   const lowStockCount = products.filter(p => (Number(p.stockQuantity) || 0) > 0 && (Number(p.stockQuantity) || 0) < 10).length;
   const schoolQuotesCount = schoolOrders.filter(s => s.status === 'Requirement Received' || s.status === 'Quote Requested').length;
 
-  const avgRating = products.length > 0
-    ? (products.reduce((acc, p) => acc + (Number(p.rating) || 5.0), 0) / products.length).toFixed(1)
-    : '5.0';
+  const reviewedProducts = products.filter(p => (Number(p.reviewsCount) > 0 || Number(p.numReviews) > 0) && Number(p.rating) > 0);
+  const avgRating = reviewedProducts.length > 0
+    ? (reviewedProducts.reduce((acc, p) => acc + (Number(p.rating) || 0), 0) / reviewedProducts.length).toFixed(1)
+    : '0.0';
 
   const hasNoData = products.length === 0 && orders.length === 0;
 
+  const activeCommission = sellerUser?.commissionPercentage ?? sellerUser?.commissionRate ?? 5;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-pink">
-          Welcome back, {sellerUser?.name || 'Partner Merchant'}
-        </p>
-        <h2 className="font-display text-3xl font-extrabold text-brand-teal">
-          Your Store at a Glance
-        </h2>
-        <p className="text-sm text-gray-500">
-          Live merchant operational overview and fulfillment metrics directly from database.
-        </p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-pink">
+            Welcome back, {sellerUser?.name || sellerUser?.storeName || 'Seller'}
+          </p>
+          <h2 className="font-display text-3xl font-extrabold text-brand-teal">
+            Your Store at a Glance
+          </h2>
+          <p className="text-sm text-gray-500">
+            Live merchant operational overview and fulfillment metrics directly from database.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-teal-50 border border-teal-200/80 text-teal-800 text-xs font-bold shrink-0 shadow-2xs">
+          <CircleDollarSign size={16} className="text-teal-700" />
+          <span>Platform Fee: {activeCommission}% ({100 - activeCommission}% Payout)</span>
+        </div>
       </div>
 
       {hasNoData && (
