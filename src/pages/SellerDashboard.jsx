@@ -406,7 +406,8 @@ export default function SellerDashboardPage({ onNavigate }) {
                       if (onNavigate) {
                         onNavigate('home');
                       } else {
-                        window.location.href = 'http://localhost:5173';
+                        const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
+                        window.location.href = websiteUrl;
                       }
                     }}
                     className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-teal-900 bg-teal-50 hover:bg-brand-yellow hover:text-brand-teal-dark border border-teal-200/80 transition-all duration-200 cursor-pointer shadow-2xs group"
@@ -494,7 +495,10 @@ export default function SellerDashboardPage({ onNavigate }) {
               <button
                 onClick={() => {
                   if (onNavigate) onNavigate('home');
-                  else window.location.href = 'http://localhost:5173';
+                  else {
+                    const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
+                    window.location.href = websiteUrl;
+                  }
                 }}
                 className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
               >

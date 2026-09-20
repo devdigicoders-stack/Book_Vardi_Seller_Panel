@@ -4,8 +4,8 @@ import SellerDashboard from './pages/SellerDashboard';
 
 export default function App() {
   const handleExitToCustomerStore = () => {
-    // Navigate back to the customer-facing storefront running on port 5173
-    window.location.href = 'http://localhost:5173';
+    const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
+    window.location.href = websiteUrl;
   };
 
   return (
