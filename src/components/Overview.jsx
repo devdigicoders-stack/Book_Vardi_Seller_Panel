@@ -1,9 +1,22 @@
 import RevenuePerformanceWidget from './RevenuePerformanceWidget';
 import { ArrowUpRight, Bell, CircleDollarSign, Clock3, Package, ShoppingBag, Star, Plus } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import { DashboardOverviewSkeleton, SkeletonText } from './SkeletonLoader';
 
 export default function Overview() {
-  const { products = [], orders = [], schoolOrders = [], notifications = [], sellerUser } = useSellerData();
+  const { 
+    products = [], 
+    orders = [], 
+    schoolOrders = [], 
+    notifications = [], 
+    sellerUser, 
+    isLoadingSellerData, 
+    isLoadingProducts 
+  } = useSellerData();
+
+  if (isLoadingSellerData || isLoadingProducts) {
+    return <DashboardOverviewSkeleton />;
+  }
 
   const validOrders = orders.filter(o => o.status !== 'Cancelled');
   const totalRevenue = validOrders.reduce((acc, o) => acc + (Number(o.total ?? o.sellerSubtotal ?? o.totalAmount ?? o.subtotal) || 0), 0);
@@ -26,8 +39,13 @@ export default function Overview() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-pink">
-            Welcome back, {sellerUser?.name || sellerUser?.storeName || 'Seller'}
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-pink flex items-center gap-1.5">
+            <span>Welcome back,</span>
+            {isLoadingSellerData ? (
+              <SkeletonText width="w-28" height="h-3.5" className="bg-brand-pink/30 inline-block" />
+            ) : (
+              <span>{sellerUser?.name || sellerUser?.storeName || 'Merchant'}</span>
+            )}
           </p>
           <h2 className="font-display text-3xl font-extrabold text-brand-teal">
             Your Store at a Glance

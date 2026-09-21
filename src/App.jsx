@@ -9,7 +9,7 @@ export default function App() {
   };
 
   return (
-    <SellerDataProvider approved={true}>
+    <SellerDataProvider>
       <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal">
         <SellerDashboard onNavigate={handleExitToCustomerStore} />
       </div>

@@ -96,6 +96,15 @@ export default function ProfileTab() {
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
 
   const stepData = React.useMemo(() => {
+    const pickFirst = (...vals) => {
+      for (const v of vals) {
+        if (v !== undefined && v !== null && v !== '') {
+          return v;
+        }
+      }
+      return '';
+    };
+
     const rawPhoto = 
       sellerUser?.documents?.profilePhoto || 
       sellerUser?.avatar || 
@@ -113,38 +122,39 @@ export default function ProfileTab() {
 
     return {
       ...DEFAULT_12_STEP_DATA,
+      ...sellerUser,
       ...rawSaved,
-      sellerName: sellerUser?.name || sellerUser?.sellerName || rawSaved?.sellerName || '',
-      sellerEmail: sellerUser?.email || rawSaved?.sellerEmail || '',
-      sellerPhone: sellerUser?.phone || rawSaved?.sellerPhone || '',
-      ownerFullName: sellerUser?.ownerDetails?.ownerFullName || sellerUser?.name || rawSaved?.ownerFullName || '',
-      ownerDesignation: sellerUser?.ownerDetails?.ownerDesignation || sellerUser?.designation || rawSaved?.ownerDesignation || '',
-      legalBusinessName: sellerUser?.storeName || settings?.storeName || rawSaved?.legalBusinessName || '',
-      tradeName: sellerUser?.storeName || settings?.storeName || rawSaved?.tradeName || '',
-      storeName: sellerUser?.storeName || settings?.storeName || rawSaved?.storeName || '',
-      yearStarted: sellerUser?.yearStarted || sellerUser?.establishedYear || rawSaved?.yearStarted || '',
-      businessType: sellerUser?.businessType || rawSaved?.businessType || 'Proprietorship',
-      annualTurnoverEstimate: sellerUser?.annualTurnoverEstimate || rawSaved?.annualTurnoverEstimate || '',
-      ownerPan: sellerUser?.ownerDetails?.ownerPan || sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.ownerPan || '',
-      businessPan: sellerUser?.businessPan || sellerUser?.documents?.businessPan || sellerUser?.documents?.panNumber || sellerUser?.pan || rawSaved?.businessPan || '',
-      ownerAadhaarLast4: sellerUser?.ownerDetails?.ownerAadhaarLast4 || (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : (rawSaved?.ownerAadhaarLast4 || '')),
-      gstin: sellerUser?.gstNumber || sellerUser?.gstin || rawSaved?.gstin || '',
-      msmeRegistrationNumber: sellerUser?.msmeRegistrationNumber || sellerUser?.documents?.msmeRegistrationNumber || rawSaved?.msmeRegistrationNumber || '',
-      cinNumber: sellerUser?.cinNumber || sellerUser?.documents?.cinNumber || rawSaved?.cinNumber || '',
-      hasGstExemption: sellerUser?.hasGstExemption || sellerUser?.documents?.hasGstExemption || rawSaved?.hasGstExemption || false,
-      addressLine1: sellerUser?.addressDetails?.addressLine1 || sellerUser?.addressLine1 || sellerUser?.address || rawSaved?.addressLine1 || '',
-      addressLine2: sellerUser?.addressDetails?.addressLine2 || sellerUser?.addressLine2 || sellerUser?.colony || rawSaved?.addressLine2 || rawSaved?.colony || '',
-      colony: sellerUser?.addressDetails?.addressLine2 || sellerUser?.addressLine2 || sellerUser?.colony || rawSaved?.colony || rawSaved?.addressLine2 || '',
-      landmark: sellerUser?.addressDetails?.landmark || sellerUser?.landmark || rawSaved?.landmark || '',
-      city: sellerUser?.city || sellerUser?.addressDetails?.city || rawSaved?.city || '',
-      state: sellerUser?.state || sellerUser?.addressDetails?.state || rawSaved?.state || '',
-      pincode: sellerUser?.pincode || sellerUser?.addressDetails?.pincode || rawSaved?.pincode || '',
-      country: sellerUser?.addressDetails?.country || rawSaved?.country || 'India',
-      bankAccountHolder: sellerUser?.bankDetails?.accountHolderName || sellerUser?.name || rawSaved?.bankAccountHolder || '',
-      bankAccountNumber: sellerUser?.bankDetails?.accountNumber || rawSaved?.bankAccountNumber || '',
-      bankIfscCode: sellerUser?.bankDetails?.ifscCode || rawSaved?.bankIfscCode || '',
-      bankName: sellerUser?.bankDetails?.bankName || sellerUser?.bankName || rawSaved?.bankName || '',
-      bankBranch: sellerUser?.bankDetails?.branchName || sellerUser?.bankDetails?.bankBranch || rawSaved?.bankBranch || rawSaved?.branchName || '',
+      sellerName: pickFirst(rawSaved?.sellerName, rawSaved?.ownerFullName, sellerUser?.sellerName, sellerUser?.name, ''),
+      sellerEmail: pickFirst(rawSaved?.sellerEmail, sellerUser?.sellerEmail, sellerUser?.email, ''),
+      sellerPhone: pickFirst(rawSaved?.sellerPhone, sellerUser?.sellerPhone, sellerUser?.phone, ''),
+      ownerFullName: pickFirst(rawSaved?.ownerFullName, sellerUser?.ownerDetails?.ownerFullName, sellerUser?.ownerFullName, sellerUser?.name, ''),
+      ownerDesignation: pickFirst(rawSaved?.ownerDesignation, sellerUser?.ownerDetails?.ownerDesignation, sellerUser?.ownerDesignation, sellerUser?.designation, 'Proprietor'),
+      legalBusinessName: pickFirst(rawSaved?.legalBusinessName, rawSaved?.tradeName, rawSaved?.storeName, sellerUser?.legalBusinessName, sellerUser?.storeName, settings?.storeName, ''),
+      tradeName: pickFirst(rawSaved?.tradeName, rawSaved?.storeName, sellerUser?.tradeName, sellerUser?.storeName, settings?.storeName, ''),
+      storeName: pickFirst(rawSaved?.storeName, rawSaved?.tradeName, sellerUser?.storeName, settings?.storeName, ''),
+      yearStarted: pickFirst(rawSaved?.yearStarted, rawSaved?.establishedYear, rawSaved?.yearEstablished, sellerUser?.yearStarted, sellerUser?.establishedYear, sellerUser?.yearEstablished, settings?.yearStarted, ''),
+      businessType: pickFirst(rawSaved?.businessType, sellerUser?.businessType, 'Proprietorship'),
+      annualTurnoverEstimate: pickFirst(rawSaved?.annualTurnoverEstimate, sellerUser?.annualTurnoverEstimate, ''),
+      ownerPan: pickFirst(rawSaved?.ownerPan, rawSaved?.businessPan, sellerUser?.ownerDetails?.ownerPan, sellerUser?.ownerPan, sellerUser?.documents?.panNumber, sellerUser?.pan, ''),
+      businessPan: pickFirst(rawSaved?.businessPan, rawSaved?.ownerPan, sellerUser?.businessPan, sellerUser?.documents?.businessPan, sellerUser?.documents?.panNumber, sellerUser?.pan, ''),
+      ownerAadhaarLast4: pickFirst(rawSaved?.ownerAadhaarLast4, sellerUser?.ownerDetails?.ownerAadhaarLast4, sellerUser?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : '')),
+      gstin: pickFirst(rawSaved?.gstin, rawSaved?.gstNumber, sellerUser?.gstNumber, sellerUser?.gstin, ''),
+      msmeRegistrationNumber: pickFirst(rawSaved?.msmeRegistrationNumber, sellerUser?.msmeRegistrationNumber, sellerUser?.documents?.msmeRegistrationNumber, ''),
+      cinNumber: pickFirst(rawSaved?.cinNumber, sellerUser?.cinNumber, sellerUser?.documents?.cinNumber, ''),
+      hasGstExemption: Boolean(rawSaved?.hasGstExemption || sellerUser?.hasGstExemption || sellerUser?.documents?.hasGstExemption || false),
+      addressLine1: pickFirst(rawSaved?.addressLine1, rawSaved?.address, sellerUser?.addressDetails?.addressLine1, sellerUser?.addressLine1, sellerUser?.address, ''),
+      addressLine2: pickFirst(rawSaved?.addressLine2, rawSaved?.colony, sellerUser?.addressDetails?.addressLine2, sellerUser?.addressLine2, sellerUser?.colony, ''),
+      colony: pickFirst(rawSaved?.colony, rawSaved?.addressLine2, sellerUser?.addressDetails?.addressLine2, sellerUser?.addressLine2, sellerUser?.colony, ''),
+      landmark: pickFirst(rawSaved?.landmark, sellerUser?.addressDetails?.landmark, sellerUser?.landmark, ''),
+      city: pickFirst(rawSaved?.city, sellerUser?.city, sellerUser?.addressDetails?.city, ''),
+      state: pickFirst(rawSaved?.state, sellerUser?.state, sellerUser?.addressDetails?.state, ''),
+      pincode: pickFirst(rawSaved?.pincode, sellerUser?.pincode, sellerUser?.addressDetails?.pincode, ''),
+      country: pickFirst(rawSaved?.country, sellerUser?.addressDetails?.country, 'India'),
+      bankAccountHolder: pickFirst(rawSaved?.bankAccountHolder, sellerUser?.bankDetails?.accountHolderName, sellerUser?.bankAccountHolder, sellerUser?.name, ''),
+      bankAccountNumber: pickFirst(rawSaved?.bankAccountNumber, sellerUser?.bankDetails?.accountNumber, sellerUser?.bankAccountNumber, ''),
+      bankIfscCode: pickFirst(rawSaved?.bankIfscCode, sellerUser?.bankDetails?.ifscCode, sellerUser?.bankIfscCode, ''),
+      bankName: pickFirst(rawSaved?.bankName, sellerUser?.bankDetails?.bankName, sellerUser?.bankName, ''),
+      bankBranch: pickFirst(rawSaved?.bankBranch, rawSaved?.branchName, sellerUser?.bankDetails?.branchName, sellerUser?.bankDetails?.bankBranch, sellerUser?.bankBranch, ''),
       addressProofDoc: rawAddressDoc,
       addressProofFileName: getFileNameOnly(rawSaved?.addressProofFileName || rawAddressDoc) || 'addressProofDoc-1789380245540-84981246.pdf',
       profilePhoto: rawPhoto,

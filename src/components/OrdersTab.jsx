@@ -29,6 +29,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import TaxInvoiceModal from './TaxInvoiceModal';
 
 const STATUS_CONFIG = {
   Pending: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: Clock },
@@ -40,10 +41,11 @@ const STATUS_CONFIG = {
 };
 
 export default function OrdersTab() {
-  const { orders, products = [], updateOrderStatus, addOrder, deleteOrder, downloadSellerInvoice } = useSellerData();
+  const { orders, products = [], updateOrderStatus, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOrderModal, setActiveOrderModal] = useState(null);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isShipModalOpen, setIsShipModalOpen] = useState(false);
   const [shippingOrderId, setShippingOrderId] = useState(null);
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
@@ -512,11 +514,11 @@ export default function OrdersTab() {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => downloadSellerInvoice(activeOrderModal.id)}
+                  onClick={() => setIsInvoiceModalOpen(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 font-bold rounded-xl transition-colors cursor-pointer text-xs"
-                  title="Download GST Tax Invoice & Packing Slip PDF"
+                  title="View & Print GST Tax Invoice & Packing Slip"
                 >
-                  <Download size={14} /> Tax Invoice
+                  <FileText size={14} /> Tax Invoice & Label
                 </button>
 
                 <button
@@ -598,7 +600,17 @@ export default function OrdersTab() {
                     <MapPin size={12} className="text-teal-700 shrink-0" /> Delivery Address:
                   </div>
                   <div className="text-gray-800 leading-relaxed font-medium bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                    {activeOrderModal.shippingAddress}
+                    {typeof activeOrderModal.shippingAddress === 'object' && activeOrderModal.shippingAddress !== null
+                      ? [
+                          activeOrderModal.shippingAddress.name || activeOrderModal.shippingAddress.fullName,
+                          activeOrderModal.shippingAddress.addressLine || activeOrderModal.shippingAddress.street || activeOrderModal.shippingAddress.address,
+                          activeOrderModal.shippingAddress.colony || activeOrderModal.shippingAddress.landmark,
+                          activeOrderModal.shippingAddress.city,
+                          activeOrderModal.shippingAddress.state,
+                          activeOrderModal.shippingAddress.pincode ? `- ${activeOrderModal.shippingAddress.pincode}` : null,
+                          activeOrderModal.shippingAddress.phone ? `(Phone: ${activeOrderModal.shippingAddress.phone})` : null
+                        ].filter(Boolean).join(', ')
+                      : (activeOrderModal.shippingAddress || 'Store / Counter Pickup')}
                   </div>
                 </div>
               </div>
@@ -1030,6 +1042,13 @@ export default function OrdersTab() {
         </div>
       )}
 
+      {/* GST Tax Invoice & Dispatch Packing Slip Modal */}
+      <TaxInvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        order={activeOrderModal}
+        sellerUser={sellerUser}
+      />
     </div>
   );
 }

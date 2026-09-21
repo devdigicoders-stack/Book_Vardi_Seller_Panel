@@ -81,7 +81,7 @@ export default function AnalyticsTab() {
     const schoolMap = {};
 
     orders.forEach(o => {
-      const sch = o.school || (o.shippingAddress ? o.shippingAddress.split(',')[0] : null);
+      const sch = o.school || (o.shippingAddress ? (typeof o.shippingAddress === 'string' ? o.shippingAddress.split(',')[0] : (o.shippingAddress.city || o.shippingAddress.name || null)) : null);
       if (!sch || sch === 'General Public') return;
 
       if (!schoolMap[sch]) {
