@@ -16,6 +16,8 @@ import {
   createSchoolOrderApi,
   updateSchoolOrderApi,
   deleteSchoolOrderApi,
+  acceptSchoolOrderApi,
+  submitSchoolQuoteApi,
   fetchPromotionsApi,
   createPromotionApi,
   deletePromotionApi,
@@ -49,33 +51,106 @@ export const useSellerData = () => useContext(SellerDataContext) || {};
 // Helper to resolve active seller profile from active user session keys first
 export const readActiveSellerProfile = () => {
   try {
-    const sellerUserSaved = localStorage.getItem('seller_user_profile');
-    if (sellerUserSaved) {
-      const parsed = JSON.parse(sellerUserSaved);
-      if (parsed && (parsed.name || parsed.phone || parsed.email)) {
-        return parsed;
-      }
-    }
-
     const regDataSaved = localStorage.getItem('bv_seller_reg_data');
     const sellerProfSaved = localStorage.getItem('book_vardi_seller_profile');
+    const sellerUserSaved = localStorage.getItem('seller_user_profile');
 
-    const regData = regDataSaved ? JSON.parse(regDataSaved) : null;
-    const sellerProf = sellerProfSaved ? JSON.parse(sellerProfSaved) : null;
+    const regData = regDataSaved ? JSON.parse(regDataSaved) : {};
+    const sellerProf = sellerProfSaved ? JSON.parse(sellerProfSaved) : {};
+    const sellerUser = sellerUserSaved ? JSON.parse(sellerUserSaved) : {};
 
-    const activeName = regData?.sellerName || regData?.ownerFullName || sellerProf?.name || sellerProf?.sellerName || '';
-    const activeEmail = regData?.sellerEmail || sellerProf?.email || sellerProf?.sellerEmail || '';
-    const activePhone = regData?.sellerPhone ? `+91 ${regData.sellerPhone.replace(/\D/g, '').slice(-10)}` : (sellerProf?.phone || '');
+    const pickFirst = (...vals) => {
+      for (const v of vals) {
+        if (v !== undefined && v !== null && v !== '') {
+          return v;
+        }
+      }
+      return '';
+    };
+
+    const activeName = pickFirst(
+      regData.sellerName,
+      regData.ownerFullName,
+      regData.name,
+      sellerProf.sellerName,
+      sellerProf.ownerFullName,
+      sellerProf.name,
+      sellerUser.sellerName,
+      sellerUser.ownerFullName,
+      sellerUser.name
+    );
+
+    const activeEmail = pickFirst(
+      regData.sellerEmail,
+      regData.email,
+      sellerProf.sellerEmail,
+      sellerProf.email,
+      sellerUser.sellerEmail,
+      sellerUser.email
+    );
+
+    const rawPhone = pickFirst(
+      regData.sellerPhone,
+      regData.phone,
+      sellerProf.sellerPhone,
+      sellerProf.phone,
+      sellerUser.sellerPhone,
+      sellerUser.phone
+    );
+    const activePhone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone.replace(/\D/g, '').slice(-10)}`) : '';
+
+    const merged = {
+      ...sellerUser,
+      ...sellerProf,
+      ...regData
+    };
 
     return {
+      ...merged,
       name: activeName,
       email: activeEmail,
       phone: activePhone,
-      role: sellerProf?.role || regData?.role || 'Seller',
-      designation: regData?.ownerDesignation || sellerProf?.designation || '',
-      merchantId: regData?.merchantId || sellerProf?.merchantId || '',
-      pan: regData?.ownerPan || regData?.businessPan || sellerProf?.pan || '',
-      avatar: regData?.profilePhoto || sellerProf?.avatar || '',
+      role: pickFirst(merged.role, 'Seller'),
+      designation: pickFirst(regData.ownerDesignation, regData.designation, sellerProf.ownerDesignation, sellerUser.ownerDesignation, sellerUser.ownerDetails?.ownerDesignation, 'Proprietor'),
+      merchantId: pickFirst(sellerUser.merchantId, sellerProf.merchantId, regData.merchantId, ''),
+      pan: pickFirst(regData.ownerPan, regData.businessPan, regData.pan, sellerProf.ownerPan, sellerProf.businessPan, sellerProf.pan, sellerUser.ownerPan, sellerUser.businessPan, sellerUser.pan, sellerUser.documents?.panNumber, ''),
+      avatar: pickFirst(regData.profilePhoto, regData.avatar, sellerProf.avatar, sellerProf.profilePhoto, sellerUser.profilePhoto, sellerUser.avatar, ''),
+      yearStarted: pickFirst(regData.yearStarted, regData.establishedYear, regData.yearEstablished, sellerProf.yearStarted, sellerProf.establishedYear, sellerProf.yearEstablished, sellerUser.yearStarted, sellerUser.establishedYear, sellerUser.yearEstablished, ''),
+      businessType: pickFirst(regData.businessType, sellerProf.businessType, sellerUser.businessType, 'Proprietorship'),
+      annualTurnoverEstimate: pickFirst(regData.annualTurnoverEstimate, sellerProf.annualTurnoverEstimate, sellerUser.annualTurnoverEstimate, ''),
+      ownerFullName: pickFirst(regData.ownerFullName, regData.name, sellerProf.ownerFullName, sellerProf.ownerDetails?.ownerFullName, sellerUser.ownerFullName, sellerUser.ownerDetails?.ownerFullName, activeName),
+      ownerDesignation: pickFirst(regData.ownerDesignation, sellerProf.ownerDesignation, sellerProf.ownerDetails?.ownerDesignation, sellerUser.ownerDesignation, sellerUser.ownerDetails?.ownerDesignation, 'Proprietor'),
+      ownerPan: pickFirst(regData.ownerPan, regData.pan, sellerProf.ownerPan, sellerProf.ownerDetails?.ownerPan, sellerProf.pan, sellerUser.ownerPan, sellerUser.ownerDetails?.ownerPan, sellerUser.pan, ''),
+      businessPan: pickFirst(regData.businessPan, regData.pan, sellerProf.businessPan, sellerUser.businessPan, sellerUser.documents?.businessPan, sellerUser.documents?.panNumber, sellerUser.pan, ''),
+      ownerAadhaarLast4: pickFirst(regData.ownerAadhaarLast4, sellerProf.ownerAadhaarLast4, sellerUser.ownerAadhaarLast4, sellerUser.ownerDetails?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : (regData.aadhaar ? String(regData.aadhaar).slice(-4) : ''))),
+      gstin: pickFirst(regData.gstin, regData.gstNumber, sellerProf.gstin, sellerProf.gstNumber, sellerUser.gstin, sellerUser.gstNumber, ''),
+      msmeRegistrationNumber: pickFirst(regData.msmeRegistrationNumber, sellerProf.msmeRegistrationNumber, sellerUser.msmeRegistrationNumber, sellerUser.documents?.msmeRegistrationNumber, ''),
+      cinNumber: pickFirst(regData.cinNumber, sellerProf.cinNumber, sellerUser.cinNumber, sellerUser.documents?.cinNumber, ''),
+      hasGstExemption: Boolean(regData.hasGstExemption || sellerProf.hasGstExemption || sellerUser.hasGstExemption || sellerUser.documents?.hasGstExemption),
+      addressLine1: pickFirst(regData.addressLine1, regData.address, sellerProf.addressLine1, sellerProf.address, sellerUser.addressLine1, sellerUser.addressDetails?.addressLine1, sellerUser.address, ''),
+      addressLine2: pickFirst(regData.addressLine2, regData.colony, sellerProf.addressLine2, sellerProf.colony, sellerUser.addressLine2, sellerUser.addressDetails?.addressLine2, sellerUser.colony, ''),
+      colony: pickFirst(regData.colony, regData.addressLine2, sellerProf.colony, sellerUser.colony, sellerUser.addressDetails?.addressLine2, ''),
+      landmark: pickFirst(regData.landmark, sellerProf.landmark, sellerUser.landmark, sellerUser.addressDetails?.landmark, ''),
+      city: pickFirst(regData.city, sellerProf.city, sellerUser.city, sellerUser.addressDetails?.city, ''),
+      state: pickFirst(regData.state, sellerProf.state, sellerUser.state, sellerUser.addressDetails?.state, ''),
+      pincode: pickFirst(regData.pincode, sellerProf.pincode, sellerUser.pincode, sellerUser.addressDetails?.pincode, ''),
+      addressProofType: pickFirst(regData.addressProofType, sellerProf.addressProofType, sellerUser.addressProofType, sellerUser.addressProofDetails?.addressProofType, ''),
+      addressProofDocNumber: pickFirst(regData.addressProofDocNumber, sellerProf.addressProofDocNumber, sellerUser.addressProofDocNumber, sellerUser.addressProofDetails?.addressProofDocNumber, ''),
+      addressProofFileName: pickFirst(regData.addressProofFileName, sellerProf.addressProofFileName, sellerUser.addressProofFileName, ''),
+      bankAccountHolder: pickFirst(regData.bankAccountHolder, sellerProf.bankAccountHolder, sellerUser.bankAccountHolder, sellerUser.bankDetails?.accountHolderName, activeName),
+      bankAccountNumber: pickFirst(regData.bankAccountNumber, sellerProf.bankAccountNumber, sellerUser.bankAccountNumber, sellerUser.bankDetails?.accountNumber, ''),
+      bankIfscCode: pickFirst(regData.bankIfscCode, sellerProf.bankIfscCode, sellerUser.bankIfscCode, sellerUser.bankDetails?.ifscCode, ''),
+      bankName: pickFirst(regData.bankName, sellerProf.bankName, sellerUser.bankName, sellerUser.bankDetails?.bankName, ''),
+      bankBranch: pickFirst(regData.bankBranch, sellerProf.bankBranch, sellerUser.bankBranch, sellerUser.bankDetails?.branchName, sellerUser.bankDetails?.bankBranch, ''),
+      accountType: pickFirst(regData.accountType, sellerProf.accountType, sellerUser.accountType, sellerUser.bankDetails?.accountType, 'Savings Account'),
+      legalBusinessName: pickFirst(regData.legalBusinessName, regData.tradeName, regData.storeName, sellerProf.legalBusinessName, sellerProf.storeName, sellerUser.legalBusinessName, sellerUser.storeName, ''),
+      tradeName: pickFirst(regData.tradeName, regData.storeName, sellerProf.tradeName, sellerProf.storeName, sellerUser.tradeName, sellerUser.storeName, ''),
+      storeName: pickFirst(regData.storeName, regData.tradeName, regData.legalBusinessName, sellerProf.storeName, sellerUser.storeName, ''),
+      storeTagline: pickFirst(regData.storeTagline, sellerProf.storeTagline, sellerUser.storeTagline, sellerUser.storeDetails?.storeTagline, ''),
+      storeDescription: pickFirst(regData.storeDescription, sellerProf.storeDescription, sellerUser.storeDescription, sellerUser.storeDetails?.storeDescription, ''),
+      selectedCategories: (regData.selectedCategories && regData.selectedCategories.length > 0) ? regData.selectedCategories : (sellerProf.selectedCategories || sellerUser.selectedCategories || []),
+      primaryBrands: (regData.primaryBrands && regData.primaryBrands.length > 0) ? regData.primaryBrands : (sellerProf.primaryBrands || sellerUser.primaryBrands || []),
+      estimatedSkuCount: pickFirst(regData.estimatedSkuCount, sellerProf.estimatedSkuCount, sellerUser.estimatedSkuCount, ''),
       lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     };
   } catch {
@@ -88,6 +163,7 @@ export const readActiveSellerProfile = () => {
       merchantId: '',
       pan: '',
       avatar: '',
+      yearStarted: '',
       lastLogin: ''
     };
   }
@@ -95,34 +171,37 @@ export const readActiveSellerProfile = () => {
 
 export const readActiveSellerSettings = () => {
   try {
-    const settingsSaved = localStorage.getItem('seller_settings');
-    if (settingsSaved) {
-      const parsed = JSON.parse(settingsSaved);
-      if (parsed && (parsed.storeName || parsed.email || parsed.phone)) {
-        return parsed;
-      }
-    }
-
     const regDataSaved = localStorage.getItem('bv_seller_reg_data');
     const sellerProfSaved = localStorage.getItem('book_vardi_seller_profile');
+    const settingsSaved = localStorage.getItem('seller_settings');
 
-    const regData = regDataSaved ? JSON.parse(regDataSaved) : null;
-    const sellerProf = sellerProfSaved ? JSON.parse(sellerProfSaved) : null;
+    const regData = regDataSaved ? JSON.parse(regDataSaved) : {};
+    const sellerProf = sellerProfSaved ? JSON.parse(sellerProfSaved) : {};
+    const settings = settingsSaved ? JSON.parse(settingsSaved) : {};
 
-    const activeStoreName = regData?.storeName || regData?.tradeName || regData?.legalBusinessName || sellerProf?.storeName || sellerProf?.businessName || '';
-    const activeEmail = regData?.sellerEmail || sellerProf?.email || sellerProf?.sellerEmail || '';
-    const activePhone = regData?.sellerPhone ? `+91 ${regData.sellerPhone.replace(/\D/g, '').slice(-10)}` : (sellerProf?.phone || '');
+    const merged = {
+      ...regData,
+      ...sellerProf,
+      ...settings
+    };
+
+    const activeStoreName = merged.storeName || merged.tradeName || merged.legalBusinessName || merged.businessName || '';
+    const activeEmail = merged.sellerEmail || merged.email || '';
+    const rawPhone = merged.sellerPhone || merged.phone || '';
+    const activePhone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone.replace(/\D/g, '').slice(-10)}`) : '';
 
     return {
+      ...merged,
       storeName: activeStoreName,
-      legalName: regData?.legalBusinessName || sellerProf?.legalName || activeStoreName,
+      legalName: merged.legalBusinessName || merged.legalName || activeStoreName,
       email: activeEmail,
       phone: activePhone,
-      gstin: regData?.gstin || sellerProf?.gstin || '',
-      pan: regData?.ownerPan || regData?.businessPan || sellerProf?.pan || '',
-      address: regData?.registeredAddress || regData?.addressLine1 || sellerProf?.address || '',
-      city: regData?.city || sellerProf?.city || '',
-      pincode: regData?.pincode || sellerProf?.pincode || ''
+      gstin: merged.gstin || merged.gstNumber || '',
+      pan: merged.ownerPan || merged.businessPan || merged.pan || '',
+      address: merged.registeredAddress || merged.addressLine1 || merged.address || '',
+      city: merged.city || '',
+      pincode: merged.pincode || '',
+      yearStarted: merged.yearStarted || merged.establishedYear || merged.yearEstablished || ''
     };
   } catch {
     return {
@@ -134,13 +213,38 @@ export const readActiveSellerSettings = () => {
       pan: '',
       address: '',
       city: '',
-      pincode: ''
+      pincode: '',
+      yearStarted: ''
     };
   }
 };
 
-export const SellerDataProvider = ({ children, approved = true }) => {
-  const isApproved = approved === true;
+export const SellerDataProvider = ({ children }) => {
+  // Current Seller Profile & Role (Resolves active user credentials)
+  const [sellerUser, setSellerUser] = useState(() => readActiveSellerProfile());
+
+  // Seller status state ('approved' | 'pending' | 'in_review' | 'rejected')
+  const [sellerStatus, setSellerStatus] = useState(() => {
+    try {
+      const regData = localStorage.getItem('bv_seller_reg_data');
+      if (regData) {
+        const parsed = JSON.parse(regData);
+        if (parsed.submissionStatus || parsed.status) return parsed.submissionStatus || parsed.status;
+      }
+      const saved = localStorage.getItem('bv_seller_status');
+      if (saved) return saved;
+      const userProf = localStorage.getItem('seller_user_profile');
+      if (userProf) {
+        const parsedProf = JSON.parse(userProf);
+        if (parsedProf.status || parsedProf.approvalStatus) return parsedProf.status || parsedProf.approvalStatus;
+      }
+      return 'pending';
+    } catch {
+      return 'pending';
+    }
+  });
+
+  const isApproved = sellerStatus === 'approved';
 
   // Authentication state for Seller Hub (persisted in localStorage so seller stays logged in on page refresh)
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -158,25 +262,6 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       return Boolean(token || userProfStr);
     } catch {
       return false;
-    }
-  });
-
-  // Current Seller Profile & Role (Resolves active user credentials)
-  const [sellerUser, setSellerUser] = useState(() => readActiveSellerProfile());
-
-  // Seller status state ('approved' | 'pending' | 'in_review' | 'rejected')
-  const [sellerStatus, setSellerStatus] = useState(() => {
-    try {
-      const saved = localStorage.getItem('bv_seller_status');
-      if (saved) return saved;
-      const regData = localStorage.getItem('bv_seller_reg_data');
-      if (regData) {
-        const parsed = JSON.parse(regData);
-        if (parsed.submissionStatus || parsed.status) return parsed.submissionStatus || parsed.status;
-      }
-      return 'approved';
-    } catch {
-      return 'approved';
     }
   });
 
@@ -202,8 +287,9 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     } catch {}
   }, []);
 
-  // Loading state for product fetching directly from backend MongoDB
+  // Loading state for product & seller profile fetching directly from backend MongoDB
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isLoadingSellerData, setIsLoadingSellerData] = useState(true);
 
   // Domain Entity States (Directly backed by MongoDB)
   const [products, setProducts] = useState(() => {
@@ -398,6 +484,7 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     let isMounted = true;
     async function loadBackendData() {
       setIsLoadingProducts(true);
+      setIsLoadingSellerData(true);
       try {
         const [
           statusRes,
@@ -425,8 +512,25 @@ export const SellerDataProvider = ({ children, approved = true }) => {
 
         if (!isMounted) return;
 
-        if (statusRes.status === 'fulfilled' && statusRes.value?.status) {
-          setSellerStatus(statusRes.value.status);
+        if (statusRes.status === 'fulfilled' && (statusRes.value?.status || statusRes.value?.approvalStatus || statusRes.value?.sellerStatus)) {
+          const backendStatus = statusRes.value.status || statusRes.value.approvalStatus || statusRes.value.sellerStatus;
+          setSellerStatus(backendStatus);
+          localStorage.setItem('bv_seller_status', backendStatus);
+          setSellerUser(prev => {
+            const updated = { ...prev, status: backendStatus, approvalStatus: backendStatus, submissionStatus: backendStatus };
+            try { localStorage.setItem('seller_user_profile', JSON.stringify(updated)); } catch (e) {}
+            return updated;
+          });
+          try {
+            const regData = localStorage.getItem('bv_seller_reg_data');
+            if (regData) {
+              const parsed = JSON.parse(regData);
+              parsed.status = backendStatus;
+              parsed.submissionStatus = backendStatus;
+              parsed.approvalStatus = backendStatus;
+              localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
+            }
+          } catch (e) {}
         }
 
         if (productsRes.status === 'fulfilled' && Array.isArray(productsRes.value)) {
@@ -444,9 +548,24 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         }
 
         if (ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value)) {
-          setOrders(ordersRes.value);
+          const normalizedOrders = ordersRes.value.map(o => ({
+            ...o,
+            id: o._id || o.id,
+            shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
+              ? [
+                  o.shippingAddress.name || o.shippingAddress.fullName,
+                  o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address,
+                  o.shippingAddress.colony || o.shippingAddress.landmark,
+                  o.shippingAddress.city,
+                  o.shippingAddress.state,
+                  o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null,
+                  o.shippingAddress.phone ? `(Phone: ${o.shippingAddress.phone})` : null
+                ].filter(Boolean).join(', ')
+              : (o.shippingAddress || 'Store / Counter Pickup')
+          }));
+          setOrders(normalizedOrders);
           try {
-            localStorage.setItem('bv_seller_orders', JSON.stringify(ordersRes.value));
+            localStorage.setItem('bv_seller_orders', JSON.stringify(normalizedOrders));
           } catch (e) {}
         }
 
@@ -471,11 +590,68 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         }
 
         if (profileRes.status === 'fulfilled' && profileRes.value) {
+          const val = profileRes.value;
+          if (val.status || val.approvalStatus) {
+            const pStatus = val.status || val.approvalStatus;
+            setSellerStatus(pStatus);
+            localStorage.setItem('bv_seller_status', pStatus);
+          }
+          const normalizedProfile = {
+            status: val.status || val.approvalStatus,
+            approvalStatus: val.status || val.approvalStatus,
+            submissionStatus: val.status || val.approvalStatus,
+            name: val.name || val.sellerName || val.ownerFullName || val.ownerDetails?.ownerFullName,
+            email: val.email || val.sellerEmail,
+            phone: val.phone || val.sellerPhone,
+            storeName: val.storeName || val.tradeName || val.legalBusinessName,
+            legalBusinessName: val.legalBusinessName || val.storeName,
+            tradeName: val.tradeName || val.storeName,
+            yearStarted: val.yearStarted || val.establishedYear || val.yearEstablished,
+            businessType: val.businessType,
+            annualTurnoverEstimate: val.annualTurnoverEstimate,
+            ownerFullName: val.ownerDetails?.ownerFullName || val.ownerFullName || val.name,
+            ownerDesignation: val.ownerDetails?.ownerDesignation || val.ownerDesignation || val.designation,
+            ownerPan: val.ownerDetails?.ownerPan || val.documents?.panNumber || val.pan,
+            businessPan: val.businessPan || val.documents?.businessPan || val.documents?.panNumber || val.pan,
+            ownerAadhaarLast4: val.ownerDetails?.ownerAadhaarLast4 || (val.documents?.aadhaarNumber ? String(val.documents.aadhaarNumber).slice(-4) : undefined),
+            gstin: val.gstNumber || val.gstin,
+            hasGstExemption: val.hasGstExemption || val.documents?.hasGstExemption,
+            msmeRegistrationNumber: val.msmeRegistrationNumber || val.documents?.msmeRegistrationNumber,
+            cinNumber: val.cinNumber || val.documents?.cinNumber,
+            addressLine1: val.addressDetails?.addressLine1 || val.addressLine1 || val.address,
+            addressLine2: val.addressDetails?.addressLine2 || val.addressLine2 || val.colony,
+            colony: val.addressDetails?.addressLine2 || val.colony,
+            landmark: val.addressDetails?.landmark || val.landmark,
+            city: val.city || val.addressDetails?.city,
+            state: val.state || val.addressDetails?.state,
+            pincode: val.pincode || val.addressDetails?.pincode,
+            addressProofType: val.addressProofDetails?.addressProofType || val.addressProofType,
+            addressProofDocNumber: val.addressProofDetails?.addressProofDocNumber || val.addressProofDocNumber,
+            bankAccountHolder: val.bankDetails?.accountHolderName || val.bankAccountHolder || val.name,
+            bankAccountNumber: val.bankDetails?.accountNumber || val.bankAccountNumber,
+            bankIfscCode: val.bankDetails?.ifscCode || val.bankIfscCode,
+            bankName: val.bankDetails?.bankName || val.bankName,
+            bankBranch: val.bankDetails?.branchName || val.bankDetails?.bankBranch || val.bankBranch,
+            accountType: val.bankDetails?.accountType || val.accountType,
+            storeTagline: val.storeDetails?.storeTagline || val.storeTagline,
+            storeDescription: val.storeDescription || val.storeDetails?.storeDescription,
+            avatar: val.avatar || val.profilePhoto,
+            documents: val.documents || {}
+          };
+
+          // Remove undefined or blank entries so existing local registration properties are preserved
+          Object.keys(normalizedProfile).forEach(k => (normalizedProfile[k] === undefined || normalizedProfile[k] === null || normalizedProfile[k] === '') && delete normalizedProfile[k]);
+
           setSellerUser(prev => {
-            const backendPhone = (profileRes.value.phone || profileRes.value.sellerPhone || '').replace(/\D/g, '');
-            const prevPhone = (prev.phone || '').replace(/\D/g, '');
-            const isMatch = !prevPhone || !backendPhone || prevPhone.slice(-8) === backendPhone.slice(-8) || !prev.name;
-            return isMatch ? { ...prev, ...profileRes.value } : prev;
+            const activeProf = readActiveSellerProfile();
+            const updated = { ...activeProf, ...prev, ...normalizedProfile };
+            try {
+              localStorage.setItem('seller_user_profile', JSON.stringify(updated));
+              const savedReg = localStorage.getItem('bv_seller_reg_data');
+              const regObj = savedReg ? JSON.parse(savedReg) : {};
+              localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...regObj, ...normalizedProfile }));
+            } catch (e) {}
+            return updated;
           });
         }
 
@@ -485,7 +661,10 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       } catch (err) {
         console.debug('Backend offline or empty:', err.message);
       } finally {
-        if (isMounted) setIsLoadingProducts(false);
+        if (isMounted) {
+          setIsLoadingProducts(false);
+          setIsLoadingSellerData(false);
+        }
       }
     }
 
@@ -493,6 +672,7 @@ export const SellerDataProvider = ({ children, approved = true }) => {
       loadBackendData();
     } else {
       setIsLoadingProducts(false);
+      setIsLoadingSellerData(false);
     }
 
     return () => { isMounted = false; };
@@ -514,6 +694,17 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     try {
       const apiRes = await verifyPhoneOtpApi(cleanPhone, otpInput);
       if (apiRes && apiRes.token) {
+        let resStatus = apiRes.sellerStatus || apiRes.status || apiRes.approvalStatus || apiRes.seller?.status || apiRes.seller?.approvalStatus || 'pending';
+        
+        if (resStatus !== 'approved') {
+          setSellerStatus(resStatus);
+          localStorage.setItem('bv_seller_status', resStatus);
+          return {
+            success: false,
+            message: `Seller Authorization Denied: Your account status is '${resStatus.toUpperCase()}'. Verification approval by Admin is required.`
+          };
+        }
+
         setIsAuthenticated(true);
         if (apiRes.seller) {
           const resolvedName = apiRes.seller.name || apiRes.seller.sellerName || apiRes.seller.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
@@ -526,9 +717,9 @@ export const SellerDataProvider = ({ children, approved = true }) => {
             pan: apiRes.seller.pan || apiRes.seller.ownerPan || sellerUser.pan || ''
           };
           setSellerUser(u);
-          setSellerStatus(apiRes.seller.approvalStatus || apiRes.seller.status || 'approved');
+          setSellerStatus(resStatus);
           localStorage.setItem('seller_user_profile', JSON.stringify(u));
-          localStorage.setItem('bv_seller_status', apiRes.seller.approvalStatus || 'approved');
+          localStorage.setItem('bv_seller_status', resStatus);
         }
         localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
         setTimeout(() => {
@@ -559,7 +750,11 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     const matchedName = isPhoneMatch ? (savedApp?.sellerName || savedApp?.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`) : `Merchant ${cleanPhone.slice(-4)}`;
     const matchedEmail = isPhoneMatch ? (savedApp?.sellerEmail || `seller_${cleanPhone}@bookvardi.in`) : `seller_${cleanPhone}@bookvardi.in`;
     const matchedStoreName = isPhoneMatch ? (savedApp?.tradeName || savedApp?.storeName || savedApp?.legalBusinessName || `${matchedName}'s Vardi Store`) : `${matchedName}'s Vardi Store`;
-    const status = isPhoneMatch ? (savedApp?.status || savedApp?.submissionStatus || 'approved') : 'approved';
+    const status = isPhoneMatch ? (savedApp?.status || savedApp?.submissionStatus || 'pending') : (localStorage.getItem('bv_seller_status') || 'pending');
+
+    if (status !== 'approved') {
+      return { success: false, message: `Your seller account is currently ${status}. You cannot access the dashboard until approved.` };
+    }
 
     const updatedUser = {
       ...sellerUser,
@@ -654,27 +849,67 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         parsed.submissionStatus = 'approved';
         localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
       }
+      setSellerUser(prev => {
+        const next = { ...prev, status: 'approved', approvalStatus: 'approved', submissionStatus: 'approved' };
+        try { localStorage.setItem('seller_user_profile', JSON.stringify(next)); } catch (e) {}
+        return next;
+      });
     } catch {}
     setSellerStatus('approved');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: { status: 'approved' } }));
+    }
     adminApproveTestApi().catch(() => {});
   };
 
   const checkSellerStatus = useCallback(async () => {
     try {
-      const res = await fetchSellerStatusApi();
-      if (res && (res.status || res.approvalStatus)) {
-        const newStatus = res.approvalStatus || res.status || 'approved';
+      const res = await fetchSellerStatusApi(sellerUser?.phone);
+      if (res && (res.status || res.approvalStatus || res.sellerStatus)) {
+        const newStatus = res.approvalStatus || res.status || res.sellerStatus || sellerStatus;
         setSellerStatus(newStatus);
         localStorage.setItem('bv_seller_status', newStatus);
+
+        setSellerUser(prev => {
+          const updated = { ...prev, status: newStatus, approvalStatus: newStatus, submissionStatus: newStatus };
+          try { localStorage.setItem('seller_user_profile', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+
+        try {
+          const regData = localStorage.getItem('bv_seller_reg_data');
+          if (regData) {
+            const parsed = JSON.parse(regData);
+            parsed.status = newStatus;
+            parsed.submissionStatus = newStatus;
+            parsed.approvalStatus = newStatus;
+            localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
+          }
+        } catch (e) {}
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: { status: newStatus } }));
+        }
         return newStatus;
       }
     } catch (e) {
       console.error(e);
     }
     return sellerStatus;
-  }, [sellerStatus]);
+  }, [sellerStatus, sellerUser?.phone]);
 
   const loginSeller = ({ email, role }) => {
+    let currentStatus = 'pending';
+    try {
+      const savedReg = localStorage.getItem('bv_seller_reg_data');
+      if (savedReg) {
+        const parsed = JSON.parse(savedReg);
+        if (parsed.status || parsed.submissionStatus) currentStatus = parsed.status || parsed.submissionStatus;
+      } else {
+        currentStatus = localStorage.getItem('bv_seller_status') || 'pending';
+      }
+    } catch {}
+
     const updated = {
       ...sellerUser,
       email: email || sellerUser.email,
@@ -683,10 +918,10 @@ export const SellerDataProvider = ({ children, approved = true }) => {
     };
     setSellerUser(updated);
     setIsAuthenticated(true);
-    setSellerStatus('approved');
+    setSellerStatus(currentStatus);
     localStorage.setItem('seller_user_profile', JSON.stringify(updated));
     localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
-    localStorage.setItem('bv_seller_status', 'approved');
+    localStorage.setItem('bv_seller_status', currentStatus);
     setTimeout(() => {
       if (typeof window !== 'undefined') window.location.reload();
     }, 50);
@@ -712,8 +947,14 @@ export const SellerDataProvider = ({ children, approved = true }) => {
 
   const updateSellerProfile = (updates) => {
     setSellerUser(prev => {
-      const next = { ...prev, ...updates };
-      localStorage.setItem('seller_user_profile', JSON.stringify(next));
+      const activeProf = readActiveSellerProfile();
+      const next = { ...activeProf, ...prev, ...updates };
+      try {
+        localStorage.setItem('seller_user_profile', JSON.stringify(next));
+        const savedReg = localStorage.getItem('bv_seller_reg_data');
+        const regObj = savedReg ? JSON.parse(savedReg) : {};
+        localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...regObj, ...updates }));
+      } catch (e) {}
       return next;
     });
     updateSellerProfileApi(updates).catch(() => {});
@@ -962,17 +1203,27 @@ export const SellerDataProvider = ({ children, approved = true }) => {
 
   const editOrder = (id, updates) => {
     checkPermission();
+    const strId = String(id);
     setOrders(prev => {
-      const updated = prev.map(o => (o.id === id ? { ...o, ...updates } : o));
+      const updated = prev.map(o => (String(o.id || o._id) === strId ? { ...o, ...updates } : o));
       return updated;
     });
   };
 
-  const updateOrderStatus = (id, status, details = {}) => {
+  const updateOrderStatus = async (id, status, details = {}) => {
     checkPermission();
     editOrder(id, { status, ...details });
-    updateOrderStatusApi(id, status, details).catch(() => {});
-    showToast(`Order #${id} status updated to ${status}`);
+    try {
+      const res = await updateOrderStatusApi(id, status, details);
+      if (res && res.order) {
+        editOrder(id, { ...res.order, status: res.order.status || status });
+      }
+      showToast(`Order #${id} status updated to ${status}`);
+      return res;
+    } catch (err) {
+      showToast(`Order #${id} status updated locally.`);
+      return null;
+    }
   };
 
   const deleteOrder = (id) => {
@@ -1092,11 +1343,66 @@ export const SellerDataProvider = ({ children, approved = true }) => {
   const deleteSchoolOrder = (id) => {
     checkPermission();
     setSchoolOrders(prev => {
-      const updated = prev.filter(s => s.id !== id);
+      const updated = prev.filter(s => String(s.id) !== String(id) && String(s._id) !== String(id));
       return updated;
     });
     deleteSchoolOrderApi(id).catch(() => {});
   };
+
+  const acceptSchoolOrder = async (id) => {
+    checkPermission();
+    setSchoolOrders(prev => prev.map(s => {
+      if (String(s.id || s._id) === String(id)) {
+        return { ...s, status: 'assigned' };
+      }
+      return s;
+    }));
+
+    try {
+      const res = await acceptSchoolOrderApi(id);
+      if (res?.success) {
+        showToast('You have accepted this school bulk order!');
+      }
+    } catch (e) {
+      console.warn('Backend accept school order fallback:', e);
+    }
+  };
+
+  const submitSchoolQuote = async (id, quoteData) => {
+    checkPermission();
+    setSchoolOrders(prev => prev.map(s => {
+      if (String(s.id || s._id) === String(id)) {
+        const existingQuotes = Array.isArray(s.quotations) ? s.quotations : [];
+        const newQuote = {
+          _id: Date.now(),
+          sellerName: sellerUser?.name || 'Seller',
+          sellerStoreName: sellerUser?.storeName || 'My Store',
+          quoteAmount: Number(quoteData.quoteAmount),
+          unitPrice: Number(quoteData.unitPrice) || 0,
+          estimatedDeliveryDays: Number(quoteData.estimatedDeliveryDays) || 7,
+          notes: quoteData.notes || '',
+          status: 'submitted',
+          submittedAt: new Date().toISOString()
+        };
+        return {
+          ...s,
+          status: 'quoted',
+          quotations: [...existingQuotes, newQuote]
+        };
+      }
+      return s;
+    }));
+
+    try {
+      const res = await submitSchoolQuoteApi(id, quoteData);
+      if (res?.success) {
+        showToast('Quotation proposal submitted successfully!');
+      }
+    } catch (e) {
+      console.warn('Backend submit quotation fallback:', e);
+    }
+  };
+
 
   // Customers Actions
   const addCustomer = (customer) => {
@@ -1336,6 +1642,7 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         clearAllSellerData,
         // Loading state
         isLoadingProducts,
+        isLoadingSellerData,
         // State
         products,
         orders,
@@ -1369,6 +1676,8 @@ export const SellerDataProvider = ({ children, approved = true }) => {
         addSchoolOrder,
         editSchoolOrder,
         deleteSchoolOrder,
+        acceptSchoolOrder,
+        submitSchoolQuote,
         // Customer actions
         addCustomer,
         editCustomer,

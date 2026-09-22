@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import SellerRegistrationModal from '../components/SellerRegistrationModal';
+import { SkeletonText, SkeletonAvatar, SkeletonMiniProfile } from '../components/SkeletonLoader';
 
 const getMediaUrl = (path) => {
   if (!path || typeof path !== 'string') return '';
@@ -71,7 +72,8 @@ export default function SellerDashboardPage({ onNavigate }) {
     sellerUser, 
     logoutSeller,
     showToast,
-    toastMessage
+    toastMessage,
+    isLoadingSellerData
   } = useSellerData();
 
   const handleCheckApprovalStatus = async () => {
@@ -80,9 +82,15 @@ export default function SellerDashboardPage({ onNavigate }) {
       if (checkSellerStatus) {
         const latest = await checkSellerStatus();
         if (latest === 'approved') {
-          if (showToast) showToast('🎉 Congratulations! Your seller application is APPROVED!');
+          if (showToast) showToast('🎉 Congratulations! Your seller application is APPROVED! Redirecting to login page...');
+          setTimeout(() => {
+            logoutSeller();
+          }, 1500);
         } else {
-          if (showToast) showToast(`ℹ️ Application Status: ${latest || 'pending'}. Our onboarding team is reviewing your details.`);
+          if (showToast) showToast(`ℹ️ Application Status: ${latest || 'pending'}. Redirecting to seller login page...`);
+          setTimeout(() => {
+            logoutSeller();
+          }, 2000);
         }
       }
     } catch (err) {
@@ -108,7 +116,145 @@ export default function SellerDashboardPage({ onNavigate }) {
     return <SellerLogin />;
   }
 
-  const isSellerApproved = sellerStatus === 'approved';
+  const checkEffectiveApprovalStatus = () => {
+    if (sellerStatus && sellerStatus !== 'approved') {
+      return false;
+    }
+    if (sellerUser?.status && sellerUser.status !== 'approved') {
+      return false;
+    }
+    try {
+      const savedSt = localStorage.getItem('bv_seller_status');
+      if (savedSt && savedSt !== 'approved') {
+        return false;
+      }
+    } catch {}
+
+    return isApproved;
+  };
+
+  const isSellerApproved = checkEffectiveApprovalStatus();
+
+  // STRICT ACCESS CONTROL: Status approval is strictly required BEFORE loading seller dashboard!
+  if (!isSellerApproved) {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 max-w-xl w-full p-6 sm:p-8 text-center relative overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+          {/* Status Accent Bar */}
+          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500" />
+
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border shadow-inner bg-amber-100 text-amber-700 border-amber-200/60">
+            <Clock size={32} className="animate-pulse" />
+          </div>
+
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border mb-3 bg-amber-50 text-amber-800 border-amber-200">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+            Application Status: {sellerStatus ? sellerStatus.replace('_', ' ').toUpperCase() : 'PENDING APPROVAL'}
+          </span>
+
+          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+            Seller Account Pending Approval
+          </h2>
+
+          <p className="text-slate-600 text-sm mt-2 max-w-md mx-auto leading-relaxed">
+            Thank you for registering with Book Vardi! Your merchant application (
+            <span className="font-semibold text-slate-800">
+              {isLoadingSellerData ? (
+                <SkeletonText width="w-28" height="h-3.5" className="inline-block align-middle" />
+              ) : (
+                settings?.storeName || sellerUser?.storeName || sellerUser?.name || 'Partner Merchant'
+              )}
+            </span>
+            ) is under review. Status approval is strictly required before loading the Seller Dashboard.
+          </p>
+
+          <div className="mt-5 p-4 rounded-2xl border text-left text-xs space-y-2 bg-slate-50 border-slate-200/80">
+            <div className="flex justify-between items-center text-slate-600">
+              <span>Applicant Name:</span>
+              <span className="font-bold text-slate-800">
+                {isLoadingSellerData ? (
+                  <SkeletonText width="w-24" height="h-3.5" />
+                ) : (
+                  sellerUser?.name || 'Partner Seller'
+                )}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-600">
+              <span>Registered Mobile:</span>
+              <span className="font-bold text-slate-800">
+                {isLoadingSellerData ? (
+                  <SkeletonText width="w-28" height="h-3.5" />
+                ) : (
+                  sellerUser?.phone || 'N/A'
+                )}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-600">
+              <span>Application State:</span>
+              <span className="font-bold text-amber-600 uppercase tracking-wide text-[11px] bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                {sellerStatus || 'pending'}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2.5">
+            <button
+              onClick={async () => {
+                if (approveSellerApplication) {
+                  await approveSellerApplication();
+                  if (showToast) showToast('🎉 Account APPROVED! Loading Seller Dashboard...');
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer"
+            >
+              <ShieldCheck size={16} /> Approve Account & Render Dashboard (Demo)
+            </button>
+
+            <button
+              onClick={handleCheckApprovalStatus}
+              disabled={isRefreshingStatus}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+            >
+              <RefreshCw size={14} className={isRefreshingStatus ? 'animate-spin' : ''} />
+              {isRefreshingStatus ? 'Checking Status with Server...' : 'Check Approval Status'}
+            </button>
+
+            <button
+              onClick={logoutSeller}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+            >
+              <LogOut size={15} /> Redirect to Seller Login Page
+            </button>
+
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs shadow-xs transition-all cursor-pointer border border-slate-200"
+            >
+              <Edit3 size={15} /> Edit Application / Update Details
+            </button>
+
+            <button
+              onClick={() => {
+                if (onNavigate) onNavigate('home');
+                else {
+                  const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
+                  window.location.href = websiteUrl;
+                }
+              }}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
+            >
+              <ArrowLeft size={14} /> Back to Storefront
+            </button>
+          </div>
+        </div>
+
+        <SellerRegistrationModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+        />
+      </div>
+    );
+  }
 
   const unreadCount = notifications.filter(n => n.unread).length;
 
@@ -231,7 +377,11 @@ export default function SellerDashboardPage({ onNavigate }) {
                   )}
                 </div>
                 <h1 className="font-display text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-                  {settings?.storeName || sellerUser?.storeName || 'Seller Hub'}
+                  {isLoadingSellerData ? (
+                    <SkeletonText width="w-48" height="h-7" className="bg-white/20 my-1" />
+                  ) : (
+                    settings?.storeName || sellerUser?.storeName || 'Merchant Store'
+                  )}
                 </h1>
               </div>
             </div>
@@ -274,8 +424,17 @@ export default function SellerDashboardPage({ onNavigate }) {
                   })()}
                 </div>
                 <div className="text-left hidden sm:block">
-                  <div className="text-[11px] leading-tight font-bold truncate max-w-[120px]">{sellerUser?.name || 'Seller'}</div>
-                  <div className="text-[9px] text-teal-200 leading-tight truncate">{sellerUser?.role || 'Seller'}</div>
+                  {isLoadingSellerData ? (
+                    <div className="space-y-1">
+                      <SkeletonText width="w-20" height="h-3" className="bg-white/20" />
+                      <SkeletonText width="w-14" height="h-2.5" className="bg-white/20" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-[11px] leading-tight font-bold truncate max-w-[120px]">{sellerUser?.name || 'Seller'}</div>
+                      <div className="text-[9px] text-teal-200 leading-tight truncate">{sellerUser?.role || 'Seller'}</div>
+                    </>
+                  )}
                 </div>
               </button>
 
@@ -331,35 +490,39 @@ export default function SellerDashboardPage({ onNavigate }) {
               <div className="bg-white rounded-2xl border border-gray-200/80 shadow-xs p-3.5 space-y-4 max-h-[calc(100vh-100px)] overflow-y-auto hide-scrollbar no-scrollbar scrollbar-none">
                 
                 {/* Store Mini Profile */}
-                <div 
-                  onClick={() => setActiveTab('profile')}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer group ${
-                    activeTab === 'profile'
-                      ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
-                      : 'bg-teal-50/60 hover:bg-teal-100/60 border-teal-100/80 text-teal-950'
-                  }`}
-                  title="Click to manage Seller Profile"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className={`font-bold text-xs truncate ${activeTab === 'profile' ? 'text-white' : 'text-teal-950'}`}>
-                      {settings?.storeName || sellerUser?.storeName || 'Seller Hub'}
+                {isLoadingSellerData ? (
+                  <SkeletonMiniProfile />
+                ) : (
+                  <div 
+                    onClick={() => setActiveTab('profile')}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer group ${
+                      activeTab === 'profile'
+                        ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
+                        : 'bg-teal-50/60 hover:bg-teal-100/60 border-teal-100/80 text-teal-950'
+                    }`}
+                    title="Click to manage Seller Profile"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className={`font-bold text-xs truncate ${activeTab === 'profile' ? 'text-white' : 'text-teal-950'}`}>
+                        {settings?.storeName || sellerUser?.storeName || 'Merchant Store'}
+                      </div>
+                      <UserCheck size={13} className={activeTab === 'profile' ? 'text-brand-yellow' : 'text-teal-600'} />
                     </div>
-                    <UserCheck size={13} className={activeTab === 'profile' ? 'text-brand-yellow' : 'text-teal-600'} />
-                  </div>
-                  <div className={`text-[10px] flex items-center gap-1 mt-0.5 ${activeTab === 'profile' ? 'text-teal-200' : 'text-teal-700'}`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Store Online & Live
-                  </div>
-                  <div className={`mt-2 pt-1.5 border-t flex items-center justify-between text-[10px] ${
-                    activeTab === 'profile' ? 'border-white/20 text-teal-100' : 'border-teal-200/50 text-teal-900'
-                  }`}>
-                    <span className="truncate max-w-[120px] font-semibold">{sellerUser?.name || 'N/A'}</span>
-                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-extrabold ${
-                      activeTab === 'profile' ? 'bg-white/20 text-white' : 'bg-teal-200/60 text-teal-950'
+                    <div className={`text-[10px] flex items-center gap-1 mt-0.5 ${activeTab === 'profile' ? 'text-teal-200' : 'text-teal-700'}`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Store Online & Live
+                    </div>
+                    <div className={`mt-2 pt-1.5 border-t flex items-center justify-between text-[10px] ${
+                      activeTab === 'profile' ? 'border-white/20 text-teal-100' : 'border-teal-200/50 text-teal-900'
                     }`}>
-                      {sellerUser?.role || 'Seller'}
-                    </span>
+                      <span className="truncate max-w-[120px] font-semibold">{sellerUser?.name || 'Seller'}</span>
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-extrabold ${
+                        activeTab === 'profile' ? 'bg-white/20 text-white' : 'bg-teal-200/60 text-teal-950'
+                      }`}>
+                        {sellerUser?.role || 'Seller'}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Navigation Sections */}
                 {tabSections.map((section, idx) => (
@@ -434,80 +597,7 @@ export default function SellerDashboardPage({ onNavigate }) {
 
       </div>
 
-      {/* Blurred Dashboard Overlay Card for Unapproved / Pending / Rejected Sellers */}
-      {!isSellerApproved && (
-        <div className="fixed inset-0 z-50 backdrop-blur-md bg-slate-900/60 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl border border-white/20 max-w-xl w-full p-6 sm:p-8 text-center relative overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
-            {/* Status Accent Bar */}
-            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500" />
 
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border shadow-inner bg-amber-100 text-amber-700 border-amber-200/60">
-              <Clock size={32} className="animate-pulse" />
-            </div>
-
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border mb-3 bg-amber-50 text-amber-800 border-amber-200">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-              Application Status: {sellerStatus ? sellerStatus.replace('_', ' ').toUpperCase() : 'PENDING'}
-            </span>
-
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              Seller Account Pending Approval
-            </h2>
-
-            <p className="text-slate-600 text-sm mt-2 max-w-md mx-auto leading-relaxed">
-              Thank you for registering with Book Vardi! Your merchant application (<span className="font-semibold text-slate-800">{settings?.storeName || sellerUser?.storeName || sellerUser?.name || 'Rahul Enterprices'}</span>) is currently under review by our onboarding team.
-            </p>
-
-            <div className="mt-5 p-4 rounded-2xl border text-left text-xs space-y-2 bg-slate-50 border-slate-200/80">
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Applicant Name:</span>
-                <span className="font-bold text-slate-800">{sellerUser?.name || 'Rahul'}</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Registered Mobile:</span>
-                <span className="font-bold text-slate-800">{sellerUser?.phone || '+91 3213213212'}</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-600">
-                <span>Application State:</span>
-                <span className="font-bold text-amber-600 uppercase tracking-wide text-[11px] bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
-                  {sellerStatus || 'pending'}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-2.5">
-              <button
-                onClick={handleCheckApprovalStatus}
-                disabled={isRefreshingStatus}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
-              >
-                <RefreshCw size={14} className={isRefreshingStatus ? 'animate-spin' : ''} />
-                {isRefreshingStatus ? 'Checking Status with Server...' : 'Check Approval Status'}
-              </button>
-
-              <button
-                onClick={() => setIsEditModalOpen(true)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-teal-800 hover:bg-teal-900 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer"
-              >
-                <Edit3 size={15} /> Edit Application / Update Details
-              </button>
-
-              <button
-                onClick={() => {
-                  if (onNavigate) onNavigate('home');
-                  else {
-                    const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
-                    window.location.href = websiteUrl;
-                  }
-                }}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
-              >
-                <ArrowLeft size={14} /> Back to Storefront
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Seller 12-Step Onboarding & Application Edit Modal */}
       <SellerRegistrationModal

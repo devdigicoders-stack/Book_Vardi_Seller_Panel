@@ -128,7 +128,9 @@ export const INITIAL_FORM_STATE = {
 export default function SellerRegistrationModal({ isOpen, onClose, isPage = false }) {
   const { 
     submitSellerApplication, 
-    showToast 
+    showToast,
+    logoutSeller,
+    checkSellerStatus
   } = useSellerData();
 
   const [step, setStep] = useState(() => {
@@ -1884,10 +1886,14 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
             {step === 11 && (
               <button
                 type="button"
-                onClick={onClose}
-                className="px-5 py-2.5 bg-brand-teal text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+                onClick={() => {
+                  if (onClose) onClose();
+                  if (logoutSeller) logoutSeller();
+                }}
+                className="px-5 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
               >
-                Close & Await Admin Review
+                <span>Redirect to Seller Login Page</span>
+                <ArrowRight size={14} />
               </button>
             )}
 

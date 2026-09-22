@@ -337,6 +337,35 @@ export const deleteSchoolOrderApi = async (id) => {
   }
 };
 
+export const acceptSchoolOrderApi = async (id) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/accept`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const submitSchoolQuoteApi = async (id, quoteData) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/quote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(quoteData)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+
 // ==========================================
 // 4. Promotions & Offers APIs
 // ==========================================
@@ -542,3 +571,125 @@ export const deleteSellerReviewApi = async (id) => {
     return { success: false, message: error.message };
   }
 };
+
+// ==========================================
+// Logistics & Delivery Partner APIs
+// ==========================================
+export const fetchDeliveryConfigApi = async () => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/config`, {
+      headers: getAuthHeaders()
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const updateDeliveryConfigApi = async (configData) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/config`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(configData)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const checkServiceabilityApi = async (payload) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/serviceability`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const createShipmentApi = async (payload) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/create-shipment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const trackAwbApi = async (awbNumber) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/track/${awbNumber}`, {
+      headers: getAuthHeaders()
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+// ==========================================
+// Delivery Partner Portal APIs
+// ==========================================
+export const fetchDeliveryPartnerOrderApi = async (token) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/partner/${token}`);
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const resendDeliveryOtpApi = async (token) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/partner/${token}/resend-otp`, { method: 'POST' });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const verifyDeliveryOtpApi = async (token, otp) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/partner/${token}/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otp })
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const updateDeliveryLocationApi = async (token, lat, lng) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/delivery/partner/${token}/location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng })
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+
