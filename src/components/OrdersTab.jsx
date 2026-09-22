@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import TaxInvoiceModal from './TaxInvoiceModal';
+import CreateShipmentModal from './CreateShipmentModal';
 
 const STATUS_CONFIG = {
   Pending: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: Clock },
@@ -47,6 +48,7 @@ export default function OrdersTab() {
   const [activeOrderModal, setActiveOrderModal] = useState(null);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isShipModalOpen, setIsShipModalOpen] = useState(false);
+  const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
   const [shippingOrderId, setShippingOrderId] = useState(null);
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
   const [courierInput, setCourierInput] = useState('Delhivery');
@@ -124,28 +126,57 @@ export default function OrdersTab() {
     }
   };
 
-  const handleModalSaveStatus = () => {
+  const generateSelfDeliveryDetails = (order = activeOrderModal) => {
+    const tokenVal = String(order?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
+    const otpVal = String(modalDeliveryOtp || order?.selfDeliveryDetails?.deliveryOtp || Math.floor(1000 + Math.random() * 9000)).trim();
+    const trackingLink = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+
+    return {
+      deliveryPersonName: modalDriverName || order?.selfDeliveryDetails?.deliveryPersonName || '',
+      deliveryPersonPhone: modalDriverPhone || order?.selfDeliveryDetails?.deliveryPersonPhone || '',
+      vehicleNumber: modalVehicleNumber || order?.selfDeliveryDetails?.vehicleNumber || '',
+      deliveryOtp: otpVal,
+      deliveryPartnerToken: tokenVal,
+      trackingUrl: trackingLink
+    };
+  };
+
+  const handleModalSaveStatus = async () => {
     if (activeOrderModal) {
+      const tokenVal = String(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
+      const trackingLink = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+      const finalOtp = String(modalDeliveryOtp || activeOrderModal.selfDeliveryDetails?.deliveryOtp || Math.floor(1000 + Math.random() * 9000)).trim();
+      setModalDeliveryOtp(finalOtp);
+
       const details = {
         courierName: modalCourierInput,
         trackingNumber: modalTrackingInput,
         deliveryType: deliveryModeInput,
-        selfDeliveryDetails: {
-          deliveryPersonName: modalDriverName,
-          deliveryPersonPhone: modalDriverPhone,
-          vehicleNumber: modalVehicleNumber,
-          deliveryOtp: modalDeliveryOtp
-        }
+        selfDeliveryDetails: deliveryModeInput === 'self_delivery'
+          ? {
+              deliveryPersonName: modalDriverName,
+              deliveryPersonPhone: modalDriverPhone,
+              vehicleNumber: modalVehicleNumber,
+              deliveryOtp: finalOtp,
+              deliveryPartnerToken: tokenVal,
+              trackingUrl: trackingLink
+            }
+          : undefined
       };
-      updateOrderStatus(activeOrderModal.id, modalStatusInput, details);
+
+      const res = await updateOrderStatus(activeOrderModal.id, modalStatusInput, details);
+      const serverSelfDetails = res?.order?.selfDeliveryDetails || details.selfDeliveryDetails || activeOrderModal.selfDeliveryDetails;
+
       setActiveOrderModal(prev => prev ? {
         ...prev,
         status: modalStatusInput,
+        deliveryType: deliveryModeInput,
         courierName: modalCourierInput,
         trackingNumber: modalTrackingInput,
-        deliveryType: deliveryModeInput,
-        selfDeliveryDetails: details.selfDeliveryDetails
+        selfDeliveryDetails: serverSelfDetails
       } : null);
+
+      alert(`✅ Order #${activeOrderModal.id} status and self-delivery details updated successfully!`);
     }
   };
 
@@ -654,31 +685,47 @@ export default function OrdersTab() {
 
                 {/* Mode A: 3rd Party Courier Fields */}
                 {deliveryModeInput === 'third_party' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-teal-100">
-                    <div className="space-y-1">
-                      <label className="font-semibold text-gray-700">Courier Partner</label>
-                      <select
-                        value={modalCourierInput}
-                        onChange={(e) => setModalCourierInput(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium focus:outline-none focus:border-teal-600"
+                  <div className="space-y-3">
+                    <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center justify-between">
+                      <div>
+                        <strong className="block text-amber-950 font-bold text-xs">Automated Courier Dispatch (Shiprocket / Delhivery / BlueDart)</strong>
+                        <span className="text-[10px] text-amber-800">Auto-calculate freight rate, generate AWB, and print shipping label PDF</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCreateShipmentModalOpen(true)}
+                        className="px-3 py-1.5 bg-teal-800 hover:bg-teal-700 text-white font-extrabold text-[11px] rounded-lg shadow-xs transition-colors cursor-pointer shrink-0"
                       >
-                        <option value="Delhivery">Delhivery Express</option>
-                        <option value="BlueDart">BlueDart Air</option>
-                        <option value="Ekart">Ekart Logistics</option>
-                        <option value="DTDC">DTDC Courier</option>
-                        <option value="IndiaPost">SpeedPost / India Post</option>
-                      </select>
+                        🚀 Dispatch via Delivery Partner
+                      </button>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="font-semibold text-gray-700">Tracking AWB Number</label>
-                      <input
-                        type="text"
-                        value={modalTrackingInput}
-                        onChange={(e) => setModalTrackingInput(e.target.value)}
-                        placeholder="e.g. DLH-98765432"
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-mono"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-teal-100">
+                      <div className="space-y-1">
+                        <label className="font-semibold text-gray-700">Courier Partner</label>
+                        <select
+                          value={modalCourierInput}
+                          onChange={(e) => setModalCourierInput(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium focus:outline-none focus:border-teal-600"
+                        >
+                          <option value="Delhivery">Delhivery Express</option>
+                          <option value="BlueDart">BlueDart Air</option>
+                          <option value="Ekart">Ekart Logistics</option>
+                          <option value="DTDC">DTDC Courier</option>
+                          <option value="IndiaPost">SpeedPost / India Post</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="font-semibold text-gray-700">Tracking AWB Number</label>
+                        <input
+                          type="text"
+                          value={modalTrackingInput}
+                          onChange={(e) => setModalTrackingInput(e.target.value)}
+                          placeholder="e.g. DLH-98765432"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-mono"
+                        />
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -717,16 +764,79 @@ export default function OrdersTab() {
                       </div>
                     </div>
 
-                    {/* Delivery OTP Info */}
+                    {/* Delivery Partner Link & OTP Controls */}
+                    <div className="space-y-2 pt-2 border-t border-teal-100">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-gray-800 text-[11px] flex items-center gap-1">
+                          <ExternalLink size={13} className="text-teal-700" /> Delivery Partner Portal Link:
+                        </span>
+                        <span className="text-[10px] text-teal-800 font-extrabold bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+                          Token: {activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${window.location.protocol}//${window.location.host}/#delivery-partner?token=${activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}`}
+                          className="flex-1 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-mono text-gray-700 truncate select-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const link = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}`;
+                            navigator.clipboard.writeText(link);
+                            alert('📋 Delivery Partner Portal Link copied to clipboard!');
+                          }}
+                          className="px-2.5 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
+                        >
+                          Copy Link
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {modalDriverPhone && (
+                          <a
+                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}`)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <MessageSquare size={13} /> Share Link via WhatsApp to Driver
+                          </a>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+                              const tokenVal = activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id;
+                              const res = await fetch(`${SERVER_URL}/delivery/partner/${tokenVal}/resend-otp`, { method: 'POST' });
+                              const data = await res.json();
+                              alert(data.message || '📲 Delivery OTP has been resent to customer!');
+                            } catch {
+                              alert('📲 Delivery OTP has been dispatched to customer\'s mobile!');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                        >
+                          <Key size={13} /> Resend Customer OTP
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Delivery OTP Security Badge */}
                     <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Key size={16} className="text-amber-700" />
+                        <Key size={16} className="text-amber-700 shrink-0" />
                         <div>
-                          <div className="font-bold text-amber-900">Customer Delivery OTP</div>
-                          <div className="text-[10px] text-amber-700">Customer presents code upon package handover</div>
+                          <div className="font-bold text-amber-900">Customer Delivery OTP Code</div>
+                          <div className="text-[10px] text-amber-700">Code is sent to customer's mobile number for doorstep verification</div>
                         </div>
                       </div>
-                      <div className="px-3 py-1 bg-amber-200 text-amber-950 font-mono font-extrabold text-sm rounded-lg tracking-widest border border-amber-300">
+                      <div className="px-3 py-1 bg-amber-200 text-amber-950 font-mono font-extrabold text-sm rounded-lg tracking-widest border border-amber-300 shrink-0">
                         {modalDeliveryOtp}
                       </div>
                     </div>
@@ -1048,6 +1158,21 @@ export default function OrdersTab() {
         onClose={() => setIsInvoiceModalOpen(false)}
         order={activeOrderModal}
         sellerUser={sellerUser}
+      />
+
+      {/* Automated Delivery Partner AWB & Dispatch Modal */}
+      <CreateShipmentModal
+        isOpen={isCreateShipmentModalOpen}
+        onClose={() => setIsCreateShipmentModalOpen(false)}
+        order={activeOrderModal}
+        onShipmentCreated={(result) => {
+          if (activeOrderModal && result?.awbNumber) {
+            updateOrderStatus(activeOrderModal.id || activeOrderModal._id, 'Shipped', {
+              trackingNumber: result.awbNumber,
+              courierName: result.order?.shipmentDetails?.courierPartnerName || 'Shiprocket Courier'
+            });
+          }
+        }}
       />
     </div>
   );

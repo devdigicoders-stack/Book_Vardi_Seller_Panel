@@ -1,9 +1,9 @@
 import React from 'react';
 
-export function SkeletonText({ className = '', width = 'w-24', height = 'h-4' }) {
+export function SkeletonText({ className = '', width = 'w-24', height = 'h-4', as: Component = 'span' }) {
   return (
-    <div
-      className={`animate-pulse bg-slate-200/80 rounded-md ${width} ${height} ${className}`}
+    <Component
+      className={`animate-pulse bg-slate-200/80 rounded-md inline-block ${width} ${height} ${className}`}
     />
   );
 }

@@ -16,6 +16,8 @@ import {
   createSchoolOrderApi,
   updateSchoolOrderApi,
   deleteSchoolOrderApi,
+  acceptSchoolOrderApi,
+  submitSchoolQuoteApi,
   fetchPromotionsApi,
   createPromotionApi,
   deletePromotionApi,
@@ -510,15 +512,25 @@ export const SellerDataProvider = ({ children }) => {
 
         if (!isMounted) return;
 
-        if (statusRes.status === 'fulfilled' && statusRes.value?.status) {
-          const backendStatus = statusRes.value.status || statusRes.value.approvalStatus;
-          const regData = localStorage.getItem('bv_seller_reg_data');
-          const regDataObj = regData ? JSON.parse(regData) : null;
-          const isPendingLocally = regDataObj && (regDataObj.status === 'pending' || regDataObj.submissionStatus === 'pending');
-          if (!isPendingLocally || backendStatus === 'approved') {
-            setSellerStatus(backendStatus);
-            localStorage.setItem('bv_seller_status', backendStatus);
-          }
+        if (statusRes.status === 'fulfilled' && (statusRes.value?.status || statusRes.value?.approvalStatus || statusRes.value?.sellerStatus)) {
+          const backendStatus = statusRes.value.status || statusRes.value.approvalStatus || statusRes.value.sellerStatus;
+          setSellerStatus(backendStatus);
+          localStorage.setItem('bv_seller_status', backendStatus);
+          setSellerUser(prev => {
+            const updated = { ...prev, status: backendStatus, approvalStatus: backendStatus, submissionStatus: backendStatus };
+            try { localStorage.setItem('seller_user_profile', JSON.stringify(updated)); } catch (e) {}
+            return updated;
+          });
+          try {
+            const regData = localStorage.getItem('bv_seller_reg_data');
+            if (regData) {
+              const parsed = JSON.parse(regData);
+              parsed.status = backendStatus;
+              parsed.submissionStatus = backendStatus;
+              parsed.approvalStatus = backendStatus;
+              localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
+            }
+          } catch (e) {}
         }
 
         if (productsRes.status === 'fulfilled' && Array.isArray(productsRes.value)) {
@@ -579,7 +591,15 @@ export const SellerDataProvider = ({ children }) => {
 
         if (profileRes.status === 'fulfilled' && profileRes.value) {
           const val = profileRes.value;
+          if (val.status || val.approvalStatus) {
+            const pStatus = val.status || val.approvalStatus;
+            setSellerStatus(pStatus);
+            localStorage.setItem('bv_seller_status', pStatus);
+          }
           const normalizedProfile = {
+            status: val.status || val.approvalStatus,
+            approvalStatus: val.status || val.approvalStatus,
+            submissionStatus: val.status || val.approvalStatus,
             name: val.name || val.sellerName || val.ownerFullName || val.ownerDetails?.ownerFullName,
             email: val.email || val.sellerEmail,
             phone: val.phone || val.sellerPhone,
@@ -674,6 +694,17 @@ export const SellerDataProvider = ({ children }) => {
     try {
       const apiRes = await verifyPhoneOtpApi(cleanPhone, otpInput);
       if (apiRes && apiRes.token) {
+        let resStatus = apiRes.sellerStatus || apiRes.status || apiRes.approvalStatus || apiRes.seller?.status || apiRes.seller?.approvalStatus || 'pending';
+        
+        if (resStatus !== 'approved') {
+          setSellerStatus(resStatus);
+          localStorage.setItem('bv_seller_status', resStatus);
+          return {
+            success: false,
+            message: `Seller Authorization Denied: Your account status is '${resStatus.toUpperCase()}'. Verification approval by Admin is required.`
+          };
+        }
+
         setIsAuthenticated(true);
         if (apiRes.seller) {
           const resolvedName = apiRes.seller.name || apiRes.seller.sellerName || apiRes.seller.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
@@ -686,7 +717,6 @@ export const SellerDataProvider = ({ children }) => {
             pan: apiRes.seller.pan || apiRes.seller.ownerPan || sellerUser.pan || ''
           };
           setSellerUser(u);
-          const resStatus = apiRes.seller.approvalStatus || apiRes.seller.status || 'pending';
           setSellerStatus(resStatus);
           localStorage.setItem('seller_user_profile', JSON.stringify(u));
           localStorage.setItem('bv_seller_status', resStatus);
@@ -721,6 +751,10 @@ export const SellerDataProvider = ({ children }) => {
     const matchedEmail = isPhoneMatch ? (savedApp?.sellerEmail || `seller_${cleanPhone}@bookvardi.in`) : `seller_${cleanPhone}@bookvardi.in`;
     const matchedStoreName = isPhoneMatch ? (savedApp?.tradeName || savedApp?.storeName || savedApp?.legalBusinessName || `${matchedName}'s Vardi Store`) : `${matchedName}'s Vardi Store`;
     const status = isPhoneMatch ? (savedApp?.status || savedApp?.submissionStatus || 'pending') : (localStorage.getItem('bv_seller_status') || 'pending');
+
+    if (status !== 'approved') {
+      return { success: false, message: `Your seller account is currently ${status}. You cannot access the dashboard until approved.` };
+    }
 
     const updatedUser = {
       ...sellerUser,
@@ -835,6 +869,24 @@ export const SellerDataProvider = ({ children }) => {
         const newStatus = res.approvalStatus || res.status || res.sellerStatus || sellerStatus;
         setSellerStatus(newStatus);
         localStorage.setItem('bv_seller_status', newStatus);
+
+        setSellerUser(prev => {
+          const updated = { ...prev, status: newStatus, approvalStatus: newStatus, submissionStatus: newStatus };
+          try { localStorage.setItem('seller_user_profile', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+
+        try {
+          const regData = localStorage.getItem('bv_seller_reg_data');
+          if (regData) {
+            const parsed = JSON.parse(regData);
+            parsed.status = newStatus;
+            parsed.submissionStatus = newStatus;
+            parsed.approvalStatus = newStatus;
+            localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
+          }
+        } catch (e) {}
+
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: { status: newStatus } }));
         }
@@ -1151,17 +1203,27 @@ export const SellerDataProvider = ({ children }) => {
 
   const editOrder = (id, updates) => {
     checkPermission();
+    const strId = String(id);
     setOrders(prev => {
-      const updated = prev.map(o => (o.id === id ? { ...o, ...updates } : o));
+      const updated = prev.map(o => (String(o.id || o._id) === strId ? { ...o, ...updates } : o));
       return updated;
     });
   };
 
-  const updateOrderStatus = (id, status, details = {}) => {
+  const updateOrderStatus = async (id, status, details = {}) => {
     checkPermission();
     editOrder(id, { status, ...details });
-    updateOrderStatusApi(id, status, details).catch(() => {});
-    showToast(`Order #${id} status updated to ${status}`);
+    try {
+      const res = await updateOrderStatusApi(id, status, details);
+      if (res && res.order) {
+        editOrder(id, { ...res.order, status: res.order.status || status });
+      }
+      showToast(`Order #${id} status updated to ${status}`);
+      return res;
+    } catch (err) {
+      showToast(`Order #${id} status updated locally.`);
+      return null;
+    }
   };
 
   const deleteOrder = (id) => {
@@ -1281,11 +1343,66 @@ export const SellerDataProvider = ({ children }) => {
   const deleteSchoolOrder = (id) => {
     checkPermission();
     setSchoolOrders(prev => {
-      const updated = prev.filter(s => s.id !== id);
+      const updated = prev.filter(s => String(s.id) !== String(id) && String(s._id) !== String(id));
       return updated;
     });
     deleteSchoolOrderApi(id).catch(() => {});
   };
+
+  const acceptSchoolOrder = async (id) => {
+    checkPermission();
+    setSchoolOrders(prev => prev.map(s => {
+      if (String(s.id || s._id) === String(id)) {
+        return { ...s, status: 'assigned' };
+      }
+      return s;
+    }));
+
+    try {
+      const res = await acceptSchoolOrderApi(id);
+      if (res?.success) {
+        showToast('You have accepted this school bulk order!');
+      }
+    } catch (e) {
+      console.warn('Backend accept school order fallback:', e);
+    }
+  };
+
+  const submitSchoolQuote = async (id, quoteData) => {
+    checkPermission();
+    setSchoolOrders(prev => prev.map(s => {
+      if (String(s.id || s._id) === String(id)) {
+        const existingQuotes = Array.isArray(s.quotations) ? s.quotations : [];
+        const newQuote = {
+          _id: Date.now(),
+          sellerName: sellerUser?.name || 'Seller',
+          sellerStoreName: sellerUser?.storeName || 'My Store',
+          quoteAmount: Number(quoteData.quoteAmount),
+          unitPrice: Number(quoteData.unitPrice) || 0,
+          estimatedDeliveryDays: Number(quoteData.estimatedDeliveryDays) || 7,
+          notes: quoteData.notes || '',
+          status: 'submitted',
+          submittedAt: new Date().toISOString()
+        };
+        return {
+          ...s,
+          status: 'quoted',
+          quotations: [...existingQuotes, newQuote]
+        };
+      }
+      return s;
+    }));
+
+    try {
+      const res = await submitSchoolQuoteApi(id, quoteData);
+      if (res?.success) {
+        showToast('Quotation proposal submitted successfully!');
+      }
+    } catch (e) {
+      console.warn('Backend submit quotation fallback:', e);
+    }
+  };
+
 
   // Customers Actions
   const addCustomer = (customer) => {
@@ -1559,6 +1676,8 @@ export const SellerDataProvider = ({ children }) => {
         addSchoolOrder,
         editSchoolOrder,
         deleteSchoolOrder,
+        acceptSchoolOrder,
+        submitSchoolQuote,
         // Customer actions
         addCustomer,
         editCustomer,

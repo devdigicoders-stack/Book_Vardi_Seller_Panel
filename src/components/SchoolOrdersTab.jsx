@@ -13,30 +13,30 @@ import {
   Edit3, 
   Trash2,
   Send,
+  UserCheck,
+  Globe,
+  Users,
+  ShieldCheck,
+  Sparkles,
   DollarSign
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 
-const STATUS_PIPELINE = [
-  'Requirement Received',
-  'Quotation Sent',
-  'Negotiation',
-  'Accepted',
-  'In Production',
-  'Dispatched',
-  'Fulfilled'
-];
-
 export default function SchoolOrdersTab() {
-  const { schoolOrders, addSchoolOrder, editSchoolOrder, deleteSchoolOrder } = useSellerData();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingQuote, setEditingQuote] = useState(null);
-  const [quoteInput, setQuoteInput] = useState('');
-  const [statusInput, setStatusInput] = useState('');
+  const { schoolOrders, addSchoolOrder, acceptSchoolOrder, submitSchoolQuote, deleteSchoolOrder, sellerUser } = useSellerData();
 
-  // New Institutional Req form
+  const [searchTerm, setSearchTerm] = useState('');
+  const [channelFilter, setChannelFilter] = useState('All'); // 'All', 'Direct', 'Invited', 'Broadcast'
+
+  // Quotation Submission Modal State
+  const [quotationModalOrder, setQuotationModalOrder] = useState(null);
+  const [quoteAmount, setQuoteAmount] = useState('');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [deliveryDays, setDeliveryDays] = useState('7');
+  const [quoteNotes, setQuoteNotes] = useState('');
+
+  // Add Custom Requirement Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     schoolName: '',
     contactPerson: '',
@@ -50,37 +50,58 @@ export default function SchoolOrdersTab() {
     notes: ''
   });
 
+  // Filtered Orders for Seller
   const filteredOrders = useMemo(() => {
+    const currentSellerId = sellerUser?.id || sellerUser?._id || '';
+
     return schoolOrders.filter((req) => {
-      const matchesStatus = statusFilter === 'All' || req.status === statusFilter;
+      // Channel Filter
+      let channelMatch = true;
+      if (channelFilter === 'Direct') {
+        channelMatch = req.assignmentMode === 'direct';
+      } else if (channelFilter === 'Invited') {
+        channelMatch = req.assignmentMode === 'selected';
+      } else if (channelFilter === 'Broadcast') {
+        channelMatch = req.assignmentMode === 'broadcast';
+      }
+
+      // Search Filter
       const query = searchTerm.toLowerCase();
-      const matchesSearch = 
-        req.schoolName?.toLowerCase().includes(query) ||
-        req.contactPerson?.toLowerCase().includes(query) ||
-        req.requirementSummary?.toLowerCase().includes(query);
-      return matchesStatus && matchesSearch;
+      const searchMatch = 
+        (req.institutionName || req.schoolName || '').toLowerCase().includes(query) ||
+        (req.contactName || req.contactPerson || '').toLowerCase().includes(query) ||
+        (req.requirementSummary || '').toLowerCase().includes(query) ||
+        (req.city || '').toLowerCase().includes(query);
+
+      return channelMatch && searchMatch;
     });
-  }, [schoolOrders, statusFilter, searchTerm]);
+  }, [schoolOrders, channelFilter, searchTerm, sellerUser]);
 
-  const pipelineValue = useMemo(() => {
-    return schoolOrders.reduce((acc, curr) => acc + (Number(curr.quoteAmount) || Number(curr.estimatedBudget) || 0), 0);
-  }, [schoolOrders]);
+  // Open Quote Modal
+  const handleOpenQuotationModal = (order) => {
+    setQuotationModalOrder(order);
+    const targetBudget = Number(order.targetBudgetPerKit || order.estimatedBudget || 0);
+    const qty = Number(order.totalQuantity || order.quantity || 100);
 
-  const handleOpenEditQuote = (req) => {
-    setEditingQuote(req);
-    setQuoteInput(String(req.quoteAmount || req.estimatedBudget || 0));
-    setStatusInput(req.status || 'Quotation Sent');
+    setQuoteAmount(targetBudget ? String(targetBudget) : '');
+    setUnitPrice(targetBudget && qty ? String(Math.round(targetBudget / qty)) : '');
+    setDeliveryDays('7');
+    setQuoteNotes('');
   };
 
-  const handleSaveQuote = (e) => {
+  // Submit Quotation Proposal
+  const handleSubmitQuotationForm = (e) => {
     e.preventDefault();
-    if (editingQuote) {
-      editSchoolOrder(editingQuote.id, {
-        quoteAmount: Number(quoteInput),
-        status: statusInput
-      });
-      setEditingQuote(null);
-    }
+    if (!quotationModalOrder || !quoteAmount) return;
+
+    submitSchoolQuote(quotationModalOrder.id || quotationModalOrder._id, {
+      quoteAmount: Number(quoteAmount),
+      unitPrice: Number(unitPrice) || 0,
+      estimatedDeliveryDays: Number(deliveryDays) || 7,
+      notes: quoteNotes
+    });
+
+    setQuotationModalOrder(null);
   };
 
   const handleCreateRequirement = (e) => {
@@ -107,48 +128,50 @@ export default function SchoolOrdersTab() {
             <Building2 className="text-teal-700" size={24} /> Institutional & School Bulk Orders
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Manage bulk tenders, uniform requisitions, and price quotations for partner schools
+            Review school bulk RFQs assigned directly, invited by Admin, or broadcast marketplace tenders. Submit counter quotations or accept orders.
           </p>
         </div>
 
         <button
           onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
         >
-          <Plus size={16} /> New Institutional Requirement
+          <Plus size={16} /> Add Custom School Inquiry
         </button>
       </div>
 
       {/* Summary KPI Strip */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Active School RFQs</div>
+          <div className="text-[11px] font-semibold text-gray-500">Available School RFQs</div>
           <div className="text-2xl font-extrabold text-gray-900 mt-1">{schoolOrders.length}</div>
-          <div className="text-[10px] text-teal-700 mt-0.5">Schools requiring bulk student supplies</div>
+          <div className="text-[10px] text-teal-700 mt-0.5">Active bulk procurement opportunities</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Pipeline Quotation Value</div>
-          <div className="text-2xl font-extrabold text-teal-800 mt-1">₹{pipelineValue.toLocaleString()}</div>
-          <div className="text-[10px] text-gray-400 mt-0.5">Estimated cumulative institutional order size</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Accepted & In Production</div>
-          <div className="text-2xl font-extrabold text-emerald-700 mt-1">
-            {schoolOrders.filter(s => s.status === 'Accepted' || s.status === 'In Production').length}
+          <div className="text-[11px] font-semibold text-gray-500">Direct & Invited Orders</div>
+          <div className="text-2xl font-extrabold text-blue-700 mt-1">
+            {schoolOrders.filter(s => s.assignmentMode === 'direct' || s.assignmentMode === 'selected').length}
           </div>
-          <div className="text-[10px] text-emerald-600 mt-0.5">Ready for dispatch to campuses</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">Targeted vendor requisitions</div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
+          <div className="text-[11px] font-semibold text-gray-500">Accepted / Won RFQs</div>
+          <div className="text-2xl font-extrabold text-emerald-700 mt-1">
+            {schoolOrders.filter(s => s.status === 'assigned' || s.status === 'quote_accepted' || s.status === 'Accepted').length}
+          </div>
+          <div className="text-[10px] text-emerald-600 mt-0.5">Assigned to your store</div>
         </div>
       </div>
 
-      {/* Search & Status Filter */}
+      {/* Search & Channel Filter Bar */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl shadow-xs border border-gray-100">
         <div className="relative w-full md:w-80">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search school name, contact person..."
+            placeholder="Search school name, contact person, city..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600"
@@ -156,169 +179,274 @@ export default function SchoolOrdersTab() {
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
-          {['All', 'Requirement Received', 'Quotation Sent', 'Negotiation', 'Accepted', 'In Production'].map((st) => (
+          {[
+            { id: 'All', label: 'All RFQs', icon: <Building2 size={13} /> },
+            { id: 'Direct', label: 'Directly Assigned', icon: <UserCheck size={13} /> },
+            { id: 'Invited', label: 'Invited Sellers', icon: <Users size={13} /> },
+            { id: 'Broadcast', label: 'Global Broadcast', icon: <Globe size={13} /> }
+          ].map((ch) => (
             <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
-                statusFilter === st
+              key={ch.id}
+              onClick={() => setChannelFilter(ch.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                channelFilter === ch.id
                   ? 'bg-teal-800 text-white shadow-xs'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {st}
+              {ch.icon}
+              <span>{ch.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* School Orders Cards / List */}
+      {/* School Orders List */}
       <div className="space-y-4">
         {filteredOrders.length === 0 ? (
           <div className="p-14 text-center bg-white rounded-2xl border border-gray-100 text-gray-500">
             <Building2 size={44} className="mx-auto text-gray-300 mb-3" />
             <h4 className="font-extrabold text-base text-gray-900 mb-1">No School B2B Orders Found</h4>
             <p className="text-xs text-gray-500 max-w-sm mx-auto mb-4">
-              Institutional bulk requisitions from schools and colleges will be listed here. You can also log custom school inquiries.
+              Institutional bulk requisitions from schools will be listed here. You can also log custom school inquiries.
             </p>
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
             >
               <Plus size={16} /> Add School Requisition
             </button>
           </div>
         ) : (
-          filteredOrders.map((req) => (
-            <div key={req.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs hover:border-teal-200 transition-all space-y-4">
-              
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 border-b border-gray-100 pb-3">
-                <div>
+          filteredOrders.map((req) => {
+            const hasSellerQuote = Array.isArray(req.quotations) && req.quotations.some(
+              q => String(q.sellerId) === String(sellerUser?.id || sellerUser?._id)
+            );
+            const myQuote = hasSellerQuote ? req.quotations.find(
+              q => String(q.sellerId) === String(sellerUser?.id || sellerUser?._id)
+            ) : null;
+
+            const isAssignedToMe = req.status === 'assigned' || req.status === 'quote_accepted' || req.status === 'Accepted';
+
+            return (
+              <div key={req.id || req._id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs hover:border-teal-200 transition-all space-y-4">
+                
+                {/* Header */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                        {req.referenceId || req.id}
+                      </span>
+                      <h3 className="font-bold text-gray-900 text-base">{req.institutionName || req.schoolName}</h3>
+                      
+                      {/* Distribution Tag */}
+                      {req.assignmentMode === 'direct' && (
+                        <span className="bg-blue-50 text-blue-800 font-bold text-[10px] px-2 py-0.5 rounded flex items-center gap-1 border border-blue-200">
+                          <UserCheck size={11} /> Directly Assigned
+                        </span>
+                      )}
+                      {req.assignmentMode === 'selected' && (
+                        <span className="bg-purple-50 text-purple-800 font-bold text-[10px] px-2 py-0.5 rounded flex items-center gap-1 border border-purple-200">
+                          <Users size={11} /> Selected Vendor Invitation
+                        </span>
+                      )}
+                      {req.assignmentMode === 'broadcast' && (
+                        <span className="bg-emerald-50 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded flex items-center gap-1 border border-emerald-200">
+                          <Globe size={11} /> Global RFQ
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 mt-1">
+                      <span className="flex items-center gap-1"><Phone size={13} /> {req.contactName || req.contactPerson} ({req.contactPhone})</span>
+                      <span className="flex items-center gap-1"><Mail size={13} /> {req.contactEmail}</span>
+                      <span className="flex items-center gap-1 text-teal-700 font-medium"><Calendar size={13} /> Deadline: {req.targetDeliveryDate || req.deadline || 'ASAP'}</span>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[11px] text-teal-800 font-bold">{req.id}</span>
-                    <h3 className="font-bold text-gray-900 text-base">{req.schoolName}</h3>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                      isAssignedToMe
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : hasSellerQuote
+                        ? 'bg-purple-50 text-purple-800 border-purple-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                    }`}>
+                      {isAssignedToMe ? 'Order Assigned to You' :
+                       hasSellerQuote ? 'Your Quote Submitted' : 'RFQ Open for Quotations'}
+                    </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 mt-1">
-                    <span className="flex items-center gap-1"><Phone size={13} /> {req.contactPerson} ({req.contactPhone})</span>
-                    <span className="flex items-center gap-1"><Mail size={13} /> {req.contactEmail}</span>
-                    <span className="flex items-center gap-1 text-teal-700 font-medium"><Calendar size={13} /> Deadline: {req.deadline}</span>
+                </div>
+
+                {/* Requirement details */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50/70 p-3.5 rounded-xl text-xs">
+                  <div className="md:col-span-2">
+                    <div className="text-gray-400 font-medium text-[11px]">Requirement Specification</div>
+                    <div className="font-semibold text-gray-900 mt-0.5">
+                      {req.requirementSummary || req.additionalNotes || 'Bulk student uniform & stationery procurement'}
+                    </div>
+                    {req.additionalNotes && <div className="text-[11px] text-gray-500 mt-1 italic">"{req.additionalNotes}"</div>}
+                  </div>
+
+                  <div>
+                    <div className="text-gray-400 font-medium text-[11px]">Requested Quantity</div>
+                    <div className="font-extrabold text-gray-900 text-sm mt-0.5">
+                      {req.totalQuantity || req.quantity || 100} Units
+                    </div>
+                    <div className="text-[10px] text-gray-500">
+                      Target budget: ₹{Number(req.targetBudgetPerKit || req.estimatedBudget || 0).toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-gray-400 font-medium text-[11px]">Target Delivery & Location</div>
+                    <div className="font-bold text-gray-800 text-xs mt-0.5">
+                      {req.city ? `${req.city}, ${req.state}` : 'Pan India'}
+                    </div>
+                    <div className="text-[10px] text-teal-700 font-medium">Logo Embroidery Included</div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                    req.status === 'Accepted'
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : req.status === 'Quotation Sent'
-                      ? 'bg-blue-50 text-blue-800 border-blue-200'
-                      : req.status === 'Negotiation'
-                      ? 'bg-amber-50 text-amber-800 border-amber-200'
-                      : 'bg-gray-100 text-gray-700 border-gray-200'
-                  }`}>
-                    {req.status}
-                  </span>
-                </div>
-              </div>
+                {/* Seller Quote Banner if already submitted */}
+                {myQuote && (
+                  <div className="bg-purple-50/80 border border-purple-200 p-3 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-purple-900">Your Submitted Quotation:</span>
+                      <span className="font-extrabold text-purple-950 text-sm ml-2">₹{Number(myQuote.quoteAmount).toLocaleString()}</span>
+                      <span className="text-gray-500 text-[11px] ml-2">({myQuote.estimatedDeliveryDays} days delivery)</span>
+                    </div>
 
-              {/* Requirement details */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50/70 p-3.5 rounded-xl text-xs">
-                <div className="md:col-span-2">
-                  <div className="text-gray-400 font-medium text-[11px]">Requirement Specification</div>
-                  <div className="font-semibold text-gray-900 mt-0.5">{req.requirementSummary}</div>
-                  {req.notes && <div className="text-[11px] text-gray-500 mt-1 italic">"{req.notes}"</div>}
-                </div>
-
-                <div>
-                  <div className="text-gray-400 font-medium text-[11px]">Requested Quantity</div>
-                  <div className="font-extrabold text-gray-900 text-sm mt-0.5">{req.quantity} Sets / Units</div>
-                  <div className="text-[10px] text-gray-500">Target budget: ₹{Number(req.estimatedBudget).toLocaleString()}</div>
-                </div>
-
-                <div>
-                  <div className="text-gray-400 font-medium text-[11px]">Quoted Proposal Amount</div>
-                  <div className="font-extrabold text-teal-800 text-base mt-0.5">
-                    ₹{Number(req.quoteAmount || req.estimatedBudget).toLocaleString()}
+                    <span className="text-[11px] font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full">
+                      Status: {myQuote.status === 'approved' ? 'Accepted by Admin' : 'Under Admin Review'}
+                    </span>
                   </div>
-                  <div className="text-[10px] text-emerald-600 font-medium">GST & Freight Included</div>
-                </div>
-              </div>
+                )}
 
-              {/* Actions Footer */}
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  onClick={() => deleteSchoolOrder(req.id)}
-                  className="text-gray-400 hover:text-red-600 text-xs flex items-center gap-1 transition-colors"
-                >
-                  <Trash2 size={13} /> Remove RFQ
-                </button>
-
-                <div className="flex items-center gap-2">
+                {/* Actions Footer */}
+                <div className="flex items-center justify-between pt-1">
                   <button
-                    onClick={() => handleOpenEditQuote(req)}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold rounded-xl transition-colors"
+                    onClick={() => deleteSchoolOrder(req.id || req._id)}
+                    className="text-gray-400 hover:text-red-600 text-xs flex items-center gap-1 transition-colors"
                   >
-                    <Edit3 size={13} /> Update Quotation & Status
+                    <Trash2 size={13} /> Remove RFQ
                   </button>
-                </div>
-              </div>
 
-            </div>
-          ))
+                  <div className="flex items-center gap-2">
+                    {/* Direct Accept Button */}
+                    {!isAssignedToMe && (
+                      <button
+                        onClick={() => acceptSchoolOrder(req.id || req._id)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                      >
+                        <CheckCircle2 size={14} /> Accept at Target Budget
+                      </button>
+                    )}
+
+                    {/* Submit / Negotiate Quote Button */}
+                    <button
+                      onClick={() => handleOpenQuotationModal(req)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                    >
+                      <Send size={14} />
+                      <span>{hasSellerQuote ? 'Update Your Quotation' : 'Submit Counter Quotation'}</span>
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })
         )}
       </div>
 
-      {/* Edit Quotation Modal */}
-      {editingQuote && (
+      {/* ========================================== */}
+      {/* SELLER QUOTATION SUBMISSION MODAL */}
+      {/* ========================================== */}
+      {quotationModalOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 text-xs space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-gray-100">
               <div>
-                <h4 className="font-bold text-gray-900 text-base">Update School Quotation</h4>
-                <p className="text-[11px] text-gray-500">{editingQuote.schoolName}</p>
+                <h4 className="font-bold text-gray-900 text-base">Submit School Quotation & Negotiation</h4>
+                <p className="text-[11px] text-teal-800 font-bold mt-0.5">
+                  {quotationModalOrder.institutionName || quotationModalOrder.schoolName}
+                </p>
               </div>
-              <button onClick={() => setEditingQuote(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setQuotationModalOrder(null)} className="text-gray-400 hover:text-gray-600">
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveQuote} className="space-y-3">
+            <form onSubmit={handleSubmitQuotationForm} className="space-y-3">
               <div className="space-y-1">
-                <label className="font-semibold text-gray-700">Proposal Quotation Amount (₹)</label>
+                <label className="font-semibold text-gray-700">Total Proposal Quote Amount (₹) *</label>
                 <input
                   type="number"
                   required
-                  value={quoteInput}
-                  onChange={(e) => setQuoteInput(e.target.value)}
+                  placeholder="e.g. 185000"
+                  value={quoteAmount}
+                  onChange={(e) => {
+                    setQuoteAmount(e.target.value);
+                    const qty = Number(quotationModalOrder.totalQuantity || quotationModalOrder.quantity || 100);
+                    if (qty > 0 && e.target.value) {
+                      setUnitPrice(String(Math.round(Number(e.target.value) / qty)));
+                    }
+                  }}
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 text-sm font-bold"
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Unit Rate / Item (₹)</label>
+                  <input
+                    type="number"
+                    value={unitPrice}
+                    onChange={(e) => setUnitPrice(e.target.value)}
+                    placeholder="e.g. 1850"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Estimated Delivery Days</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={deliveryDays}
+                    onChange={(e) => setDeliveryDays(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1">
-                <label className="font-semibold text-gray-700">Current Pipeline Status</label>
-                <select
-                  value={statusInput}
-                  onChange={(e) => setStatusInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600"
-                >
-                  {STATUS_PIPELINE.map((st) => (
-                    <option key={st} value={st}>{st}</option>
-                  ))}
-                </select>
+                <label className="font-semibold text-gray-700">Counter Proposal / Fabric Specs Notes</label>
+                <textarea
+                  rows="3"
+                  placeholder="Specify fabric details, GST inclusion, custom buttons, logo embroidery, or sample dispatch terms..."
+                  value={quoteNotes}
+                  onChange={(e) => setQuoteNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
+                ></textarea>
               </div>
 
               <div className="flex gap-2 pt-3">
                 <button
                   type="button"
-                  onClick={() => setEditingQuote(null)}
-                  className="flex-1 py-2 font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl"
+                  onClick={() => setQuotationModalOrder(null)}
+                  className="flex-1 py-2 font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs"
+                  className="flex-1 py-2 font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  Save Changes
+                  <Send size={14} />
+                  <span>Submit Quotation</span>
                 </button>
               </div>
             </form>

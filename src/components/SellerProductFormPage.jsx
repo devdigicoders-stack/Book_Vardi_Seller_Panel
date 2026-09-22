@@ -20,37 +20,61 @@ import {
   Sliders,
   ShieldCheck,
   Save,
-  RotateCcw
+  RotateCcw,
+  CreditCard,
+  BookOpen,
+  Search,
+  Layers3
 } from 'lucide-react';
 import ImageUploadDropzone from './ImageUploadDropzone';
 
-// Sizing Matrix Presets for Schools & Uniforms
+// Sizing & Scale Presets
 const SIZE_PRESETS = [
   {
     id: 'standard',
-    label: 'Standard (S - XXL)',
+    label: 'Apparel Standard (S - XXL)',
+    scale: 'size',
     sizes: ['S', 'M', 'L', 'XL', 'XXL']
   },
   {
     id: 'uniform_waist',
     label: 'Uniform Waist / Chest (26 - 38)',
+    scale: 'size',
     sizes: ['26', '28', '30', '32', '34', '36', '38']
   },
   {
-    id: 'junior_age',
-    label: 'Junior / Age (3Y - 12Y)',
-    sizes: ['3-4 Yrs', '5-6 Yrs', '7-8 Yrs', '9-10 Yrs', '11-12 Yrs']
+    id: 'book_sets',
+    label: 'Books & Counts (Single / Sets)',
+    scale: 'count',
+    sizes: ['1 Book', 'Set of 3 Books', 'Set of 5 Books', 'Set of 10 Books']
   },
   {
-    id: 'shoes',
-    label: 'Footwear (UK 3 - 10)',
-    sizes: ['UK 3', 'UK 4', 'UK 5', 'UK 6', 'UK 7', 'UK 8', 'UK 9', 'UK 10']
+    id: 'meters',
+    label: 'Fabric Length (Meters)',
+    scale: 'meter',
+    sizes: ['1 Meter', '2.5 Meters', '5 Meters', '10 Meters']
   },
   {
-    id: 'single',
-    label: 'Free Size',
-    sizes: ['Free Size']
+    id: 'weight',
+    label: 'Weight (Grams / Kg)',
+    scale: 'kg',
+    sizes: ['250 Grams', '500 Grams', '1 Kg', '2 Kg', '5 Kg']
+  },
+  {
+    id: 'packaging',
+    label: 'Boxes & Bulk Packs',
+    scale: 'box',
+    sizes: ['1 Piece', 'Pack of 10', '1 Box (50 Pcs)', '1 Carton']
   }
+];
+
+const MEASURE_SCALES = [
+  { id: 'size', label: 'Clothes & Shoes (Size: S, M, XL, 32)', defaultUnit: 'Size', placeholder: 'e.g. S, M, L, XL, 32, UK 8' },
+  { id: 'count', label: 'Books & Sets (Count: 1 Book, Set of 5)', defaultUnit: 'Count', placeholder: 'e.g. 1 Book, Set of 3, Pack of 10' },
+  { id: 'meter', label: 'Fabric & Materials (Meters / Yards)', defaultUnit: 'Meter', placeholder: 'e.g. 1 Meter, 2.5 Meters, 5 Meters' },
+  { id: 'kg', label: 'Weight & Bulk (Kg / Grams)', defaultUnit: 'Kg', placeholder: 'e.g. 500 Grams, 1 Kg, 5 Kg' },
+  { id: 'box', label: 'Packaging (Box / Carton / Pieces)', defaultUnit: 'Box', placeholder: 'e.g. 1 Box (50 Pcs), 1 Carton, 1 Piece' },
+  { id: 'unit', label: 'General Unit (Pair, Pack, Set)', defaultUnit: 'Unit', placeholder: 'e.g. Pair, Pack, Roll, Dozen' }
 ];
 
 const CATEGORIES = [
@@ -64,9 +88,21 @@ const CATEGORIES = [
   { id: 'stationery', label: 'Pens & Stationery' }
 ];
 
-export default function SellerProductFormPage({ product, onSave, onBack }) {
+export default function SellerProductFormPage({ product, existingProducts = [], onSave, onBack }) {
   const isEdit = Boolean(product);
 
+  // Entry Type: 'single' (Standard product) or 'kit' (Kit / Bundle)
+  const [entryType, setEntryType] = useState(() => {
+    if (product?.category === 'kits' || product?.bundleType === 'kit' || (Array.isArray(product?.items) && product.items.length > 0)) {
+      return 'kit';
+    }
+    return 'single';
+  });
+
+  // Kit Mode: 'existing' (bundle catalog products) or 'scratch' (create kit from scratch)
+  const [kitMode, setKitMode] = useState('existing');
+
+  // Single Product Form Data
   const [formData, setFormData] = useState({
     name: '',
     subtitle: '',
@@ -87,21 +123,48 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
     images: []
   });
 
+  // Variants & Measuring Scales
   const [sizeVariants, setSizeVariants] = useState([]);
-  const [customSizeInput, setCustomSizeInput] = useState('');
-  const [batchBasePrice, setBatchBasePrice] = useState('');
-  const [batchBaseMrp, setBatchBaseMrp] = useState('');
-  const [batchBaseStock, setBatchBaseStock] = useState('25');
 
-  // Modal for picking a gallery image for a specific variant
-  const [activeVariantForGallery, setActiveVariantForGallery] = useState(null);
+  // Modal for Adding / Editing a Variant
+  const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
+  const [editingVariantIndex, setEditingVariantIndex] = useState(null);
+  const [variantForm, setVariantForm] = useState({
+    size: '',
+    measureScale: 'size',
+    measureValue: '',
+    unit: 'Size',
+    price: '',
+    mrp: '',
+    stock: '25',
+    sku: '',
+    image: '',
+    images: []
+  });
+
+  // Kit / Bundle Specific State
+  const [kitData, setKitData] = useState({
+    title: '',
+    schoolName: '',
+    classGrade: 'Class 1-5',
+    gender: 'Unisex',
+    badgeTag: 'School Approved',
+    bundlePrice: '',
+    totalMrp: '',
+    stock: '20',
+    description: '',
+    paymentMethodAllowed: 'Both',
+    images: []
+  });
+  const [selectedKitProducts, setSelectedKitProducts] = useState([]);
+  const [scratchKitItems, setScratchKitItems] = useState([
+    { name: '', quantity: 1, unitPrice: '' }
+  ]);
+  const [catalogSearch, setCatalogSearch] = useState('');
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState('general'); // 'general' | 'variants' | 'media'
-
-  const fileInputRef = useRef(null);
-  const [uploadingVariantIndex, setUploadingVariantIndex] = useState(null);
+  const [activeTab, setActiveTab] = useState('general'); // 'general' | 'variants' | 'kit' | 'payment'
 
   // Initialize form
   useEffect(() => {
@@ -113,7 +176,7 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
         : (product.image ? [product.image] : []);
 
       setFormData({
-        name: product.name || '',
+        name: product.name || product.title || '',
         subtitle: product.subtitle || '',
         price: product.price !== undefined ? String(product.price) : '',
         originalPrice: product.originalPrice || product.mrp ? String(product.originalPrice || product.mrp) : '',
@@ -135,26 +198,60 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
       // Load sizeVariants if existing
       if (Array.isArray(product.sizeVariants) && product.sizeVariants.length > 0) {
         setSizeVariants(product.sizeVariants.map(v => ({
-          size: v.size || '',
+          size: v.size || v.measureValue || '',
+          measureScale: v.measureScale || 'size',
+          measureValue: v.measureValue || v.size || '',
+          unit: v.unit || 'Size',
           price: v.price !== undefined ? String(v.price) : String(product.price || ''),
           mrp: v.mrp !== undefined ? String(v.mrp) : String(product.originalPrice || product.mrp || ''),
           stock: v.stock !== undefined ? String(v.stock) : '25',
           image: v.image || '',
-          sku: v.sku || (product.sku ? `${product.sku}-${v.size}` : '')
+          images: Array.isArray(v.images) ? v.images : (v.image ? [v.image] : []),
+          sku: v.sku || (product.sku ? `${product.sku}-${v.size || v.measureValue}` : '')
         })));
       } else if (Array.isArray(product.sizes) && product.sizes.length > 0) {
-        // Migration: convert simple sizes array to sizeVariants with root price/image
         setSizeVariants(product.sizes.map(s => ({
           size: s,
+          measureScale: 'size',
+          measureValue: s,
+          unit: 'Size',
           price: String(product.price || ''),
           mrp: String(product.originalPrice || product.mrp || ''),
           stock: '25',
           image: prodImages[0] || '',
+          images: prodImages[0] ? [prodImages[0]] : [],
           sku: product.sku ? `${product.sku}-${s}` : ''
         })));
       } else {
         setSizeVariants([]);
       }
+
+      // Initialize Kit if editing a kit
+      if (product.category === 'kits' || product.bundleType === 'kit' || Array.isArray(product.items)) {
+        setKitData({
+          title: product.title || product.name || '',
+          schoolName: product.schoolName || '',
+          classGrade: product.classGrade || 'Class 1-5',
+          gender: product.gender || 'Unisex',
+          badgeTag: product.badgeTag || 'School Approved',
+          bundlePrice: product.bundlePrice !== undefined ? String(product.bundlePrice) : String(product.price || ''),
+          totalMrp: product.totalMrp !== undefined ? String(product.totalMrp) : String(product.originalPrice || product.mrp || ''),
+          stock: product.stock !== undefined ? String(product.stock) : '20',
+          description: product.description || '',
+          paymentMethodAllowed: product.paymentMethodAllowed || 'Both',
+          images: prodImages
+        });
+        if (Array.isArray(product.items)) {
+          setSelectedKitProducts(product.items.map(item => ({
+            productId: item.productId || item.id,
+            name: item.name,
+            unitPrice: item.unitPrice || item.price || 0,
+            quantity: item.quantity || 1,
+            image: item.image || ''
+          })));
+        }
+      }
+
     } else {
       setFormData({
         name: '',
@@ -170,214 +267,329 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
         material: '',
         brand: '',
         paymentMethodAllowed: 'Both',
-        description: 'Premium quality academic product, tailored with durable, breathable fabrics.',
+        description: '',
         sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
         image: '',
         images: []
       });
       setSizeVariants([]);
+      setKitData({
+        title: '',
+        schoolName: '',
+        classGrade: 'Class 1-5',
+        gender: 'Unisex',
+        badgeTag: 'School Approved',
+        bundlePrice: '',
+        totalMrp: '',
+        stock: '20',
+        description: '',
+        paymentMethodAllowed: 'Both',
+        images: []
+      });
     }
   }, [product]);
 
-  // Handle Preset Selection
-  const applySizePreset = (presetSizes) => {
+  // Variant Modal Handlers
+  const openAddVariantModal = () => {
+    const defaultPrice = formData.price || '499';
+    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+    setEditingVariantIndex(null);
+    setVariantForm({
+      size: '',
+      measureScale: 'size',
+      measureValue: '',
+      unit: 'Size',
+      price: defaultPrice,
+      mrp: defaultMrp,
+      stock: '25',
+      sku: formData.sku ? `${formData.sku}-V${sizeVariants.length + 1}` : `SKU-V${sizeVariants.length + 1}`,
+      image: formData.images[0] || '',
+      images: formData.images.length > 0 ? [formData.images[0]] : []
+    });
+    setIsVariantModalOpen(true);
+  };
+
+  const openEditVariantModal = (index) => {
+    const v = sizeVariants[index];
+    setEditingVariantIndex(index);
+    setVariantForm({
+      size: v.size || v.measureValue || '',
+      measureScale: v.measureScale || 'size',
+      measureValue: v.measureValue || v.size || '',
+      unit: v.unit || 'Size',
+      price: v.price !== undefined ? String(v.price) : '',
+      mrp: v.mrp !== undefined ? String(v.mrp) : '',
+      stock: v.stock !== undefined ? String(v.stock) : '25',
+      sku: v.sku || '',
+      image: v.image || '',
+      images: Array.isArray(v.images) ? v.images : (v.image ? [v.image] : [])
+    });
+    setIsVariantModalOpen(true);
+  };
+
+  const handleSaveVariantModal = (e) => {
+    e?.preventDefault();
+    const val = (variantForm.measureValue || variantForm.size).trim();
+    if (!val) {
+      setError('Please enter a variant value (e.g., Size, Count, Meter, or Weight value).');
+      return;
+    }
+    if (!variantForm.price || Number(variantForm.price) <= 0) {
+      setError('Please enter a valid selling price for this variant.');
+      return;
+    }
+
+    const newVariant = {
+      size: val,
+      measureScale: variantForm.measureScale,
+      measureValue: val,
+      unit: variantForm.unit,
+      price: variantForm.price,
+      mrp: variantForm.mrp || Math.round(Number(variantForm.price) * 1.25).toString(),
+      stock: variantForm.stock || '25',
+      sku: variantForm.sku || `SKU-${val}`,
+      image: variantForm.images[0] || variantForm.image || '',
+      images: variantForm.images
+    };
+
+    if (editingVariantIndex !== null) {
+      setSizeVariants(prev => {
+        const copy = [...prev];
+        copy[editingVariantIndex] = newVariant;
+        return copy;
+      });
+    } else {
+      setSizeVariants(prev => [...prev, newVariant]);
+    }
+
+    setIsVariantModalOpen(false);
+    setError('');
+  };
+
+  const handleRemoveVariant = (index) => {
+    setSizeVariants(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const applySizePreset = (preset) => {
     const defaultPrice = formData.price || '499';
     const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
     const defaultImage = formData.images[0] || formData.image || '';
 
-    const newVariants = presetSizes.map(size => {
-      const existing = sizeVariants.find(v => v.size.toLowerCase() === size.toLowerCase());
+    const newVariants = preset.sizes.map(sz => {
+      const existing = sizeVariants.find(v => (v.size || v.measureValue || '').toLowerCase() === sz.toLowerCase());
       if (existing) return existing;
       return {
-        size,
+        size: sz,
+        measureScale: preset.scale,
+        measureValue: sz,
+        unit: preset.scale.toUpperCase(),
         price: defaultPrice,
         mrp: defaultMrp,
         stock: '25',
         image: defaultImage,
-        sku: formData.sku ? `${formData.sku}-${size}` : `SKU-${size}`
+        images: defaultImage ? [defaultImage] : [],
+        sku: formData.sku ? `${formData.sku}-${sz}` : `SKU-${sz}`
       };
     });
 
     setSizeVariants(newVariants);
   };
 
-  // Add a single custom size
-  const handleAddCustomSize = (e) => {
-    e?.preventDefault();
-    const trimmed = customSizeInput.trim();
-    if (!trimmed) return;
-    if (sizeVariants.some(v => v.size.toLowerCase() === trimmed.toLowerCase())) {
-      setError(`Size "${trimmed}" already exists in the variant list.`);
-      return;
-    }
-
-    const defaultPrice = formData.price || '499';
-    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
-    const defaultImage = formData.images[0] || formData.image || '';
-
-    setSizeVariants(prev => [
-      ...prev,
-      {
-        size: trimmed,
-        price: defaultPrice,
-        mrp: defaultMrp,
-        stock: '25',
-        image: defaultImage,
-        sku: formData.sku ? `${formData.sku}-${trimmed}` : `SKU-${trimmed}`
-      }
-    ]);
-    setCustomSizeInput('');
-    setError('');
-  };
-
-  // Remove a variant
-  const handleRemoveVariant = (index) => {
-    setSizeVariants(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Update a single field on a specific variant
-  const handleUpdateVariant = (index, field, value) => {
-    setSizeVariants(prev => {
-      const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
-      return copy;
-    });
-  };
-
-  // Batch Apply to all size variants
-  const handleBatchApply = () => {
-    if (!batchBasePrice && !batchBaseMrp && !batchBaseStock) {
-      setError('Enter at least a price, MRP, or stock quantity to batch update.');
-      return;
-    }
-    setError('');
-    setSizeVariants(prev => prev.map(v => ({
-      ...v,
-      price: batchBasePrice ? batchBasePrice : v.price,
-      mrp: batchBaseMrp ? batchBaseMrp : v.mrp,
-      stock: batchBaseStock ? batchBaseStock : v.stock
-    })));
-  };
-
-  // Trigger file upload for a variant image
-  const triggerVariantImageUpload = (index) => {
-    setUploadingVariantIndex(index);
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleVariantFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file || uploadingVariantIndex === null) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target.result;
-      handleUpdateVariant(uploadingVariantIndex, 'image', dataUrl);
-      // Also add to gallery if not already present
-      setFormData(prev => ({
-        ...prev,
-        images: prev.images.includes(dataUrl) ? prev.images : [...prev.images, dataUrl]
-      }));
-      setUploadingVariantIndex(null);
+  // Kit Helpers
+  const handleAddProductToKit = (p) => {
+    if (selectedKitProducts.some(item => String(item.productId) === String(p.id || p._id))) return;
+    const newItem = {
+      productId: p.id || p._id,
+      name: p.name || p.title,
+      unitPrice: Number(p.price) || 0,
+      quantity: 1,
+      image: p.image || ''
     };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    setSelectedKitProducts(prev => [...prev, newItem]);
   };
 
-  // Select a gallery image for a variant
-  const handleAssignGalleryImageToVariant = (imageUrl) => {
-    if (activeVariantForGallery !== null) {
-      handleUpdateVariant(activeVariantForGallery, 'image', imageUrl);
-      setActiveVariantForGallery(null);
-    }
+  const handleRemoveProductFromKit = (productId) => {
+    setSelectedKitProducts(prev => prev.filter(item => String(item.productId) !== String(productId)));
   };
 
-  // Handle Form Submission
+  const handleUpdateKitProductQty = (productId, qty) => {
+    const numQty = Math.max(1, Number(qty) || 1);
+    setSelectedKitProducts(prev => prev.map(item => {
+      if (String(item.productId) === String(productId)) {
+        return { ...item, quantity: numQty };
+      }
+      return item;
+    }));
+  };
+
+  const calculatedKitMrp = selectedKitProducts.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+
+  // Form Submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!formData.name.trim()) {
-      setError('Please provide a product title/name.');
-      setActiveTab('general');
-      return;
-    }
-
-    // Automatically compute root price & stock from size variants if variants exist
-    let computedPrice = Number(formData.price) || 0;
-    let computedMrp = Number(formData.originalPrice) || Math.round(computedPrice * 1.25);
-    let computedStock = Number(formData.stockQuantity) || 0;
-
-    if (sizeVariants.length > 0) {
-      const variantPrices = sizeVariants.map(v => Number(v.price) || 0).filter(p => p > 0);
-      if (variantPrices.length > 0) {
-        computedPrice = Math.min(...variantPrices);
-      }
-      const variantMrps = sizeVariants.map(v => Number(v.mrp) || 0).filter(m => m > 0);
-      if (variantMrps.length > 0) {
-        computedMrp = Math.max(...variantMrps);
-      }
-      computedStock = sizeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
-    } else {
-      if (computedPrice <= 0) {
-        setError('Please set a valid selling price greater than 0.');
+    if (entryType === 'single') {
+      if (!formData.name.trim()) {
+        setError('Please provide a product title/name.');
         setActiveTab('general');
         return;
       }
-    }
 
-    const primaryImage = formData.images[0] || formData.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80';
+      if (sizeVariants.length > 0) {
+        for (const variant of sizeVariants) {
+          if (!variant.price || Number(variant.price) <= 0) {
+            setError(`Please specify a valid selling price for variant "${variant.size || variant.measureValue}".`);
+            setActiveTab('variants');
+            return;
+          }
+        }
+      } else {
+        if (!formData.price || Number(formData.price) <= 0) {
+          setError('Please set a valid base selling price.');
+          setActiveTab('general');
+          return;
+        }
+      }
 
-    const payload = {
-      ...formData,
-      price: computedPrice,
-      originalPrice: computedMrp,
-      mrp: computedMrp,
-      stockQuantity: computedStock,
-      stock: computedStock,
-      image: primaryImage,
-      images: formData.images.length > 0 ? formData.images : [primaryImage],
-      sizes: sizeVariants.length > 0 ? sizeVariants.map(v => v.size) : ['Free Size'],
-      sizeVariants: sizeVariants.map(v => ({
-        size: v.size,
-        price: Number(v.price) || computedPrice,
-        mrp: Number(v.mrp) || computedMrp,
-        stock: Number(v.stock) || 0,
-        image: v.image || primaryImage,
-        sku: v.sku || `${formData.sku}-${v.size}`
-      }))
-    };
+      setSubmitting(true);
+      try {
+        const validPrices = sizeVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+        const minVariantPrice = validPrices.length > 0 ? Math.min(...validPrices) : Number(formData.price);
+        const totalVariantStock = sizeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
 
-    setSubmitting(true);
-    try {
-      await onSave(payload);
-    } catch (err) {
-      setError(err.message || 'Failed to save product. Please try again.');
-    } finally {
-      setSubmitting(false);
+        const primaryImage = formData.images[0] || formData.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80';
+
+        const paymentAllowedStr = formData.paymentMethodAllowed || 'Both';
+        const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
+          ? ['Online'] 
+          : (paymentAllowedStr === 'COD_Only' ? ['COD'] : ['COD', 'Online']);
+
+        const payload = {
+          ...formData,
+          bundleType: 'single',
+          price: sizeVariants.length > 0 ? minVariantPrice : Number(formData.price),
+          originalPrice: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
+          mrp: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
+          stockQuantity: sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
+          stock: sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
+          image: primaryImage,
+          images: formData.images.length > 0 ? formData.images : [primaryImage],
+          paymentMethodAllowed: paymentAllowedStr,
+          paymentMethodsAllowed: paymentAllowedArr,
+          sizes: sizeVariants.map(v => v.size || v.measureValue),
+          sizeVariants: sizeVariants.map(v => ({
+            size: v.size || v.measureValue,
+            measureScale: v.measureScale || 'size',
+            measureValue: v.measureValue || v.size,
+            unit: v.unit || 'Size',
+            price: Number(v.price) || minVariantPrice,
+            mrp: Number(v.mrp) || Math.round(minVariantPrice * 1.25),
+            stock: Number(v.stock) || 0,
+            image: v.image || primaryImage,
+            images: Array.isArray(v.images) && v.images.length > 0 ? v.images : [v.image || primaryImage],
+            sku: v.sku || `${formData.sku}-${v.size}`
+          }))
+        };
+
+        await onSave(payload);
+      } catch (err) {
+        setError(err.message || 'Failed to save product to merchant catalog.');
+      } finally {
+        setSubmitting(false);
+      }
+
+    } else {
+      // Kit Submission
+      if (!kitData.title.trim()) {
+        setError('Please provide a title for the Kit Bundle.');
+        setActiveTab('kit');
+        return;
+      }
+
+      let finalKitItems = [];
+      let finalTotalMrp = 0;
+
+      if (kitMode === 'existing') {
+        if (selectedKitProducts.length === 0) {
+          setError('Please add at least one catalog product to the Kit Bundle.');
+          setActiveTab('kit');
+          return;
+        }
+        finalKitItems = selectedKitProducts.map(item => ({
+          productId: item.productId,
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.unitPrice * item.quantity
+        }));
+        finalTotalMrp = calculatedKitMrp;
+      } else {
+        const validScratchItems = scratchKitItems.filter(i => i.name.trim() !== '');
+        if (validScratchItems.length === 0) {
+          setError('Please add at least one line item to the kit.');
+          setActiveTab('kit');
+          return;
+        }
+        finalKitItems = validScratchItems.map(item => ({
+          name: item.name,
+          quantity: Number(item.quantity) || 1,
+          unitPrice: Number(item.unitPrice) || 0,
+          totalPrice: (Number(item.unitPrice) || 0) * (Number(item.quantity) || 1)
+        }));
+        finalTotalMrp = finalKitItems.reduce((sum, i) => sum + i.totalPrice, 0);
+      }
+
+      const finalBundlePrice = Number(kitData.bundlePrice) || Math.round(finalTotalMrp * 0.85);
+
+      setSubmitting(true);
+      try {
+        const finalImages = (kitData.images && kitData.images.length > 0)
+          ? kitData.images
+          : (formData.images && formData.images.length > 0 ? formData.images : ['https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80']);
+
+        const paymentAllowedStr = kitData.paymentMethodAllowed || 'Both';
+        const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
+          ? ['Online'] 
+          : (paymentAllowedStr === 'COD_Only' ? ['COD'] : ['COD', 'Online']);
+
+        const payload = {
+          name: kitData.title,
+          title: kitData.title,
+          category: 'kits',
+          bundleType: 'kit',
+          schoolName: kitData.schoolName,
+          classGrade: kitData.classGrade,
+          gender: kitData.gender,
+          badgeTag: kitData.badgeTag,
+          badge: kitData.badgeTag,
+          items: finalKitItems,
+          totalMrp: finalTotalMrp,
+          bundlePrice: finalBundlePrice,
+          price: finalBundlePrice,
+          originalPrice: finalTotalMrp,
+          mrp: finalTotalMrp,
+          stock: Number(kitData.stock) || 20,
+          stockQuantity: Number(kitData.stock) || 20,
+          description: kitData.description,
+          image: finalImages[0],
+          images: finalImages,
+          paymentMethodAllowed: paymentAllowedStr,
+          paymentMethodsAllowed: paymentAllowedArr
+        };
+
+        await onSave(payload);
+      } catch (err) {
+        setError(err.message || 'Failed to save Kit Bundle.');
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
-
-  // Preview variant
-  const previewVariant = sizeVariants[0];
-  const previewPrice = previewVariant?.price ? Number(previewVariant.price) : (Number(formData.price) || 499);
-  const previewMrp = previewVariant?.mrp ? Number(previewVariant.mrp) : (Number(formData.originalPrice) || Math.round(previewPrice * 1.25));
-  const previewImage = previewVariant?.image || formData.images[0] || formData.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80';
 
   return (
     <div className="space-y-6 pb-20">
       
-      {/* Hidden File Input for Variant-specific upload */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleVariantFileChange}
-        accept="image/*"
-        className="hidden"
-      />
-
       {/* Top Header & Breadcrumbs */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl shadow-xs border border-gray-100">
         <div className="flex items-center gap-3">
@@ -393,10 +605,10 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
             <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
               <span>Merchant Catalog</span>
               <span>/</span>
-              <span className="text-brand-teal">{isEdit ? 'Edit Product' : 'Add New Product'}</span>
+              <span className="text-brand-teal">{isEdit ? 'Edit Item' : 'Add New Entry'}</span>
             </div>
             <h1 className="font-display font-extrabold text-2xl text-gray-900 mt-0.5">
-              {isEdit ? `Edit: ${formData.name || 'Product'}` : 'Create New School Product'}
+              {isEdit ? `Edit: ${formData.name || kitData.title || 'Product'}` : 'Create Catalog Entry'}
             </h1>
           </div>
         </div>
@@ -417,13 +629,44 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
           >
             {submitting ? (
               <>
-                <RotateCcw className="animate-spin" size={16} /> Saving to Catalog...
+                <RotateCcw className="animate-spin" size={16} /> Saving to Store...
               </>
             ) : (
               <>
-                <Save size={16} /> {isEdit ? 'Update Product' : 'Publish Product to Store'}
+                <Save size={16} /> {isEdit ? 'Update Entry' : 'Publish Entry to Store'}
               </>
             )}
+          </button>
+        </div>
+      </div>
+
+      {/* ENTRY TYPE TOGGLE: Single Product vs Kit / Bundle */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center gap-3">
+        <span className="text-xs font-extrabold text-gray-700 uppercase">Entry Type:</span>
+        <div className="p-1 bg-gray-100 rounded-xl inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setEntryType('single');
+              setActiveTab('general');
+            }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+              entryType === 'single' ? 'bg-brand-teal text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Standard Product (With Variants)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEntryType('kit');
+              setActiveTab('kit');
+            }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+              entryType === 'kit' ? 'bg-brand-teal text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Kit / Bundle Package (Multi-Item)
           </button>
         </div>
       </div>
@@ -437,319 +680,189 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
 
       {/* Main Form Tabs */}
       <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
-        {[
-          { id: 'general', label: '1. General Info & Pricing', icon: Tag },
-          { id: 'variants', label: `2. Sizing & Variants Matrix (${sizeVariants.length})`, icon: Layers },
-          { id: 'media', label: `3. Gallery Photos (${formData.images.length})`, icon: ImageIcon }
-        ].map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-brand-teal text-white shadow-xs'
-                  : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-              }`}
-            >
-              <Icon size={15} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+        {entryType === 'single' ? (
+          [
+            { id: 'general', label: '1. General Details & Base Photos', icon: Tag },
+            { id: 'variants', label: `2. Scale Variants Matrix (${sizeVariants.length})`, icon: Layers },
+            { id: 'payment', label: '3. Allowed Payment Methods', icon: CreditCard }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  isActive ? 'bg-brand-teal text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                }`}
+              >
+                <Icon size={15} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })
+        ) : (
+          [
+            { id: 'kit', label: '1. Kit Bundle Configuration', icon: Layers3 },
+            { id: 'payment', label: '2. Allowed Payment Methods', icon: CreditCard }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  isActive ? 'bg-brand-teal text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                }`}
+              >
+                <Icon size={15} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })
+        )}
       </div>
 
-      {/* Grid: 2 Column Layout with Live Preview on the right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* Left Column: Form Controls (8 Cols) */}
-        <div className="lg:col-span-8 space-y-6">
-
-          {/* TAB 1: GENERAL INFORMATION */}
+      {/* SINGLE PRODUCT ENTRY */}
+      {entryType === 'single' && (
+        <div className="space-y-6">
           {activeTab === 'general' && (
             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-5">
-              <div>
-                <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                  <Tag className="text-brand-teal" size={18} /> General Catalog Information
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Core descriptive parameters shown to students, parents, and schools.
-                </p>
-              </div>
-
+              <h3 className="text-base font-extrabold text-gray-900 border-b border-gray-100 pb-3">
+                General Product Information
+              </h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Product Title / Name <span className="text-rose-600">*</span>
-                  </label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Product Title / Name *</label>
                   <input
                     type="text"
                     required
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g. DPS Navy Blue Cotton Uniform Shirt"
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Subtitle / Short Pitch
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.subtitle}
-                    onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
-                    placeholder="e.g. 100% Breathable Combed Cotton, Pre-shrunk Fabric"
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
+                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Category <span className="text-rose-600">*</span>
-                    </label>
-                    <select
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none cursor-pointer"
-                    >
-                      {CATEGORIES.map(c => (
-                        <option key={c.id} value={c.id}>{c.label}</option>
-                      ))}
-                    </select>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Category *</label>
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={CATEGORIES.find(c => c.id === formData.category) ? formData.category : 'custom'}
+                        onChange={e => {
+                          if (e.target.value !== 'custom') {
+                            setFormData({ ...formData, category: e.target.value });
+                          } else {
+                            setFormData({ ...formData, category: '' });
+                          }
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer"
+                      >
+                        {CATEGORIES.map(c => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                        <option value="custom">Other (Custom)</option>
+                      </select>
+                      {!CATEGORIES.find(c => c.id === formData.category) && (
+                        <input
+                          type="text"
+                          placeholder="Enter custom category..."
+                          value={formData.category}
+                          onChange={e => setFormData({ ...formData, category: e.target.value })}
+                          className="w-full px-3.5 py-2.5 bg-white border border-brand-yellow rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-brand-yellow"
+                          autoFocus
+                        />
+                      )}
+                    </div>
                   </div>
-
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Sub-Category / Item Type
-                    </label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Sub-Category</label>
                     <input
                       type="text"
                       value={formData.subCategory}
-                      onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
-                      placeholder="e.g. Shirts, Blazers, Tracksuits, Notebooks"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Target School Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.schoolName}
-                      onChange={(e) => setFormData({ ...formData, schoolName: e.target.value })}
-                      placeholder="e.g. Delhi Public School / All"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Gender Suitability
-                    </label>
-                    <select
-                      value={formData.gender}
-                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none cursor-pointer"
-                    >
-                      <option value="Unisex">Unisex (All Students)</option>
-                      <option value="Boy">Boys Only</option>
-                      <option value="Girl">Girls Only</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Badge / Tag
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.discountBadge}
-                      onChange={(e) => setFormData({ ...formData, discountBadge: e.target.value })}
-                      placeholder="e.g. NEW, 15% OFF, POPULAR"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Base / Starting Price (₹)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      placeholder="499"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
-                    />
-                    <span className="text-[10px] text-gray-400 mt-0.5 block">Overridden by size variants if defined</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Base MRP (₹)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.originalPrice}
-                      onChange={(e) => setFormData({ ...formData, originalPrice: e.target.value })}
-                      placeholder="699"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Base Stock (Pieces)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.stockQuantity}
-                      onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })}
-                      placeholder="50"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
+                      onChange={e => setFormData({ ...formData, subCategory: e.target.value })}
+                      placeholder="e.g. Shirts, Practice Books"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Fabric Material & Care
-                    </label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Base Price (₹) *</label>
                     <input
-                      type="text"
-                      value={formData.material}
-                      onChange={(e) => setFormData({ ...formData, material: e.target.value })}
-                      placeholder="e.g. 100% Super-combed Cotton, Easy Wash"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
+                      type="number"
+                      value={formData.price}
+                      onChange={e => setFormData({ ...formData, price: e.target.value })}
+                      placeholder="499"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Master SKU / Product Code
-                    </label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Base MRP (₹)</label>
                     <input
-                      type="text"
-                      value={formData.sku}
-                      onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                      placeholder="e.g. SKU-1049"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
+                      type="number"
+                      value={formData.originalPrice}
+                      onChange={e => setFormData({ ...formData, originalPrice: e.target.value })}
+                      placeholder="699"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                     />
                   </div>
                 </div>
 
+                {/* Base Image Dropzone */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Detailed Product Description
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Describe sizing recommendations, stitching durability, fabric weight, and return policy details..."
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20 outline-none"
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Base Product Cover & Gallery Photos</label>
+                  <ImageUploadDropzone
+                    images={formData.images}
+                    onChange={(imgs) => setFormData({ ...formData, images: imgs, image: imgs[0] || '' })}
+                    maxImages={8}
+                    helperText="Drag & drop primary product photos here"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: SIZING & VARIANTS MATRIX */}
+          {/* TAB 2: VARIANTS WITH "+ ADD VARIANT" MODAL */}
           {activeTab === 'variants' && (
             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-6">
-              <div>
-                <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                  <Layers className="text-brand-teal" size={18} /> Size Variants & Pricing Matrix
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Configure custom price, MRP, warehouse stock, and distinct preview image for every single size.
-                </p>
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                    <Layers className="text-brand-teal" size={18} /> Size & Measuring Scale Variants
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Configure custom price, MRP, stock, and individual photos for every variant (Size, Count, Meter, Kg, Box).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={openAddVariantModal}
+                  className="px-4 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus size={16} /> + Add Variant
+                </button>
               </div>
 
-              {/* Quick Presets */}
-              <div className="p-4 rounded-xl bg-gray-50 border border-gray-200/80 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-                    <Sparkles size={14} className="text-brand-ochre" /> 1-Click Sizing Presets
-                  </span>
-                </div>
+              {/* 1-Click Presets */}
+              <div className="p-4 rounded-xl bg-gray-50 border border-gray-200/80 space-y-2">
+                <span className="text-xs font-extrabold uppercase text-gray-700">1-Click Presets</span>
                 <div className="flex flex-wrap gap-2">
                   {SIZE_PRESETS.map(preset => (
                     <button
                       key={preset.id}
                       type="button"
-                      onClick={() => applySizePreset(preset.sizes)}
-                      className="px-3 py-1.5 bg-white hover:bg-brand-teal hover:text-white text-gray-700 text-xs font-bold rounded-lg border border-gray-200 shadow-2xs transition-colors cursor-pointer"
+                      onClick={() => applySizePreset(preset)}
+                      className="px-3 py-1.5 bg-white hover:bg-brand-teal hover:text-white text-gray-700 text-xs font-bold rounded-lg border border-gray-200 transition-colors cursor-pointer"
                     >
-                      {preset.label}
+                      + {preset.label}
                     </button>
                   ))}
-                </div>
-              </div>
-
-              {/* Add Custom Size & Batch Update */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Custom Size Form */}
-                <form onSubmit={handleAddCustomSize} className="flex gap-2 items-center">
-                  <input
-                    type="text"
-                    value={customSizeInput}
-                    onChange={(e) => setCustomSizeInput(e.target.value)}
-                    placeholder="Enter custom size (e.g. 40, Free Size, 13-14 Yrs)"
-                    className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:bg-white focus:border-brand-teal outline-none"
-                  />
-                  <button
-                    type="submit"
-                    className="px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                  >
-                    <Plus size={14} /> Add Size
-                  </button>
-                </form>
-
-                {/* Batch Set Bar */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={batchBasePrice}
-                    onChange={(e) => setBatchBasePrice(e.target.value)}
-                    placeholder="Price ₹"
-                    className="w-20 px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-center outline-none"
-                  />
-                  <input
-                    type="number"
-                    value={batchBaseMrp}
-                    onChange={(e) => setBatchBaseMrp(e.target.value)}
-                    placeholder="MRP ₹"
-                    className="w-20 px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-center outline-none"
-                  />
-                  <input
-                    type="number"
-                    value={batchBaseStock}
-                    onChange={(e) => setBatchBaseStock(e.target.value)}
-                    placeholder="Stock"
-                    className="w-18 px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-center outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleBatchApply}
-                    className="px-3 py-2 bg-teal-50 hover:bg-teal-100 text-brand-teal border border-teal-200 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                    title="Apply these values to all sizes below"
-                  >
-                    <Sliders size={13} /> Fill All
-                  </button>
                 </div>
               </div>
 
@@ -757,127 +870,67 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
               {sizeVariants.length === 0 ? (
                 <div className="p-8 text-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 space-y-2">
                   <Boxes className="mx-auto text-gray-400" size={32} />
-                  <h4 className="text-sm font-bold text-gray-700">No Size Variants Configured</h4>
+                  <h4 className="text-sm font-bold text-gray-700">No Variants Configured</h4>
                   <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                    Click one of the 1-click presets above (e.g. Standard S-XXL or Waist 26-38) to generate sizes with individual prices and photos.
+                    Click the <strong>"+ Add Variant"</strong> button above to open the variant form and add custom size, count, or weight options.
                   </p>
+                  <button
+                    type="button"
+                    onClick={openAddVariantModal}
+                    className="px-4 py-2 bg-brand-teal text-white rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <Plus size={14} /> Add Variant
+                  </button>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-2xs">
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-gray-50 border-b border-gray-200 text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px]">
                       <tr>
-                        <th className="px-3 py-3 w-20">Size</th>
-                        <th className="px-3 py-3 w-28">Price (₹)</th>
-                        <th className="px-3 py-3 w-28">MRP (₹)</th>
-                        <th className="px-3 py-3 w-24">Stock</th>
+                        <th className="px-3 py-3">Variant Value</th>
+                        <th className="px-3 py-3">Scale</th>
+                        <th className="px-3 py-3">Price (₹)</th>
+                        <th className="px-3 py-3">MRP (₹)</th>
+                        <th className="px-3 py-3">Stock</th>
                         <th className="px-3 py-3">Variant Image</th>
-                        <th className="px-3 py-3 w-32">SKU</th>
-                        <th className="px-3 py-3 text-right w-12">Action</th>
+                        <th className="px-3 py-3 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200 bg-white">
-                      {sizeVariants.map((variant, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50/80 transition-colors">
-                          
-                          {/* Size Pill */}
+                    <tbody className="divide-y divide-gray-200 bg-white font-medium">
+                      {sizeVariants.map((v, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="px-3 py-2.5 font-bold text-gray-900">{v.size || v.measureValue}</td>
                           <td className="px-3 py-2.5">
-                            <span className="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200/80 text-brand-teal font-extrabold text-xs block text-center">
-                              {variant.size}
+                            <span className="px-2 py-0.5 rounded bg-teal-50 text-brand-teal text-[10px] uppercase font-bold border border-teal-200">
+                              {v.measureScale || 'size'}
                             </span>
                           </td>
-
-                          {/* Price */}
+                          <td className="px-3 py-2.5 font-extrabold text-gray-900">₹{v.price}</td>
+                          <td className="px-3 py-2.5 text-gray-500 line-through">₹{v.mrp}</td>
+                          <td className="px-3 py-2.5 font-bold text-emerald-700">{v.stock}</td>
                           <td className="px-3 py-2.5">
-                            <div className="relative">
-                              <span className="absolute left-2.5 top-2 text-gray-400 text-xs">₹</span>
-                              <input
-                                type="number"
-                                value={variant.price}
-                                onChange={(e) => handleUpdateVariant(idx, 'price', e.target.value)}
-                                className="w-full pl-6 pr-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-900 focus:bg-white focus:border-brand-teal outline-none"
-                              />
-                            </div>
+                            {v.image ? (
+                              <img src={v.image} alt={v.size} className="w-9 h-9 rounded object-cover border border-gray-200" />
+                            ) : (
+                              <span className="text-[10px] text-gray-400 italic">No image</span>
+                            )}
                           </td>
-
-                          {/* MRP */}
-                          <td className="px-3 py-2.5">
-                            <div className="relative">
-                              <span className="absolute left-2.5 top-2 text-gray-400 text-xs">₹</span>
-                              <input
-                                type="number"
-                                value={variant.mrp}
-                                onChange={(e) => handleUpdateVariant(idx, 'mrp', e.target.value)}
-                                className="w-full pl-6 pr-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500 focus:bg-white focus:border-brand-teal outline-none"
-                              />
-                            </div>
-                          </td>
-
-                          {/* Stock */}
-                          <td className="px-3 py-2.5">
-                            <input
-                              type="number"
-                              value={variant.stock}
-                              onChange={(e) => handleUpdateVariant(idx, 'stock', e.target.value)}
-                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-900 focus:bg-white focus:border-brand-teal outline-none text-center"
-                            />
-                          </td>
-
-                          {/* Variant Image */}
-                          <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-2">
-                              {variant.image ? (
-                                <img
-                                  src={variant.image}
-                                  alt={variant.size}
-                                  className="w-8 h-8 rounded-lg object-cover border border-gray-200 shrink-0"
-                                />
-                              ) : (
-                                <div className="w-8 h-8 rounded-lg bg-gray-100 border border-dashed border-gray-300 flex items-center justify-center text-gray-400 shrink-0">
-                                  <ImageIcon size={14} />
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => triggerVariantImageUpload(idx)}
-                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-bold cursor-pointer transition-colors"
-                              >
-                                Upload
-                              </button>
-                              {formData.images.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveVariantForGallery(idx)}
-                                  className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-brand-teal rounded text-[10px] font-bold cursor-pointer transition-colors"
-                                >
-                                  Pick Gallery
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* SKU */}
-                          <td className="px-3 py-2.5">
-                            <input
-                              type="text"
-                              value={variant.sku}
-                              onChange={(e) => handleUpdateVariant(idx, 'sku', e.target.value)}
-                              className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-mono text-gray-700 outline-none"
-                            />
-                          </td>
-
-                          {/* Delete */}
-                          <td className="px-3 py-2.5 text-right">
+                          <td className="px-3 py-2.5 text-right space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditVariantModal(idx)}
+                              className="text-xs font-bold text-brand-teal hover:underline cursor-pointer"
+                            >
+                              Edit
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleRemoveVariant(idx)}
-                              className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title={`Remove Size ${variant.size}`}
+                              className="text-xs font-bold text-red-600 hover:underline cursor-pointer"
                             >
-                              <Trash2 size={14} />
+                              Delete
                             </button>
                           </td>
-
                         </tr>
                       ))}
                     </tbody>
@@ -886,190 +939,288 @@ export default function SellerProductFormPage({ product, onSave, onBack }) {
               )}
             </div>
           )}
+        </div>
+      )}
 
-          {/* TAB 3: MEDIA & PRODUCT GALLERY */}
-          {activeTab === 'media' && (
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-5">
-              <div>
-                <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                  <ImageIcon className="text-brand-teal" size={18} /> High-Resolution Product Photos
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Upload catalog photos. The first image will be the primary storefront cover photo.
-                </p>
+      {/* KIT / BUNDLE ENTRY FORM */}
+      {entryType === 'kit' && activeTab === 'kit' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+            <h3 className="text-base font-extrabold text-gray-900 border-b border-gray-100 pb-3">
+              Kit Creation Mode
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div
+                onClick={() => setKitMode('existing')}
+                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                  kitMode === 'existing' ? 'border-brand-teal bg-brand-teal/5 font-bold' : 'border-gray-200 bg-white'
+                }`}
+              >
+                <h4 className="text-xs font-bold text-gray-900">Option A: Bundle Existing Catalog Products</h4>
+                <p className="text-[11px] text-gray-500 mt-1">Pick products from catalog & set bundle discount.</p>
               </div>
 
-              <ImageUploadDropzone
-                images={formData.images}
-                onChange={(newImages) => {
-                  setFormData(prev => ({
-                    ...prev,
-                    images: newImages,
-                    image: newImages[0] || prev.image
-                  }));
-                }}
-                maxImages={8}
-                helperText="Drag & drop school uniform photos, swatches, or packaging (JPG, PNG, WebP)"
-              />
+              <div
+                onClick={() => setKitMode('scratch')}
+                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                  kitMode === 'scratch' ? 'border-brand-teal bg-brand-teal/5 font-bold' : 'border-gray-200 bg-white'
+                }`}
+              >
+                <h4 className="text-xs font-bold text-gray-900">Option B: Create Kit from Scratch</h4>
+                <p className="text-[11px] text-gray-500 mt-1">Manually type kit line items without product variants.</p>
+              </div>
             </div>
-          )}
+          </div>
 
-        </div>
-
-        {/* Right Column: Live Storefront Card Preview (4 Cols) */}
-        <div className="lg:col-span-4 sticky top-6 space-y-4">
-          <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
-                <Eye size={14} className="text-brand-teal" /> Customer View Preview
-              </span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Live Rendering
-              </span>
-            </div>
-
-            {/* Mock Product Card */}
-            <div className="rounded-2xl border border-gray-200 overflow-hidden bg-white shadow-2xs">
-              <div className="relative w-full pt-[90%] bg-gray-50 overflow-hidden">
-                {formData.discountBadge && (
-                  <span className="absolute top-2.5 left-2.5 z-10 text-[9px] font-extrabold tracking-wider px-2 py-0.5 rounded uppercase bg-brand-pink text-white shadow-xs">
-                    {formData.discountBadge}
-                  </span>
-                )}
-                <img
-                  src={previewImage}
-                  alt="Preview"
-                  className="absolute inset-0 w-full h-full object-cover"
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+            <h3 className="text-base font-extrabold text-gray-900 border-b border-gray-100 pb-3">
+              Kit Details & Bundle Pricing
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Kit Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={kitData.title}
+                  onChange={e => setKitData({ ...kitData, title: e.target.value })}
+                  placeholder="e.g. DPS Complete Uniform Kit"
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">School Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={kitData.schoolName}
+                  onChange={e => setKitData({ ...kitData, schoolName: e.target.value })}
+                  placeholder="e.g. Delhi Public School"
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                />
+              </div>
+            </div>
 
-              <div className="p-4 space-y-2">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-brand-teal">
-                  {formData.schoolName || 'Uniforms & Accessories'}
-                </div>
-                <h4 className="font-bold text-gray-900 text-sm leading-snug line-clamp-1">
-                  {formData.name || 'Untitled Product'}
-                </h4>
-                <p className="text-[11px] text-gray-500 line-clamp-1">
-                  {formData.subtitle || 'Short description of quality and fit'}
-                </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Bundle Price (₹) *</label>
+                <input
+                  type="number"
+                  required
+                  value={kitData.bundlePrice}
+                  onChange={e => setKitData({ ...kitData, bundlePrice: e.target.value })}
+                  placeholder="1299"
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-emerald-800 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Stock Quantity</label>
+                <input
+                  type="number"
+                  value={kitData.stock}
+                  onChange={e => setKitData({ ...kitData, stock: e.target.value })}
+                  placeholder="20"
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                />
+              </div>
+            </div>
 
-                {/* Available Sizes preview */}
-                {sizeVariants.length > 0 && (
-                  <div className="pt-1">
-                    <div className="text-[10px] font-bold text-gray-400 mb-1">Available Sizes:</div>
-                    <div className="flex flex-wrap gap-1">
-                      {sizeVariants.map((v, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-gray-100 text-gray-700 border border-gray-200"
+            {/* Catalog Picker Search */}
+            {kitMode === 'existing' && (
+              <div className="pt-3 border-t border-gray-100 space-y-3">
+                <label className="block text-xs font-bold text-gray-700">Search Products to Add to Kit</label>
+                <input
+                  type="text"
+                  value={catalogSearch}
+                  onChange={e => setCatalogSearch(e.target.value)}
+                  placeholder="Filter existing products..."
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none"
+                />
+                <div className="max-h-40 overflow-y-auto divide-y divide-gray-100 border border-gray-200 rounded-xl bg-white">
+                  {existingProducts
+                    .filter(p => p.name?.toLowerCase().includes(catalogSearch.toLowerCase()))
+                    .slice(0, 8)
+                    .map((p, idx) => (
+                      <div key={idx} className="p-2 flex items-center justify-between text-xs">
+                        <span>{p.name} (₹{p.price})</span>
+                        <button
+                          type="button"
+                          onClick={() => handleAddProductToKit(p)}
+                          className="px-2.5 py-1 bg-brand-teal text-white rounded font-bold text-[10px]"
                         >
-                          {v.size}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Price & Savings */}
-                <div className="pt-2 border-t border-gray-100 flex items-baseline gap-2">
-                  <span className="font-extrabold text-base text-brand-teal">
-                    ₹{previewPrice}
-                  </span>
-                  {previewMrp > previewPrice && (
-                    <span className="text-xs text-gray-400 line-through">
-                      ₹{previewMrp}
-                    </span>
-                  )}
-                  {previewMrp > previewPrice && (
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                      Save ₹{previewMrp - previewPrice}
-                    </span>
-                  )}
+                          + Add
+                        </button>
+                      </div>
+                    ))}
                 </div>
-
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-2 bg-brand-yellow text-brand-teal-dark font-extrabold text-xs rounded-xl cursor-default flex items-center justify-center gap-1.5"
-                >
-                  <Eye size={13} /> Select Size & Add to Cart
-                </button>
               </div>
-            </div>
-
-            {/* Quick Sizing Stats */}
-            <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-100 text-xs space-y-1.5">
-              <div className="flex justify-between text-gray-500">
-                <span>Configured Sizes:</span>
-                <span className="font-bold text-gray-900">{sizeVariants.length} variants</span>
-              </div>
-              <div className="flex justify-between text-gray-500">
-                <span>Total Combined Stock:</span>
-                <span className="font-bold text-gray-900">
-                  {sizeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0) || Number(formData.stockQuantity) || 0} units
-                </span>
-              </div>
-              <div className="flex justify-between text-gray-500">
-                <span>Category:</span>
-                <span className="font-bold text-gray-900">{formData.category}</span>
-              </div>
-            </div>
-
+            )}
           </div>
         </div>
+      )}
 
-      </div>
-
-      {/* MODAL: Pick Gallery Image for Variant */}
-      {activeVariantForGallery !== null && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="font-bold text-sm text-gray-900">
-                Assign Photo to Size "{sizeVariants[activeVariantForGallery]?.size}"
-              </h3>
-              <button
-                type="button"
-                onClick={() => setActiveVariantForGallery(null)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-500">
-              Select one of your uploaded gallery images to display when students click this size:
+      {/* TAB: ALLOWED PAYMENT METHODS */}
+      {activeTab === 'payment' && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-5">
+          <div className="border-b border-gray-100 pb-3">
+            <h3 className="text-base font-extrabold text-gray-900">
+              Allowed Checkout Payment Methods
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Select allowed payment methods. Disallowed methods will be disabled on the frontend during checkout.
             </p>
+          </div>
 
-            <div className="grid grid-cols-3 gap-2.5 max-h-60 overflow-y-auto p-1">
-              {formData.images.map((img, i) => (
-                <div
-                  key={i}
-                  onClick={() => handleAssignGalleryImageToVariant(img)}
-                  className="relative aspect-square rounded-xl border-2 border-gray-200 hover:border-brand-teal overflow-hidden cursor-pointer group transition-all"
-                >
-                  <img src={img} alt={`Gallery ${i}`} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-brand-teal/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold text-xs">
-                    Choose
-                  </div>
-                </div>
-              ))}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div
+              onClick={() => {
+                if (entryType === 'single') setFormData({ ...formData, paymentMethodAllowed: 'Both' });
+                else setKitData({ ...kitData, paymentMethodAllowed: 'Both' });
+              }}
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                (entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'Both'
+                  ? 'border-brand-teal bg-brand-teal/5 font-bold'
+                  : 'border-gray-200 bg-white'
+              }`}
+            >
+              <h4 className="text-xs font-bold text-gray-900">💳 Both Methods</h4>
+              <p className="text-[11px] text-gray-500 mt-1">Allows Online Payment & Cash on Delivery (COD).</p>
             </div>
 
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setActiveVariantForGallery(null)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl cursor-pointer"
-              >
-                Cancel
-              </button>
+            <div
+              onClick={() => {
+                if (entryType === 'single') setFormData({ ...formData, paymentMethodAllowed: 'Online_Only' });
+                else setKitData({ ...kitData, paymentMethodAllowed: 'Online_Only' });
+              }}
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                (entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'Online_Only'
+                  ? 'border-amber-500 bg-amber-50/50 font-bold'
+                  : 'border-gray-200 bg-white'
+              }`}
+            >
+              <h4 className="text-xs font-bold text-amber-800">⚡ Online / Prepaid Only</h4>
+              <p className="text-[11px] text-amber-700 mt-1"><strong>Disables COD</strong> on frontend checkout.</p>
+            </div>
+
+            <div
+              onClick={() => {
+                if (entryType === 'single') setFormData({ ...formData, paymentMethodAllowed: 'COD_Only' });
+                else setKitData({ ...kitData, paymentMethodAllowed: 'COD_Only' });
+              }}
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                (entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'COD_Only'
+                  ? 'border-blue-500 bg-blue-50/50 font-bold'
+                  : 'border-gray-200 bg-white'
+              }`}
+            >
+              <h4 className="text-xs font-bold text-blue-800">💵 Cash on Delivery Only</h4>
+              <p className="text-[11px] text-blue-700 mt-1"><strong>Disables Online</strong> payment on frontend checkout.</p>
             </div>
           </div>
         </div>
       )}
 
+      {/* MODAL: + Add / Edit Variant Dialog */}
+      {isVariantModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-gray-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
+              <h3 className="font-display font-bold text-base text-gray-900">
+                {editingVariantIndex !== null ? 'Edit Variant' : 'Add New Variant'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsVariantModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveVariantModal} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Measuring Scale Category *</label>
+                <select
+                  value={variantForm.measureScale}
+                  onChange={e => {
+                    const sc = MEASURE_SCALES.find(s => s.id === e.target.value);
+                    setVariantForm({ ...variantForm, measureScale: e.target.value, unit: sc?.defaultUnit || 'Size' });
+                  }}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none"
+                >
+                  {MEASURE_SCALES.map(sc => (
+                    <option key={sc.id} value={sc.id}>{sc.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Variant Value *</label>
+                <input
+                  type="text"
+                  required
+                  value={variantForm.measureValue}
+                  onChange={e => setVariantForm({ ...variantForm, measureValue: e.target.value, size: e.target.value })}
+                  placeholder={MEASURE_SCALES.find(s => s.id === variantForm.measureScale)?.placeholder || 'e.g. XL, 2.5 Meters'}
+                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Selling Price (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={variantForm.price}
+                    onChange={e => setVariantForm({ ...variantForm, price: e.target.value })}
+                    placeholder="499"
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">MRP (₹)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={variantForm.mrp}
+                    onChange={e => setVariantForm({ ...variantForm, mrp: e.target.value })}
+                    placeholder="699"
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Variant Specific Photo</label>
+                <ImageUploadDropzone
+                  images={variantForm.images}
+                  onChange={(imgs) => setVariantForm({ ...variantForm, images: imgs, image: imgs[0] || '' })}
+                  maxImages={4}
+                  helperText="Upload photo for this variant"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsVariantModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-brand-teal text-white rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  Save Variant
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -117,26 +117,20 @@ export default function SellerDashboardPage({ onNavigate }) {
   }
 
   const checkEffectiveApprovalStatus = () => {
+    if (sellerStatus && sellerStatus !== 'approved') {
+      return false;
+    }
+    if (sellerUser?.status && sellerUser.status !== 'approved') {
+      return false;
+    }
     try {
       const savedSt = localStorage.getItem('bv_seller_status');
-      if (savedSt === 'approved') return true;
-
-      if (sellerUser?.status === 'approved' || sellerUser?.approvalStatus === 'approved' || sellerUser?.submissionStatus === 'approved') {
-        return true;
+      if (savedSt && savedSt !== 'approved') {
+        return false;
       }
-
-      const reg = localStorage.getItem('bv_seller_reg_data');
-      if (reg) {
-        const parsed = JSON.parse(reg);
-        if (parsed.status === 'approved' || parsed.submissionStatus === 'approved') return true;
-        if (parsed.status === 'pending' || parsed.submissionStatus === 'pending') return false;
-      }
-
-      if (savedSt === 'pending') return false;
-      if (sellerUser?.status === 'pending' || sellerUser?.approvalStatus === 'pending') return false;
     } catch {}
 
-    return sellerStatus === 'approved';
+    return isApproved;
   };
 
   const isSellerApproved = checkEffectiveApprovalStatus();
