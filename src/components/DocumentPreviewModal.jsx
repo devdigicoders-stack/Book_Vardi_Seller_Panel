@@ -49,24 +49,36 @@ export default function DocumentPreviewModal({ isOpen, onClose, doc }) {
 
   const isPdf = Boolean(
     url && (
-      url.toLowerCase().includes('.pdf') || 
       url.startsWith('data:application/pdf') || 
-      (fileName && fileName.toLowerCase().endsWith('.pdf'))
+      url.startsWith('data:pdf') ||
+      (!url.startsWith('data:image') && (
+        url.toLowerCase().includes('.pdf') || 
+        (fileName && fileName.toLowerCase().endsWith('.pdf') && !fileName.toLowerCase().includes('image'))
+      ))
     )
   );
 
   const isImage = Boolean(
-    url && !isPdf && (
+    url && (
       url.startsWith('data:image') || 
-      /\.(jpg|jpeg|png|webp|gif|svg|bmp|tiff)($|\?)/i.test(url) ||
-      (fileName && /\.(jpg|jpeg|png|webp|gif|svg|bmp|tiff)$/i.test(fileName)) ||
-      url.includes('unsplash.com') ||
-      url.includes('images') ||
-      url.includes('avatar') ||
-      title.toLowerCase().includes('photo') ||
-      title.toLowerCase().includes('image') ||
-      title.toLowerCase().includes('avatar') ||
-      title.toLowerCase().includes('logo')
+      (!isPdf && (
+        /\.(jpg|jpeg|png|webp|gif|svg|bmp|tiff)($|\?)/i.test(url) ||
+        (fileName && /\.(jpg|jpeg|png|webp|gif|svg|bmp|tiff)$/i.test(fileName)) ||
+        url.includes('unsplash.com') ||
+        url.includes('images') ||
+        url.includes('avatar') ||
+        url.includes('/uploads/') ||
+        title.toLowerCase().includes('photo') ||
+        title.toLowerCase().includes('image') ||
+        title.toLowerCase().includes('avatar') ||
+        title.toLowerCase().includes('logo') ||
+        title.toLowerCase().includes('aadhaar') ||
+        title.toLowerCase().includes('pan') ||
+        title.toLowerCase().includes('document') ||
+        title.toLowerCase().includes('card') ||
+        title.toLowerCase().includes('proof') ||
+        title.toLowerCase().includes('passbook')
+      ))
     )
   );
 

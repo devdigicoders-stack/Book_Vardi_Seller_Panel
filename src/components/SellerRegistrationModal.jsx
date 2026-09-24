@@ -31,6 +31,13 @@ import {
 import { useSellerData } from '../context/SellerDataContext';
 import LocationPickerModal from './LocationPickerModal';
 
+const getMediaUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return `http://localhost:5000${url}`;
+  return `http://localhost:5000/${url}`;
+};
+
 export const ONBOARDING_STEPS = [
   { id: 1, title: 'Basic Profile', section: 'Basic Profile', desc: 'Name, mobile, email, photo', icon: UserCheck, verify: 'Email + Mobile OTP' },
   { id: 2, title: 'Business Details', section: 'Business Details', desc: 'Legal name, trade name, year', icon: Building2, verify: 'Admin / System Review' },
@@ -66,7 +73,13 @@ export const INITIAL_FORM_STATE = {
   ownerFullName: '',
   ownerDesignation: 'Proprietor',
   ownerPan: '',
+  ownerPanDoc: '',
+  panDoc: '',
+  panFileName: '',
   ownerAadhaarLast4: '',
+  ownerAadhaarDoc: '',
+  aadhaarDoc: '',
+  aadhaarFileName: '',
   kycVerified: false,
 
   // Step 4: Business Documents
@@ -75,6 +88,8 @@ export const INITIAL_FORM_STATE = {
   hasGstExemption: false,
   msmeRegistrationNumber: '',
   cinNumber: '',
+  shopDoc: '',
+  shopDocFileName: '',
 
   // Step 5: Business Address
   addressLine1: '',
@@ -99,6 +114,8 @@ export const INITIAL_FORM_STATE = {
   bankName: '',
   bankBranch: '',
   accountType: 'Savings Account',
+  passbookDoc: '',
+  passbookFileName: '',
 
   // Step 8: Store Details
   storeName: '',
@@ -477,6 +494,172 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     setIsDraggingAddressProof(false);
     const file = e.dataTransfer.files && e.dataTransfer.files[0];
     processAddressProofFile(file);
+  };
+
+  const processAadhaarDocFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      if (showToast) showToast('⚠️ Document file size exceeds 10MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      let finalUrl = dataUrl;
+
+      try {
+        const token = localStorage.getItem('bv_seller_jwt_token');
+        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ dataUrl, folder: 'documents', fieldName: 'aadhaarDoc' })
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch (err) {
+        console.warn('Backend disk save fallback:', err);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        aadhaarDoc: finalUrl,
+        ownerAadhaarDoc: finalUrl,
+        aadhaarFileName: file.name
+      }));
+      if (showToast) showToast(`📄 Aadhaar document (${file.name}) uploaded successfully!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const processPanDocFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      if (showToast) showToast('⚠️ Document file size exceeds 10MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      let finalUrl = dataUrl;
+
+      try {
+        const token = localStorage.getItem('bv_seller_jwt_token');
+        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ dataUrl, folder: 'documents', fieldName: 'panDoc' })
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch (err) {
+        console.warn('Backend disk save fallback:', err);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        panDoc: finalUrl,
+        ownerPanDoc: finalUrl,
+        panFileName: file.name
+      }));
+      if (showToast) showToast(`📄 PAN Card document (${file.name}) uploaded successfully!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const processShopDocFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      if (showToast) showToast('⚠️ Document file size exceeds 10MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      let finalUrl = dataUrl;
+
+      try {
+        const token = localStorage.getItem('bv_seller_jwt_token');
+        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ dataUrl, folder: 'documents', fieldName: 'shopDoc' })
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch (err) {
+        console.warn('Backend disk save fallback:', err);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        shopDoc: finalUrl,
+        shopDocFileName: file.name
+      }));
+      if (showToast) showToast(`📄 Shop / Trade License document (${file.name}) uploaded successfully!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const processPassbookDocFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      if (showToast) showToast('⚠️ Document file size exceeds 10MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      let finalUrl = dataUrl;
+
+      try {
+        const token = localStorage.getItem('bv_seller_jwt_token');
+        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ dataUrl, folder: 'documents', fieldName: 'passbookDoc' })
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch (err) {
+        console.warn('Backend disk save fallback:', err);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        passbookDoc: finalUrl,
+        passbookFileName: file.name
+      }));
+      if (showToast) showToast(`📄 Bank Passbook / Cancelled Cheque (${file.name}) uploaded successfully!`);
+    };
+    reader.readAsDataURL(file);
   };
 
   const nextStep = () => {
@@ -988,6 +1171,33 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                       )}
                     </button>
                   </div>
+
+                  <div className="flex items-center gap-2 pt-1.5">
+                    <label className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer shrink-0">
+                      <UploadCloud size={13} />
+                      <span>{formData.panDoc ? 'Change PAN Doc' : 'Upload PAN Card'}</span>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={(e) => processPanDocFile(e.target.files && e.target.files[0])}
+                        className="hidden"
+                      />
+                    </label>
+                    {formData.panDoc && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          title: 'Owner PAN Card Document',
+                          src: formData.panDoc,
+                          fileName: formData.panFileName || 'pan_card.pdf'
+                        })}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Eye size={13} /> Preview PAN
+                      </button>
+                    )}
+                  </div>
+
                   {panError && (
                     <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 pt-0.5">
                       <AlertCircle size={12} /> {panError}
@@ -1054,6 +1264,33 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                       )}
                     </button>
                   </div>
+                  
+                  <div className="flex items-center gap-2 pt-1.5">
+                    <label className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer shrink-0">
+                      <UploadCloud size={13} />
+                      <span>{formData.aadhaarDoc ? 'Change Aadhaar Doc' : 'Upload Aadhaar Card'}</span>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={(e) => processAadhaarDocFile(e.target.files && e.target.files[0])}
+                        className="hidden"
+                      />
+                    </label>
+                    {formData.aadhaarDoc && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          title: 'Owner Aadhaar Card Document',
+                          src: formData.aadhaarDoc,
+                          fileName: formData.aadhaarFileName || 'aadhaar_card.pdf'
+                        })}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Eye size={13} /> Preview Aadhaar
+                      </button>
+                    )}
+                  </div>
+
                   {aadhaarError && (
                     <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 pt-0.5">
                       <AlertCircle size={12} /> {aadhaarError}
@@ -1147,6 +1384,50 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   {formData.hasGstExemption && (
                     <p className="text-[11px] text-emerald-700 font-semibold mt-1 pl-6">
                       ✓ GSTIN requirement disabled for GST exempted business entities.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2 md:col-span-2 p-4 bg-teal-50/60 rounded-2xl border border-teal-100">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <label className="font-bold text-teal-950 text-xs sm:text-sm block">
+                        Shop & Establishment / Trade License / Business Registration Certificate
+                      </label>
+                      <p className="text-[11px] text-teal-700">
+                        Upload your Shop Act license, GST Certificate, MSME Udyam, or Trade License PDF/Image (`shopDoc`).
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className="px-3 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all">
+                        <UploadCloud size={14} />
+                        <span>{formData.shopDoc ? 'Change License Doc' : 'Upload Shop License'}</span>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={(e) => processShopDocFile(e.target.files && e.target.files[0])}
+                          className="hidden"
+                        />
+                      </label>
+                      {formData.shopDoc && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDocModal({
+                            title: 'Shop / Business Registration Document',
+                            src: formData.shopDoc,
+                            fileName: formData.shopDocFileName || 'business_license.pdf'
+                          })}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Eye size={14} /> Preview Doc
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {formData.shopDocFileName && (
+                    <p className="text-[11px] font-semibold text-emerald-800 flex items-center gap-1">
+                      <FileCheck size={13} /> Selected document: {formData.shopDocFileName}
                     </p>
                   )}
                 </div>
@@ -1507,6 +1788,50 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     <option value="Overdraft Account">Overdraft Account (OD)</option>
                   </select>
                 </div>
+
+                <div className="space-y-2 md:col-span-2 p-4 bg-teal-50/60 rounded-2xl border border-teal-100 mt-2">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <label className="font-bold text-teal-950 text-xs sm:text-sm block">
+                        Bank Passbook / Cancelled Cheque Document
+                      </label>
+                      <p className="text-[11px] text-teal-700">
+                        Upload first page of Bank Passbook or Cancelled Cheque showing Account # and IFSC for payout validation (`passbookDoc`).
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className="px-3 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all">
+                        <UploadCloud size={14} />
+                        <span>{formData.passbookDoc ? 'Change Document' : 'Upload Passbook / Cheque'}</span>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={(e) => processPassbookDocFile(e.target.files && e.target.files[0])}
+                          className="hidden"
+                        />
+                      </label>
+                      {formData.passbookDoc && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDocModal({
+                            title: 'Bank Passbook / Cancelled Cheque',
+                            src: formData.passbookDoc,
+                            fileName: formData.passbookFileName || 'cancelled_cheque.pdf'
+                          })}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Eye size={14} /> Preview Doc
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {formData.passbookFileName && (
+                    <p className="text-[11px] font-semibold text-emerald-800 flex items-center gap-1">
+                      <FileCheck size={13} /> Selected document: {formData.passbookFileName}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 font-semibold text-xs">
@@ -1738,15 +2063,27 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   </span>
                 </label>
 
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label className="flex items-start gap-3 cursor-pointer p-3 bg-amber-50/80 rounded-xl border border-amber-200">
                   <input
                     type="checkbox"
-                    checked={formData.acceptedReturnPolicy}
-                    onChange={(e) => handleChange('acceptedReturnPolicy', e.target.checked)}
-                    className="mt-0.5 rounded text-brand-teal focus:ring-brand-yellow"
+                    checked={formData.acceptedDirectContactPenalty || false}
+                    onChange={(e) => handleChange('acceptedDirectContactPenalty', e.target.checked)}
+                    className="mt-0.5 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
                   />
                   <span>
-                    <strong>30-Day Student Exchange Assurance:</strong> Agree to accept exchanges for uniform size mismatches or verified textbook defects.
+                    <strong className="text-rose-900">Direct Customer Contact Penalty Clause (₹10,000 Fine):</strong> I agree that contacting customers directly or attempting offline sales outside the BookVardi platform will attract a strict penalty of <strong className="text-rose-900">₹10,000 per violation</strong> and immediate seller portal suspension.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer p-3 bg-rose-50/80 rounded-xl border border-rose-200">
+                  <input
+                    type="checkbox"
+                    checked={formData.acceptedOrderPenalty || false}
+                    onChange={(e) => handleChange('acceptedOrderPenalty', e.target.checked)}
+                    className="mt-0.5 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                  />
+                  <span>
+                    <strong className="text-rose-900">Order Non-Fulfillment Penalty Clause (3x Order Amount):</strong> I agree that failing to fulfill a confirmed order will incur a penalty of <strong className="text-rose-900">3 Times (3x) the Order Amount</strong> deducted directly from seller payouts.
                   </span>
                 </label>
               </div>
@@ -1950,34 +2287,60 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
             </div>
 
             <div className="p-6 overflow-y-auto flex-1 bg-slate-100 flex items-center justify-center min-h-[350px]">
-              {previewDocModal.src ? (
-                previewDocModal.src.startsWith('data:image/') || (previewDocModal.fileName && previewDocModal.fileName.match(/\.(png|jpe?g|webp|gif|svg)$/i)) ? (
-                  <img
-                    src={previewDocModal.src}
-                    alt={previewDocModal.fileName}
-                    className="max-h-[70vh] object-contain rounded-xl shadow-md border border-gray-200 bg-white p-2"
-                  />
-                ) : previewDocModal.src.startsWith('data:application/pdf') || (previewDocModal.fileName && previewDocModal.fileName.endsWith('.pdf')) ? (
-                  <iframe
-                    src={previewDocModal.src}
-                    title={previewDocModal.fileName}
-                    className="w-full h-[70vh] rounded-xl border border-gray-300 bg-white shadow-md"
-                  />
-                ) : (
+              {previewDocModal?.src ? (() => {
+                const fullSrc = getMediaUrl(previewDocModal.src);
+                const titleStr = (previewDocModal.title || '').toLowerCase();
+                const fileStr = (previewDocModal.fileName || '').toLowerCase();
+                const srcStr = previewDocModal.src.toLowerCase();
+
+                const isPdf = srcStr.startsWith('data:application/pdf') || srcStr.startsWith('data:pdf') || fileStr.endsWith('.pdf') || srcStr.includes('.pdf');
+                const isImg = srcStr.startsWith('data:image/') || 
+                  (/\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(fileStr)) || 
+                  (/\.(png|jpe?g|webp|gif|svg|bmp)($|\?)/i.test(srcStr)) || 
+                  srcStr.includes('/uploads/') ||
+                  titleStr.includes('aadhaar') || titleStr.includes('pan') || titleStr.includes('doc') || titleStr.includes('card') || titleStr.includes('photo') || titleStr.includes('logo');
+
+                if (isImg && !isPdf) {
+                  return (
+                    <img
+                      src={fullSrc}
+                      alt={previewDocModal.fileName || 'Document Preview'}
+                      className="max-h-[70vh] object-contain rounded-xl shadow-md border border-gray-200 bg-white p-2"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        setPreviewDocModal(prev => prev ? ({ ...prev, isFallbackDoc: true }) : null);
+                      }}
+                    />
+                  );
+                }
+
+                if (isPdf) {
+                  return (
+                    <iframe
+                      src={fullSrc}
+                      title={previewDocModal.fileName || 'Document Preview'}
+                      className="w-full h-[70vh] rounded-xl border border-gray-300 bg-white shadow-md"
+                    />
+                  );
+                }
+
+                return (
                   <div className="text-center p-8 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-3 max-w-md">
                     <FileText size={48} className="mx-auto text-brand-teal" />
-                    <h4 className="font-bold text-gray-800 text-sm">{previewDocModal.fileName}</h4>
-                    <p className="text-xs text-gray-500">Document file uploaded successfully.</p>
+                    <h4 className="font-bold text-gray-800 text-sm">{previewDocModal.fileName || 'Document'}</h4>
+                    <p className="text-xs text-gray-500">Document file recorded in system.</p>
                     <a
-                      href={previewDocModal.src}
+                      href={fullSrc}
                       download={previewDocModal.fileName || 'document'}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 px-4 py-2 bg-brand-teal text-white font-bold rounded-xl text-xs hover:bg-brand-teal-dark transition-colors"
                     >
-                      <Download size={14} /> Download File to Inspect
+                      <Download size={14} /> Download / Open Document
                     </a>
                   </div>
-                )
-              ) : (
+                );
+              })() : (
                 <div className="text-center text-gray-500 py-12 font-semibold">
                   No preview content available.
                 </div>

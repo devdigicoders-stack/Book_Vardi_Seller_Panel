@@ -120,35 +120,62 @@ export default function ProfileTab() {
       (typeof rawSaved?.addressProofFileName === 'string' && (rawSaved.addressProofFileName.startsWith('data:') || rawSaved.addressProofFileName.includes('/')) ? rawSaved.addressProofFileName : null) || 
       '/uploads/documents/addressProofDoc-1789380245540-84981246.pdf';
 
+    const rawAadhaarDoc = pickFirst(
+      sellerUser?.documents?.aadhaarDoc,
+      sellerUser?.documents?.ownerAadhaarDoc,
+      sellerUser?.documents?.aadhaarCard,
+      sellerUser?.documents?.aadhaar,
+      sellerUser?.aadhaarDoc,
+      rawSaved?.aadhaarDoc,
+      rawSaved?.ownerAadhaarDoc,
+      ''
+    );
+
+    const rawShopDoc = pickFirst(
+      sellerUser?.documents?.shopDoc,
+      rawSaved?.shopDoc,
+      ''
+    );
+
+    const rawPassbookDoc = pickFirst(
+      sellerUser?.documents?.passbookDoc,
+      rawSaved?.passbookDoc,
+      ''
+    );
+
     return {
       ...DEFAULT_12_STEP_DATA,
-      ...sellerUser,
       ...rawSaved,
-      sellerName: pickFirst(rawSaved?.sellerName, rawSaved?.ownerFullName, sellerUser?.sellerName, sellerUser?.name, ''),
-      sellerEmail: pickFirst(rawSaved?.sellerEmail, sellerUser?.sellerEmail, sellerUser?.email, ''),
-      sellerPhone: pickFirst(rawSaved?.sellerPhone, sellerUser?.sellerPhone, sellerUser?.phone, ''),
-      ownerFullName: pickFirst(rawSaved?.ownerFullName, sellerUser?.ownerDetails?.ownerFullName, sellerUser?.ownerFullName, sellerUser?.name, ''),
-      ownerDesignation: pickFirst(rawSaved?.ownerDesignation, sellerUser?.ownerDetails?.ownerDesignation, sellerUser?.ownerDesignation, sellerUser?.designation, 'Proprietor'),
-      legalBusinessName: pickFirst(rawSaved?.legalBusinessName, rawSaved?.tradeName, rawSaved?.storeName, sellerUser?.legalBusinessName, sellerUser?.storeName, settings?.storeName, ''),
-      tradeName: pickFirst(rawSaved?.tradeName, rawSaved?.storeName, sellerUser?.tradeName, sellerUser?.storeName, settings?.storeName, ''),
-      storeName: pickFirst(rawSaved?.storeName, rawSaved?.tradeName, sellerUser?.storeName, settings?.storeName, ''),
-      yearStarted: pickFirst(rawSaved?.yearStarted, rawSaved?.establishedYear, rawSaved?.yearEstablished, sellerUser?.yearStarted, sellerUser?.establishedYear, sellerUser?.yearEstablished, settings?.yearStarted, ''),
-      businessType: pickFirst(rawSaved?.businessType, sellerUser?.businessType, 'Proprietorship'),
-      annualTurnoverEstimate: pickFirst(rawSaved?.annualTurnoverEstimate, sellerUser?.annualTurnoverEstimate, ''),
-      ownerPan: pickFirst(rawSaved?.ownerPan, rawSaved?.businessPan, sellerUser?.ownerDetails?.ownerPan, sellerUser?.ownerPan, sellerUser?.documents?.panNumber, sellerUser?.pan, ''),
-      businessPan: pickFirst(rawSaved?.businessPan, rawSaved?.ownerPan, sellerUser?.businessPan, sellerUser?.documents?.businessPan, sellerUser?.documents?.panNumber, sellerUser?.pan, ''),
-      ownerAadhaarLast4: pickFirst(rawSaved?.ownerAadhaarLast4, sellerUser?.ownerDetails?.ownerAadhaarLast4, sellerUser?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : '')),
-      gstin: pickFirst(rawSaved?.gstin, rawSaved?.gstNumber, sellerUser?.gstNumber, sellerUser?.gstin, ''),
-      msmeRegistrationNumber: pickFirst(rawSaved?.msmeRegistrationNumber, sellerUser?.msmeRegistrationNumber, sellerUser?.documents?.msmeRegistrationNumber, ''),
-      cinNumber: pickFirst(rawSaved?.cinNumber, sellerUser?.cinNumber, sellerUser?.documents?.cinNumber, ''),
-      hasGstExemption: Boolean(rawSaved?.hasGstExemption || sellerUser?.hasGstExemption || sellerUser?.documents?.hasGstExemption || false),
-      addressLine1: pickFirst(rawSaved?.addressLine1, rawSaved?.address, sellerUser?.addressDetails?.addressLine1, sellerUser?.addressLine1, sellerUser?.address, ''),
-      addressLine2: pickFirst(rawSaved?.addressLine2, rawSaved?.colony, sellerUser?.addressDetails?.addressLine2, sellerUser?.addressLine2, sellerUser?.colony, ''),
-      colony: pickFirst(rawSaved?.colony, rawSaved?.addressLine2, sellerUser?.addressDetails?.addressLine2, sellerUser?.addressLine2, sellerUser?.colony, ''),
-      landmark: pickFirst(rawSaved?.landmark, sellerUser?.addressDetails?.landmark, sellerUser?.landmark, ''),
-      city: pickFirst(rawSaved?.city, sellerUser?.city, sellerUser?.addressDetails?.city, ''),
-      state: pickFirst(rawSaved?.state, sellerUser?.state, sellerUser?.addressDetails?.state, ''),
-      pincode: pickFirst(rawSaved?.pincode, sellerUser?.pincode, sellerUser?.addressDetails?.pincode, ''),
+      ...sellerUser,
+      sellerName: pickFirst(sellerUser?.name, sellerUser?.sellerName, sellerUser?.ownerDetails?.ownerFullName, rawSaved?.sellerName, rawSaved?.ownerFullName, ''),
+      sellerEmail: pickFirst(sellerUser?.email, sellerUser?.sellerEmail, rawSaved?.sellerEmail, ''),
+      sellerPhone: pickFirst(sellerUser?.phone, sellerUser?.sellerPhone, rawSaved?.sellerPhone, ''),
+      ownerFullName: pickFirst(sellerUser?.ownerDetails?.ownerFullName, sellerUser?.ownerFullName, sellerUser?.name, rawSaved?.ownerFullName, ''),
+      ownerDesignation: pickFirst(sellerUser?.ownerDetails?.ownerDesignation, sellerUser?.ownerDesignation, sellerUser?.designation, rawSaved?.ownerDesignation, 'Proprietor'),
+      legalBusinessName: pickFirst(sellerUser?.legalBusinessName, sellerUser?.storeName, settings?.storeName, rawSaved?.legalBusinessName, rawSaved?.tradeName, rawSaved?.storeName, ''),
+      tradeName: pickFirst(sellerUser?.tradeName, sellerUser?.storeName, settings?.storeName, rawSaved?.tradeName, rawSaved?.storeName, ''),
+      storeName: pickFirst(sellerUser?.storeName, settings?.storeName, rawSaved?.storeName, rawSaved?.tradeName, ''),
+      yearStarted: pickFirst(sellerUser?.yearStarted, sellerUser?.establishedYear, sellerUser?.yearEstablished, settings?.yearStarted, rawSaved?.yearStarted, rawSaved?.establishedYear, ''),
+      businessType: pickFirst(sellerUser?.businessType, rawSaved?.businessType, 'Proprietorship'),
+      annualTurnoverEstimate: pickFirst(sellerUser?.annualTurnoverEstimate, rawSaved?.annualTurnoverEstimate, ''),
+      ownerPan: pickFirst(sellerUser?.ownerDetails?.ownerPan, sellerUser?.ownerPan, sellerUser?.documents?.panNumber, sellerUser?.pan, rawSaved?.ownerPan, rawSaved?.businessPan, ''),
+      businessPan: pickFirst(sellerUser?.businessPan, sellerUser?.documents?.businessPan, sellerUser?.documents?.panNumber, sellerUser?.pan, rawSaved?.businessPan, rawSaved?.ownerPan, ''),
+      ownerAadhaarLast4: pickFirst(sellerUser?.ownerDetails?.ownerAadhaarLast4, sellerUser?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : ''), rawSaved?.ownerAadhaarLast4),
+      aadhaarDoc: rawAadhaarDoc,
+      ownerAadhaarDoc: rawAadhaarDoc,
+      shopDoc: rawShopDoc,
+      passbookDoc: rawPassbookDoc,
+      gstin: pickFirst(sellerUser?.gstNumber, sellerUser?.gstin, rawSaved?.gstin, rawSaved?.gstNumber, ''),
+      msmeRegistrationNumber: pickFirst(sellerUser?.msmeRegistrationNumber, sellerUser?.documents?.msmeRegistrationNumber, rawSaved?.msmeRegistrationNumber, ''),
+      cinNumber: pickFirst(sellerUser?.cinNumber, sellerUser?.documents?.cinNumber, rawSaved?.cinNumber, ''),
+      hasGstExemption: Boolean(sellerUser?.hasGstExemption || sellerUser?.documents?.hasGstExemption || rawSaved?.hasGstExemption || false),
+      addressLine1: pickFirst(sellerUser?.addressDetails?.addressLine1, sellerUser?.addressLine1, sellerUser?.address, rawSaved?.addressLine1, rawSaved?.address, ''),
+      addressLine2: pickFirst(sellerUser?.addressDetails?.addressLine2, sellerUser?.addressLine2, sellerUser?.colony, rawSaved?.addressLine2, rawSaved?.colony, ''),
+      colony: pickFirst(sellerUser?.addressDetails?.addressLine2, sellerUser?.addressLine2, sellerUser?.colony, rawSaved?.colony, rawSaved?.addressLine2, ''),
+      landmark: pickFirst(sellerUser?.addressDetails?.landmark, sellerUser?.landmark, rawSaved?.landmark, ''),
+      city: pickFirst(sellerUser?.city, sellerUser?.addressDetails?.city, rawSaved?.city, ''),
+      state: pickFirst(sellerUser?.state, sellerUser?.addressDetails?.state, rawSaved?.state, ''),
+      pincode: pickFirst(sellerUser?.pincode, sellerUser?.addressDetails?.pincode, rawSaved?.pincode, ''),
       country: pickFirst(rawSaved?.country, sellerUser?.addressDetails?.country, 'India'),
       bankAccountHolder: pickFirst(rawSaved?.bankAccountHolder, sellerUser?.bankDetails?.accountHolderName, sellerUser?.bankAccountHolder, sellerUser?.name, ''),
       bankAccountNumber: pickFirst(rawSaved?.bankAccountNumber, sellerUser?.bankDetails?.accountNumber, sellerUser?.bankAccountNumber, ''),
@@ -610,7 +637,22 @@ export default function ProfileTab() {
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Aadhaar (Last 4)</span>
-                  <span className="font-bold text-gray-800 font-mono">{stepData.ownerAadhaarLast4 ? `•••• •••• ${stepData.ownerAadhaarLast4}` : 'N/A'}</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="font-bold text-gray-800 font-mono">{stepData.ownerAadhaarLast4 ? `•••• •••• ${stepData.ownerAadhaarLast4}` : 'N/A'}</span>
+                    {(stepData.aadhaarDoc || stepData.ownerAadhaarDoc || sellerUser?.documents?.aadhaarDoc || rawSaved?.aadhaarDoc) && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          title: 'Owner Aadhaar Card Document',
+                          url: stepData.aadhaarDoc || stepData.ownerAadhaarDoc || sellerUser?.documents?.aadhaarDoc || rawSaved?.aadhaarDoc,
+                          fileName: `Aadhaar_${stepData.ownerAadhaarLast4 || 'Document'}.pdf`
+                        })}
+                        className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye size={11} /> Preview
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -685,6 +727,22 @@ export default function ProfileTab() {
                   <span className="block text-gray-400 font-medium text-[11px]">CIN Registration</span>
                   <span className="font-bold text-gray-800 font-mono">{stepData.cinNumber || 'N/A'}</span>
                 </div>
+                {(stepData.shopDoc || sellerUser?.documents?.shopDoc) && (
+                  <div className="col-span-full pt-1">
+                    <span className="block text-gray-400 font-medium text-[11px] mb-1">Shop & Trade License Document (`shopDoc`)</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocModal({
+                        title: 'Shop & Trade License Document',
+                        url: stepData.shopDoc || sellerUser?.documents?.shopDoc,
+                        fileName: 'shop_license_document.pdf'
+                      })}
+                      className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      <Eye size={12} /> Preview Shop License Document
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -869,6 +927,22 @@ export default function ProfileTab() {
                     {stepData.bankIfscCode || 'N/A'} ({stepData.accountType || 'Current'})
                   </span>
                 </div>
+                {(stepData.passbookDoc || sellerUser?.documents?.passbookDoc) && (
+                  <div className="col-span-full pt-1">
+                    <span className="block text-gray-400 font-medium text-[11px] mb-1">Bank Passbook / Cancelled Cheque (`passbookDoc`)</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocModal({
+                        title: 'Bank Passbook / Cancelled Cheque Document',
+                        url: stepData.passbookDoc || sellerUser?.documents?.passbookDoc,
+                        fileName: 'bank_passbook_cancelled_cheque.pdf'
+                      })}
+                      className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      <Eye size={12} /> Preview Bank Passbook Document
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

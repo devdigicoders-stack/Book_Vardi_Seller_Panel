@@ -18,15 +18,20 @@ import {
   Users,
   ShieldCheck,
   Sparkles,
-  DollarSign
+  DollarSign,
+  Eye
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 
 export default function SchoolOrdersTab() {
   const { schoolOrders, addSchoolOrder, acceptSchoolOrder, submitSchoolQuote, deleteSchoolOrder, sellerUser } = useSellerData();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [channelFilter, setChannelFilter] = useState('All'); // 'All', 'Direct', 'Invited', 'Broadcast'
+
+  // Preview Expanded Detail Modal State
+  const [previewOrder, setPreviewOrder] = useState(null);
 
   // Quotation Submission Modal State
   const [quotationModalOrder, setQuotationModalOrder] = useState(null);
@@ -50,11 +55,22 @@ export default function SchoolOrdersTab() {
     notes: ''
   });
 
-  // Filtered Orders for Seller
+  // Filtered Orders for Seller (ONLY SHOW ORDERS DISTRIBUTED / ACCESSIBLE TO THIS SELLER)
   const filteredOrders = useMemo(() => {
-    const currentSellerId = sellerUser?.id || sellerUser?._id || '';
+    const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
 
     return schoolOrders.filter((req) => {
+      // Access Control: Unassigned / pending orders are ONLY visible to Admin, NOT sellers!
+      const isAssigned = String(req.sellerId?._id || req.sellerId?.id || req.sellerId) === currentSellerId;
+      const isInvited = Array.isArray(req.invitedSellerIds) && req.invitedSellerIds.some(
+        s => String(typeof s === 'object' ? (s._id || s.id) : s) === currentSellerId
+      );
+      const isBroadcast = req.assignmentMode === 'broadcast';
+
+      // Hide unassigned orders from seller unless seller has explicit access or broadcast mode
+      const hasAccess = isBroadcast || isAssigned || isInvited || (req.assignmentMode && req.assignmentMode !== 'unassigned');
+      if (!hasAccess) return false;
+
       // Channel Filter
       let channelMatch = true;
       if (channelFilter === 'Direct') {
@@ -295,7 +311,7 @@ export default function SchoolOrdersTab() {
                       {req.totalQuantity || req.quantity || 100} Units
                     </div>
                     <div className="text-[10px] text-gray-500">
-                      Target budget: ₹{Number(req.targetBudgetPerKit || req.estimatedBudget || 0).toLocaleString()}
+                      Target budget: {(req.targetBudgetPerKit || req.estimatedBudget) && Number(req.targetBudgetPerKit || req.estimatedBudget) > 0 ? `₹${Number(req.targetBudgetPerKit || req.estimatedBudget).toLocaleString()}` : 'Open to Quotes'}
                     </div>
                   </div>
 
@@ -333,6 +349,14 @@ export default function SchoolOrdersTab() {
                   </button>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setPreviewOrder(req)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-purple-200"
+                    >
+                      <Eye size={14} />
+                      <span>View Expanded Details</span>
+                    </button>
+
                     {/* Direct Accept Button */}
                     {!isAssignedToMe && (
                       <button
@@ -561,6 +585,22 @@ export default function SchoolOrdersTab() {
           </div>
         </div>
       )}
+
+      {/* Expanded Bulk Order Details Preview Modal */}
+      <BulkOrderPreviewModal
+        order={previewOrder}
+        onClose={() => setPreviewOrder(null)}
+        userRole="seller"
+        sellerUser={sellerUser}
+        onSubmitQuote={(orderId, payload) => {
+          submitSchoolQuote(orderId, payload);
+          setPreviewOrder(null);
+        }}
+        onAcceptDirect={(orderId) => {
+          acceptSchoolOrder(orderId);
+          setPreviewOrder(null);
+        }}
+      />
 
     </div>
   );

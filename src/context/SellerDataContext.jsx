@@ -69,40 +69,40 @@ export const readActiveSellerProfile = () => {
     };
 
     const activeName = pickFirst(
-      regData.sellerName,
-      regData.ownerFullName,
-      regData.name,
+      sellerUser.sellerName,
+      sellerUser.ownerFullName,
+      sellerUser.name,
       sellerProf.sellerName,
       sellerProf.ownerFullName,
       sellerProf.name,
-      sellerUser.sellerName,
-      sellerUser.ownerFullName,
-      sellerUser.name
+      regData.sellerName,
+      regData.ownerFullName,
+      regData.name
     );
 
     const activeEmail = pickFirst(
-      regData.sellerEmail,
-      regData.email,
+      sellerUser.sellerEmail,
+      sellerUser.email,
       sellerProf.sellerEmail,
       sellerProf.email,
-      sellerUser.sellerEmail,
-      sellerUser.email
+      regData.sellerEmail,
+      regData.email
     );
 
     const rawPhone = pickFirst(
-      regData.sellerPhone,
-      regData.phone,
+      sellerUser.sellerPhone,
+      sellerUser.phone,
       sellerProf.sellerPhone,
       sellerProf.phone,
-      sellerUser.sellerPhone,
-      sellerUser.phone
+      regData.sellerPhone,
+      regData.phone
     );
     const activePhone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone.replace(/\D/g, '').slice(-10)}`) : '';
 
     const merged = {
-      ...sellerUser,
+      ...regData,
       ...sellerProf,
-      ...regData
+      ...sellerUser
     };
 
     return {
@@ -110,47 +110,48 @@ export const readActiveSellerProfile = () => {
       name: activeName,
       email: activeEmail,
       phone: activePhone,
-      role: pickFirst(merged.role, 'Seller'),
-      designation: pickFirst(regData.ownerDesignation, regData.designation, sellerProf.ownerDesignation, sellerUser.ownerDesignation, sellerUser.ownerDetails?.ownerDesignation, 'Proprietor'),
+      role: pickFirst(sellerUser.role, merged.role, 'Seller'),
+      designation: pickFirst(sellerUser.ownerDesignation, sellerUser.ownerDetails?.ownerDesignation, sellerProf.ownerDesignation, regData.ownerDesignation, regData.designation, 'Proprietor'),
       merchantId: pickFirst(sellerUser.merchantId, sellerProf.merchantId, regData.merchantId, ''),
-      pan: pickFirst(regData.ownerPan, regData.businessPan, regData.pan, sellerProf.ownerPan, sellerProf.businessPan, sellerProf.pan, sellerUser.ownerPan, sellerUser.businessPan, sellerUser.pan, sellerUser.documents?.panNumber, ''),
-      avatar: pickFirst(regData.profilePhoto, regData.avatar, sellerProf.avatar, sellerProf.profilePhoto, sellerUser.profilePhoto, sellerUser.avatar, ''),
-      yearStarted: pickFirst(regData.yearStarted, regData.establishedYear, regData.yearEstablished, sellerProf.yearStarted, sellerProf.establishedYear, sellerProf.yearEstablished, sellerUser.yearStarted, sellerUser.establishedYear, sellerUser.yearEstablished, ''),
-      businessType: pickFirst(regData.businessType, sellerProf.businessType, sellerUser.businessType, 'Proprietorship'),
-      annualTurnoverEstimate: pickFirst(regData.annualTurnoverEstimate, sellerProf.annualTurnoverEstimate, sellerUser.annualTurnoverEstimate, ''),
-      ownerFullName: pickFirst(regData.ownerFullName, regData.name, sellerProf.ownerFullName, sellerProf.ownerDetails?.ownerFullName, sellerUser.ownerFullName, sellerUser.ownerDetails?.ownerFullName, activeName),
-      ownerDesignation: pickFirst(regData.ownerDesignation, sellerProf.ownerDesignation, sellerProf.ownerDetails?.ownerDesignation, sellerUser.ownerDesignation, sellerUser.ownerDetails?.ownerDesignation, 'Proprietor'),
-      ownerPan: pickFirst(regData.ownerPan, regData.pan, sellerProf.ownerPan, sellerProf.ownerDetails?.ownerPan, sellerProf.pan, sellerUser.ownerPan, sellerUser.ownerDetails?.ownerPan, sellerUser.pan, ''),
-      businessPan: pickFirst(regData.businessPan, regData.pan, sellerProf.businessPan, sellerUser.businessPan, sellerUser.documents?.businessPan, sellerUser.documents?.panNumber, sellerUser.pan, ''),
-      ownerAadhaarLast4: pickFirst(regData.ownerAadhaarLast4, sellerProf.ownerAadhaarLast4, sellerUser.ownerAadhaarLast4, sellerUser.ownerDetails?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : (regData.aadhaar ? String(regData.aadhaar).slice(-4) : ''))),
-      gstin: pickFirst(regData.gstin, regData.gstNumber, sellerProf.gstin, sellerProf.gstNumber, sellerUser.gstin, sellerUser.gstNumber, ''),
-      msmeRegistrationNumber: pickFirst(regData.msmeRegistrationNumber, sellerProf.msmeRegistrationNumber, sellerUser.msmeRegistrationNumber, sellerUser.documents?.msmeRegistrationNumber, ''),
-      cinNumber: pickFirst(regData.cinNumber, sellerProf.cinNumber, sellerUser.cinNumber, sellerUser.documents?.cinNumber, ''),
-      hasGstExemption: Boolean(regData.hasGstExemption || sellerProf.hasGstExemption || sellerUser.hasGstExemption || sellerUser.documents?.hasGstExemption),
-      addressLine1: pickFirst(regData.addressLine1, regData.address, sellerProf.addressLine1, sellerProf.address, sellerUser.addressLine1, sellerUser.addressDetails?.addressLine1, sellerUser.address, ''),
-      addressLine2: pickFirst(regData.addressLine2, regData.colony, sellerProf.addressLine2, sellerProf.colony, sellerUser.addressLine2, sellerUser.addressDetails?.addressLine2, sellerUser.colony, ''),
-      colony: pickFirst(regData.colony, regData.addressLine2, sellerProf.colony, sellerUser.colony, sellerUser.addressDetails?.addressLine2, ''),
-      landmark: pickFirst(regData.landmark, sellerProf.landmark, sellerUser.landmark, sellerUser.addressDetails?.landmark, ''),
-      city: pickFirst(regData.city, sellerProf.city, sellerUser.city, sellerUser.addressDetails?.city, ''),
-      state: pickFirst(regData.state, sellerProf.state, sellerUser.state, sellerUser.addressDetails?.state, ''),
-      pincode: pickFirst(regData.pincode, sellerProf.pincode, sellerUser.pincode, sellerUser.addressDetails?.pincode, ''),
-      addressProofType: pickFirst(regData.addressProofType, sellerProf.addressProofType, sellerUser.addressProofType, sellerUser.addressProofDetails?.addressProofType, ''),
-      addressProofDocNumber: pickFirst(regData.addressProofDocNumber, sellerProf.addressProofDocNumber, sellerUser.addressProofDocNumber, sellerUser.addressProofDetails?.addressProofDocNumber, ''),
-      addressProofFileName: pickFirst(regData.addressProofFileName, sellerProf.addressProofFileName, sellerUser.addressProofFileName, ''),
-      bankAccountHolder: pickFirst(regData.bankAccountHolder, sellerProf.bankAccountHolder, sellerUser.bankAccountHolder, sellerUser.bankDetails?.accountHolderName, activeName),
-      bankAccountNumber: pickFirst(regData.bankAccountNumber, sellerProf.bankAccountNumber, sellerUser.bankAccountNumber, sellerUser.bankDetails?.accountNumber, ''),
-      bankIfscCode: pickFirst(regData.bankIfscCode, sellerProf.bankIfscCode, sellerUser.bankIfscCode, sellerUser.bankDetails?.ifscCode, ''),
-      bankName: pickFirst(regData.bankName, sellerProf.bankName, sellerUser.bankName, sellerUser.bankDetails?.bankName, ''),
-      bankBranch: pickFirst(regData.bankBranch, sellerProf.bankBranch, sellerUser.bankBranch, sellerUser.bankDetails?.branchName, sellerUser.bankDetails?.bankBranch, ''),
-      accountType: pickFirst(regData.accountType, sellerProf.accountType, sellerUser.accountType, sellerUser.bankDetails?.accountType, 'Savings Account'),
-      legalBusinessName: pickFirst(regData.legalBusinessName, regData.tradeName, regData.storeName, sellerProf.legalBusinessName, sellerProf.storeName, sellerUser.legalBusinessName, sellerUser.storeName, ''),
-      tradeName: pickFirst(regData.tradeName, regData.storeName, sellerProf.tradeName, sellerProf.storeName, sellerUser.tradeName, sellerUser.storeName, ''),
-      storeName: pickFirst(regData.storeName, regData.tradeName, regData.legalBusinessName, sellerProf.storeName, sellerUser.storeName, ''),
-      storeTagline: pickFirst(regData.storeTagline, sellerProf.storeTagline, sellerUser.storeTagline, sellerUser.storeDetails?.storeTagline, ''),
-      storeDescription: pickFirst(regData.storeDescription, sellerProf.storeDescription, sellerUser.storeDescription, sellerUser.storeDetails?.storeDescription, ''),
-      selectedCategories: (regData.selectedCategories && regData.selectedCategories.length > 0) ? regData.selectedCategories : (sellerProf.selectedCategories || sellerUser.selectedCategories || []),
-      primaryBrands: (regData.primaryBrands && regData.primaryBrands.length > 0) ? regData.primaryBrands : (sellerProf.primaryBrands || sellerUser.primaryBrands || []),
-      estimatedSkuCount: pickFirst(regData.estimatedSkuCount, sellerProf.estimatedSkuCount, sellerUser.estimatedSkuCount, ''),
+      pan: pickFirst(sellerUser.ownerPan, sellerUser.businessPan, sellerUser.pan, sellerUser.documents?.panNumber, sellerProf.ownerPan, sellerProf.businessPan, sellerProf.pan, regData.ownerPan, regData.businessPan, regData.pan, ''),
+      avatar: pickFirst(sellerUser.profilePhoto, sellerUser.avatar, sellerProf.avatar, sellerProf.profilePhoto, regData.profilePhoto, regData.avatar, ''),
+      yearStarted: pickFirst(sellerUser.yearStarted, sellerUser.establishedYear, sellerUser.yearEstablished, sellerProf.yearStarted, sellerProf.establishedYear, regData.yearStarted, regData.establishedYear, ''),
+      businessType: pickFirst(sellerUser.businessType, sellerProf.businessType, regData.businessType, 'Proprietorship'),
+      annualTurnoverEstimate: pickFirst(sellerUser.annualTurnoverEstimate, sellerProf.annualTurnoverEstimate, regData.annualTurnoverEstimate, ''),
+      ownerFullName: pickFirst(sellerUser.ownerFullName, sellerUser.ownerDetails?.ownerFullName, sellerProf.ownerFullName, regData.ownerFullName, activeName),
+      ownerDesignation: pickFirst(sellerUser.ownerDesignation, sellerUser.ownerDetails?.ownerDesignation, sellerProf.ownerDesignation, regData.ownerDesignation, 'Proprietor'),
+      ownerPan: pickFirst(sellerUser.ownerPan, sellerUser.ownerDetails?.ownerPan, sellerUser.pan, sellerProf.ownerPan, regData.ownerPan, ''),
+      businessPan: pickFirst(sellerUser.businessPan, sellerUser.documents?.businessPan, sellerUser.documents?.panNumber, sellerUser.pan, sellerProf.businessPan, regData.businessPan, ''),
+      ownerAadhaarLast4: pickFirst(sellerUser.ownerAadhaarLast4, sellerUser.ownerDetails?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : undefined), sellerProf.ownerAadhaarLast4, regData.ownerAadhaarLast4),
+      gstin: pickFirst(sellerUser.gstin, sellerUser.gstNumber, sellerProf.gstin, sellerProf.gstNumber, regData.gstin, regData.gstNumber, ''),
+      msmeRegistrationNumber: pickFirst(sellerUser.msmeRegistrationNumber, sellerUser.documents?.msmeRegistrationNumber, sellerProf.msmeRegistrationNumber, regData.msmeRegistrationNumber, ''),
+      cinNumber: pickFirst(sellerUser.cinNumber, sellerUser.documents?.cinNumber, sellerProf.cinNumber, regData.cinNumber, ''),
+      hasGstExemption: Boolean(sellerUser.hasGstExemption || sellerUser.documents?.hasGstExemption || sellerProf.hasGstExemption || regData.hasGstExemption),
+      addressLine1: pickFirst(sellerUser.addressLine1, sellerUser.addressDetails?.addressLine1, sellerUser.address, sellerProf.addressLine1, regData.addressLine1, regData.address, ''),
+      addressLine2: pickFirst(sellerUser.addressLine2, sellerUser.addressDetails?.addressLine2, sellerUser.colony, sellerProf.addressLine2, regData.addressLine2, regData.colony, ''),
+      colony: pickFirst(sellerUser.colony, sellerUser.addressDetails?.addressLine2, sellerProf.colony, regData.colony, ''),
+      landmark: pickFirst(sellerUser.landmark, sellerUser.addressDetails?.landmark, sellerProf.landmark, regData.landmark, ''),
+      city: pickFirst(sellerUser.city, sellerUser.addressDetails?.city, sellerProf.city, regData.city, ''),
+      state: pickFirst(sellerUser.state, sellerUser.addressDetails?.state, sellerProf.state, regData.state, ''),
+      pincode: pickFirst(sellerUser.pincode, sellerUser.addressDetails?.pincode, sellerProf.pincode, regData.pincode, ''),
+      addressProofType: pickFirst(sellerUser.addressProofType, sellerUser.addressProofDetails?.addressProofType, sellerProf.addressProofType, regData.addressProofType, ''),
+      addressProofDocNumber: pickFirst(sellerUser.addressProofDocNumber, sellerUser.addressProofDetails?.addressProofDocNumber, sellerProf.addressProofDocNumber, regData.addressProofDocNumber, ''),
+      addressProofFileName: pickFirst(sellerUser.addressProofFileName, sellerProf.addressProofFileName, regData.addressProofFileName, ''),
+      bankAccountHolder: pickFirst(sellerUser.bankAccountHolder, sellerUser.bankDetails?.accountHolderName, sellerProf.bankAccountHolder, regData.bankAccountHolder, activeName),
+      bankAccountNumber: pickFirst(sellerUser.bankAccountNumber, sellerUser.bankDetails?.accountNumber, sellerProf.bankAccountNumber, regData.bankAccountNumber, ''),
+      bankIfscCode: pickFirst(sellerUser.bankIfscCode, sellerUser.bankDetails?.ifscCode, sellerProf.bankIfscCode, regData.bankIfscCode, ''),
+      bankName: pickFirst(sellerUser.bankName, sellerUser.bankDetails?.bankName, sellerProf.bankName, regData.bankName, ''),
+      bankBranch: pickFirst(sellerUser.bankBranch, sellerUser.bankDetails?.branchName, sellerUser.bankDetails?.bankBranch, sellerProf.bankBranch, regData.bankBranch, ''),
+      accountType: pickFirst(sellerUser.accountType, sellerUser.bankDetails?.accountType, sellerProf.accountType, regData.accountType, 'Savings Account'),
+      legalBusinessName: pickFirst(sellerUser.legalBusinessName, sellerUser.storeName, sellerProf.legalBusinessName, regData.legalBusinessName, ''),
+      tradeName: pickFirst(sellerUser.tradeName, sellerUser.storeName, sellerProf.tradeName, regData.tradeName, ''),
+      storeName: pickFirst(sellerUser.storeName, regData.storeName, ''),
+      storeTagline: pickFirst(sellerUser.storeTagline, sellerUser.storeDetails?.storeTagline, sellerProf.storeTagline, regData.storeTagline, ''),
+      storeDescription: pickFirst(sellerUser.storeDescription, sellerUser.storeDetails?.storeDescription, sellerProf.storeDescription, regData.storeDescription, ''),
+      rejectionReason: pickFirst(sellerUser.rejectionReason, sellerProf.rejectionReason, regData.rejectionReason, ''),
+      selectedCategories: (sellerUser.selectedCategories && sellerUser.selectedCategories.length > 0) ? sellerUser.selectedCategories : ((sellerProf.selectedCategories && sellerProf.selectedCategories.length > 0) ? sellerProf.selectedCategories : (regData.selectedCategories || [])),
+      primaryBrands: (sellerUser.primaryBrands && sellerUser.primaryBrands.length > 0) ? sellerUser.primaryBrands : ((sellerProf.primaryBrands && sellerProf.primaryBrands.length > 0) ? sellerProf.primaryBrands : (regData.primaryBrands || [])),
+      estimatedSkuCount: pickFirst(sellerUser.estimatedSkuCount, sellerProf.estimatedSkuCount, regData.estimatedSkuCount, ''),
       lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     };
   } catch {
@@ -482,6 +483,11 @@ export const SellerDataProvider = ({ children }) => {
   // Initial API Data Sync on mount directly from backend DB
   useEffect(() => {
     let isMounted = true;
+    if (!isAuthenticated) {
+      setIsLoadingProducts(false);
+      setIsLoadingSellerData(false);
+      return;
+    }
     async function loadBackendData() {
       setIsLoadingProducts(true);
       setIsLoadingSellerData(true);
@@ -514,10 +520,17 @@ export const SellerDataProvider = ({ children }) => {
 
         if (statusRes.status === 'fulfilled' && (statusRes.value?.status || statusRes.value?.approvalStatus || statusRes.value?.sellerStatus)) {
           const backendStatus = statusRes.value.status || statusRes.value.approvalStatus || statusRes.value.sellerStatus;
+          const backendReason = statusRes.value.rejectionReason || statusRes.value.reason || statusRes.value.message || '';
           setSellerStatus(backendStatus);
           localStorage.setItem('bv_seller_status', backendStatus);
           setSellerUser(prev => {
-            const updated = { ...prev, status: backendStatus, approvalStatus: backendStatus, submissionStatus: backendStatus };
+            const updated = { 
+              ...prev, 
+              status: backendStatus, 
+              approvalStatus: backendStatus, 
+              submissionStatus: backendStatus,
+              rejectionReason: backendReason || prev?.rejectionReason || ''
+            };
             try { localStorage.setItem('seller_user_profile', JSON.stringify(updated)); } catch (e) {}
             return updated;
           });
@@ -528,6 +541,7 @@ export const SellerDataProvider = ({ children }) => {
               parsed.status = backendStatus;
               parsed.submissionStatus = backendStatus;
               parsed.approvalStatus = backendStatus;
+              if (backendReason) parsed.rejectionReason = backendReason;
               localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
             }
           } catch (e) {}
@@ -695,37 +709,32 @@ export const SellerDataProvider = ({ children }) => {
       const apiRes = await verifyPhoneOtpApi(cleanPhone, otpInput);
       if (apiRes && apiRes.token) {
         let resStatus = apiRes.sellerStatus || apiRes.status || apiRes.approvalStatus || apiRes.seller?.status || apiRes.seller?.approvalStatus || 'pending';
-        
-        if (resStatus !== 'approved') {
-          setSellerStatus(resStatus);
-          localStorage.setItem('bv_seller_status', resStatus);
-          return {
-            success: false,
-            message: `Seller Authorization Denied: Your account status is '${resStatus.toUpperCase()}'. Verification approval by Admin is required.`
-          };
-        }
 
         setIsAuthenticated(true);
-        if (apiRes.seller) {
-          const resolvedName = apiRes.seller.name || apiRes.seller.sellerName || apiRes.seller.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
-          const resolvedEmail = apiRes.seller.email || apiRes.seller.sellerEmail || `seller_${cleanPhone}@bookvardi.in`;
-          const u = {
-            ...sellerUser,
-            name: resolvedName,
-            phone: `+91 ${cleanPhone}`,
-            email: resolvedEmail,
-            pan: apiRes.seller.pan || apiRes.seller.ownerPan || sellerUser.pan || ''
-          };
-          setSellerUser(u);
-          setSellerStatus(resStatus);
-          localStorage.setItem('seller_user_profile', JSON.stringify(u));
-          localStorage.setItem('bv_seller_status', resStatus);
-        }
+        setSellerStatus(resStatus);
+        localStorage.setItem('bv_seller_status', resStatus);
+
+        const sellerData = apiRes.seller || {};
+        const resolvedName = sellerData.name || sellerData.sellerName || sellerData.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
+        const resolvedEmail = sellerData.email || sellerData.sellerEmail || `seller_${cleanPhone}@bookvardi.in`;
+        const resolvedStoreName = sellerData.storeName || sellerData.tradeName || sellerData.legalBusinessName || `${resolvedName}'s Vardi Store`;
+
+        const u = {
+          ...sellerUser,
+          ...sellerData,
+          name: resolvedName,
+          storeName: resolvedStoreName,
+          phone: `+91 ${cleanPhone}`,
+          email: resolvedEmail,
+          status: resStatus,
+          approvalStatus: resStatus,
+          pan: sellerData.pan || sellerData.ownerPan || sellerUser.pan || ''
+        };
+        setSellerUser(u);
+        localStorage.setItem('seller_user_profile', JSON.stringify(u));
         localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
-        setTimeout(() => {
-          if (typeof window !== 'undefined') window.location.reload();
-        }, 50);
-        return { success: true, token: apiRes.token, seller: apiRes.seller };
+
+        return { success: true, token: apiRes.token, seller: u, status: resStatus };
       }
     } catch (e) {
       console.debug('Phone OTP API call failed, falling back to local auth:', e.message);
@@ -752,16 +761,14 @@ export const SellerDataProvider = ({ children }) => {
     const matchedStoreName = isPhoneMatch ? (savedApp?.tradeName || savedApp?.storeName || savedApp?.legalBusinessName || `${matchedName}'s Vardi Store`) : `${matchedName}'s Vardi Store`;
     const status = isPhoneMatch ? (savedApp?.status || savedApp?.submissionStatus || 'pending') : (localStorage.getItem('bv_seller_status') || 'pending');
 
-    if (status !== 'approved') {
-      return { success: false, message: `Your seller account is currently ${status}. You cannot access the dashboard until approved.` };
-    }
-
     const updatedUser = {
       ...sellerUser,
       name: matchedName,
       email: matchedEmail,
       phone: `+91 ${cleanPhone}`,
       role: 'Seller',
+      status: status,
+      approvalStatus: status,
       designation: isPhoneMatch ? (savedApp?.ownerDesignation || sellerUser.designation || '') : '',
       pan: isPhoneMatch ? (savedApp?.ownerPan || savedApp?.businessPan || sellerUser.pan || '') : '',
       avatar: isPhoneMatch ? (savedApp?.profilePhoto || sellerUser.avatar) : '',
@@ -785,10 +792,6 @@ export const SellerDataProvider = ({ children }) => {
     localStorage.setItem('seller_settings', JSON.stringify(updatedSettings));
     localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
     localStorage.setItem('bv_seller_status', status);
-
-    setTimeout(() => {
-      if (typeof window !== 'undefined') window.location.reload();
-    }, 50);
 
     return { success: true, seller: updatedUser, status };
   };
@@ -1026,14 +1029,16 @@ export const SellerDataProvider = ({ children }) => {
             notifList = [newNotif, ...notifList];
             localStorage.setItem('admin_notifications', JSON.stringify(notifList));
 
-            // Sync with admin products list
-            const savedAdminProds = localStorage.getItem('admin_products');
+            // Sync with admin and website products list
+            const savedAdminProds = localStorage.getItem('admin_products') || localStorage.getItem('bv_sync_products');
             let adminProds = savedAdminProds ? JSON.parse(savedAdminProds) : [];
             adminProds = [{ ...createdProduct, id: realId, _id: realId, approvalStatus: 'Pending', sellerName: sellerUser?.storeName || sellerUser?.name || 'Seller' }, ...adminProds];
             localStorage.setItem('admin_products', JSON.stringify(adminProds));
+            localStorage.setItem('bv_sync_products', JSON.stringify(adminProds));
 
             window.dispatchEvent(new CustomEvent('adminNotificationReceived', { detail: newNotif }));
             window.dispatchEvent(new CustomEvent('adminProductsUpdated', { detail: adminProds }));
+            window.dispatchEvent(new CustomEvent('bv_products_updated', { detail: adminProds }));
           } catch (e) {
             console.warn('Admin notification sync error:', e);
           }
@@ -1055,9 +1060,11 @@ export const SellerDataProvider = ({ children }) => {
       throw new Error('Validation failed: Product price must be greater than 0.');
     }
 
+    const isMatch = (p) => String(p.id) === strId || String(p._id) === strId || p.id == id || p._id == id;
+
     setProducts(prev => {
       const updated = prev.map(p => {
-        if (String(p.id || p._id) === strId) {
+        if (isMatch(p)) {
           const isPreviouslyRejected = p.approvalStatus === 'Rejected';
           const nextApprovalStatus = isPreviouslyRejected 
             ? 'Pending' 
@@ -1082,10 +1089,37 @@ export const SellerDataProvider = ({ children }) => {
         }
         return p;
       });
+
+      try {
+        localStorage.setItem('bv_seller_products', JSON.stringify(updated));
+        localStorage.setItem('admin_products', JSON.stringify(updated));
+        localStorage.setItem('bv_sync_products', JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent('bv_products_updated', { detail: updated }));
+      } catch (e) {}
+
       return updated;
     });
 
-    updateSellerProductApi(id, updates).catch(() => {});
+    updateSellerProductApi(id, updates)
+      .then(res => {
+        if (res && (res.product || res._id || res.id)) {
+          const serverProduct = res.product || res;
+          const realId = serverProduct._id || serverProduct.id || id;
+          setProducts(prev => {
+            const updated = prev.map(p => isMatch(p) ? { ...p, ...serverProduct, id: realId, _id: realId } : p);
+            try {
+              localStorage.setItem('bv_seller_products', JSON.stringify(updated));
+              localStorage.setItem('admin_products', JSON.stringify(updated));
+              localStorage.setItem('bv_sync_products', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+        }
+      })
+      .catch(err => {
+        console.error('Failed to sync product update with server backend:', err);
+      });
+
     showToast('Product updated successfully!');
   };
 
