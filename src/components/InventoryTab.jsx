@@ -19,6 +19,7 @@ import {
   Save
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import { resolveImageUrl } from '../utils/mediaUrl';
 import BulkUpdateModal from './BulkUpdateModal';
 
 export default function InventoryTab() {
@@ -325,10 +326,10 @@ export default function InventoryTab() {
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={p.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100&auto=format&fit=crop&q=80'}
+                            src={resolveImageUrl((Array.isArray(p.images) && p.images[0]) || p.image || p.coverImage)}
                             alt={p.name}
                             className="w-10 h-10 rounded-xl object-cover border border-gray-100 shrink-0"
-                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100&auto=format&fit=crop&q=80'; }}
+                            onError={(e) => { e.target.style.display = 'none'; }}
                           />
                           <div className="max-w-xs">
                             <div className="font-bold text-gray-900 truncate">{p.name}</div>

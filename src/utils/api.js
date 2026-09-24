@@ -3,23 +3,27 @@ const API_BASE_URL = `${SERVER_URL}/seller`;
 
 // Helper to get auth header dynamically for whichever user is logged in
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  let token = localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
   const userProfStr = localStorage.getItem('seller_user_profile') || localStorage.getItem('book_vardi_user_profile') || localStorage.getItem('bv_seller_reg_data') || localStorage.getItem('book_vardi_seller_profile');
   let userPhone = localStorage.getItem('bv_user_phone') || localStorage.getItem('user_phone') || '';
   let sellerId = localStorage.getItem('bv_seller_id') || localStorage.getItem('seller_id') || '';
 
-  if (userProfStr) {
+  if (userProfStr && userProfStr !== 'undefined' && userProfStr !== 'null') {
     try {
       const u = JSON.parse(userProfStr);
-      if (!userPhone) userPhone = u.phone || u.sellerPhone || u.mobile || u.registeredMobile || '';
-      if (!sellerId) sellerId = u.id || u._id || u.sellerId || '';
+      if (!userPhone || userPhone === 'undefined' || userPhone === 'null') userPhone = u.phone || u.sellerPhone || u.mobile || u.registeredMobile || '';
+      if (!sellerId || sellerId === 'undefined' || sellerId === 'null') sellerId = u.id || u._id || u.sellerId || '';
     } catch (e) {}
   }
 
+  if (token === 'undefined' || token === 'null' || token === 'Bearer') token = '';
+  if (userPhone === 'undefined' || userPhone === 'null' || userPhone === '[object Object]') userPhone = '';
+  if (sellerId === 'undefined' || sellerId === 'null' || sellerId === '[object Object]') sellerId = '';
+
   return {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(userPhone ? { 'x-user-phone': userPhone } : {}),
-    ...(sellerId ? { 'x-seller-id': sellerId } : {})
+    ...(userPhone ? { 'x-user-phone': String(userPhone) } : {}),
+    ...(sellerId ? { 'x-seller-id': String(sellerId) } : {})
   };
 };
 
@@ -47,9 +51,16 @@ export const sendPhoneOtpApi = async (phone) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone })
     });
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok || data.success === false) {
+      return {
+        success: false,
+        message: data.message || `No seller account found with mobile number +91 ${String(phone).replace(/\D/g, '').slice(-10)}. Please register as a new seller first.`
+      };
+    }
+    return data;
   } catch (error) {
-    return { success: true, otp: '123456', message: 'Fallback to offline mode: OTP 123456' };
+    return { success: false, message: error.message || 'Network error sending OTP.' };
   }
 };
 

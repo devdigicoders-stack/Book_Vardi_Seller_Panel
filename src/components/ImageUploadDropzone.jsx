@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, Image as ImageIcon, X, Star, Plus, Link, Trash2, CheckCircle2 } from 'lucide-react';
+import { resolveImageUrl } from '../utils/mediaUrl';
 
 export default function ImageUploadDropzone({ 
   images = [], 
@@ -157,7 +158,8 @@ export default function ImageUploadDropzone({
                 }`}
               >
                 <img
-                  src={img}
+                  src={resolveImageUrl(img)}
+                  onError={(e) => { e.currentTarget.src = 'https://placehold.co/400x400?text=No+Image'; }}
                   alt={`Product ${idx + 1}`}
                   className="w-full h-full object-cover"
                 />

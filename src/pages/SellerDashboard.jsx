@@ -1,20 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import Overview from '../components/Overview';
-import ProductsTab from '../components/ProductsTab';
-import OrdersTab from '../components/OrdersTab';
-import InventoryTab from '../components/InventoryTab';
-import SchoolOrdersTab from '../components/SchoolOrdersTab';
-import CustomersTab from '../components/CustomersTab';
-import FinanceTab from '../components/FinanceTab';
-import PromotionsTab from '../components/PromotionsTab';
-import AnalyticsTab from '../components/AnalyticsTab';
-import ReviewsTab from '../components/ReviewsTab';
-import ShippingTab from '../components/ShippingTab';
-import NotificationsTab from '../components/NotificationsTab';
-import SettingsTab from '../components/SettingsTab';
-import SupportTab from '../components/SupportTab';
-import ProfileTab from '../components/ProfileTab';
 import SellerLogin from '../components/SellerLogin';
+
+const ProductsTab = lazy(() => import('../components/ProductsTab'));
+const OrdersTab = lazy(() => import('../components/OrdersTab'));
+const InventoryTab = lazy(() => import('../components/InventoryTab'));
+const SchoolOrdersTab = lazy(() => import('../components/SchoolOrdersTab'));
+const CustomersTab = lazy(() => import('../components/CustomersTab'));
+const FinanceTab = lazy(() => import('../components/FinanceTab'));
+const PromotionsTab = lazy(() => import('../components/PromotionsTab'));
+const AnalyticsTab = lazy(() => import('../components/AnalyticsTab'));
+const ReviewsTab = lazy(() => import('../components/ReviewsTab'));
+const ShippingTab = lazy(() => import('../components/ShippingTab'));
+const NotificationsTab = lazy(() => import('../components/NotificationsTab'));
+const SettingsTab = lazy(() => import('../components/SettingsTab'));
+const SupportTab = lazy(() => import('../components/SupportTab'));
+const ProfileTab = lazy(() => import('../components/ProfileTab'));
 import { 
   Home, 
   Package, 
@@ -41,7 +42,11 @@ import {
   CheckCircle,
   CheckCircle2,
   RefreshCw,
-  LayoutDashboard
+  LayoutDashboard,
+  Loader2,
+  XCircle,
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import SellerRegistrationModal from '../components/SellerRegistrationModal';
@@ -59,6 +64,7 @@ export default function SellerDashboardPage({ onNavigate }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
   const [isDashboardUnlocked, setIsDashboardUnlocked] = useState(false);
 
   const { 
@@ -137,51 +143,103 @@ export default function SellerDashboardPage({ onNavigate }) {
 
   // STRICT ACCESS CONTROL: Status approval is strictly required BEFORE loading seller dashboard!
   if (!isSellerApproved) {
+    const isRejectedState = sellerStatus === 'rejected' || sellerUser?.status === 'rejected' || sellerUser?.submissionStatus === 'rejected';
+    const rejectionReasonText = sellerUser?.rejectionReason || settings?.rejectionReason || sellerUser?.reason || settings?.reason || 'Uploaded KYC documents or business details could not be verified by Admin.';
+
     return (
       <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-        <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 max-w-xl w-full p-6 sm:p-8 text-center relative overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
-          {/* Status Accent Bar */}
-          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500" />
+        <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 max-w-lg w-full p-6 sm:p-7 relative overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+          {/* Top-Right Cross (X) Close Button to switch back to Login Form */}
+          <button
+            onClick={() => logoutSeller()}
+            className="absolute top-4 right-4 z-20 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Close popup & view login form"
+          >
+            <X size={18} />
+          </button>
 
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border shadow-inner bg-amber-100 text-amber-700 border-amber-200/60">
-            <Clock size={32} className="animate-pulse" />
+          {/* Top Gradient Accent Bar */}
+          <div className={`absolute top-0 left-0 right-0 h-2 ${isRejectedState ? 'bg-gradient-to-r from-rose-500 via-red-600 to-rose-700' : 'bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500'}`} />
+
+          {/* Header Section: Icon + Title & Status Badge */}
+          <div className="flex items-start gap-4 pt-1 mb-4">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 border shadow-inner ${isRejectedState ? 'bg-rose-100 text-rose-700 border-rose-200/60' : 'bg-amber-100 text-amber-700 border-amber-200/60'}`}>
+              {isRejectedState ? (
+                <XCircle size={28} />
+              ) : (
+                <Clock size={28} className="animate-pulse" />
+              )}
+            </div>
+
+            <div className="space-y-1 text-left flex-1 pr-6">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${isRejectedState ? 'bg-rose-50 text-rose-800 border-rose-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                  <span className={`w-2 h-2 rounded-full ${isRejectedState ? 'bg-rose-600' : 'bg-amber-500 animate-ping'}`} />
+                  {isRejectedState ? 'REJECTED' : (sellerStatus ? sellerStatus.replace('_', ' ').toUpperCase() : 'PENDING APPROVAL')}
+                </span>
+              </div>
+              
+              <h2 className="text-lg font-extrabold text-slate-900 tracking-tight leading-snug">
+                {isRejectedState ? 'Seller Account Application Rejected' : 'Seller Account Pending Approval'}
+              </h2>
+            </div>
           </div>
 
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border mb-3 bg-amber-50 text-amber-800 border-amber-200">
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-            Application Status: {sellerStatus ? sellerStatus.replace('_', ' ').toUpperCase() : 'PENDING APPROVAL'}
-          </span>
-
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            Seller Account Pending Approval
-          </h2>
-
-          <p className="text-slate-600 text-sm mt-2 max-w-md mx-auto leading-relaxed">
-            Thank you for registering with Book Vardi! Your merchant application (
-            <span className="font-semibold text-slate-800">
-              {isLoadingSellerData ? (
-                <SkeletonText width="w-28" height="h-3.5" className="inline-block align-middle" />
-              ) : (
-                settings?.storeName || sellerUser?.storeName || sellerUser?.name || 'Partner Merchant'
-              )}
-            </span>
-            ) is under review. Status approval is strictly required before loading the Seller Dashboard.
+          {/* Description Paragraph */}
+          <p className="text-slate-600 text-xs text-left leading-relaxed">
+            {isRejectedState ? (
+              <>
+                Your merchant application for <span className="font-bold text-slate-800">{settings?.storeName || sellerUser?.storeName || sellerUser?.name || 'Partner Merchant'}</span> was reviewed and rejected by Admin. Please update your details to resubmit for review.
+              </>
+            ) : (
+              <>
+                Thank you for registering with Book Vardi! Your merchant application for <span className="font-bold text-slate-800">{isLoadingSellerData ? 'Partner Merchant' : (settings?.storeName || sellerUser?.storeName || sellerUser?.name || 'Partner Merchant')}</span> is under review. Status approval is strictly required before accessing the dashboard.
+              </>
+            )}
           </p>
 
-          <div className="mt-5 p-4 rounded-2xl border text-left text-xs space-y-2 bg-slate-50 border-slate-200/80">
+          {/* Admin Rejection Reason Callout */}
+          {isRejectedState && (
+            <div className="mt-3.5 p-3.5 rounded-2xl border text-left text-xs bg-rose-50/90 border-rose-200/90 space-y-1 text-rose-950 shadow-xs">
+              <div className="font-extrabold flex items-center gap-1.5 text-rose-700 text-xs">
+                <AlertCircle size={15} />
+                <span>Admin Rejection Reason:</span>
+              </div>
+              <p className="text-slate-800 leading-relaxed font-semibold pl-5 text-xs">
+                "{rejectionReasonText}"
+              </p>
+            </div>
+          )}
+
+          {/* Applicant Details Header with Compact Edit Button */}
+          <div className="mt-4 flex items-center justify-between mb-1.5 px-0.5">
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Applicant Details</span>
+            {isRejectedState && (
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] shadow-xs transition-all cursor-pointer"
+              >
+                <Edit3 size={12} />
+                <span>Update / Resubmit Details</span>
+              </button>
+            )}
+          </div>
+
+          {/* Applicant Details Info Card */}
+          <div className="p-3.5 rounded-2xl border text-left text-xs space-y-2 bg-slate-50 border-slate-200/80">
             <div className="flex justify-between items-center text-slate-600">
               <span>Applicant Name:</span>
               <span className="font-bold text-slate-800">
                 {isLoadingSellerData ? (
                   <SkeletonText width="w-24" height="h-3.5" />
                 ) : (
-                  sellerUser?.name || 'Partner Seller'
+                  sellerUser?.name || sellerUser?.ownerFullName || 'Partner Seller'
                 )}
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-600">
               <span>Registered Mobile:</span>
-              <span className="font-bold text-slate-800">
+              <span className="font-bold text-slate-800 font-mono">
                 {isLoadingSellerData ? (
                   <SkeletonText width="w-28" height="h-3.5" />
                 ) : (
@@ -191,46 +249,21 @@ export default function SellerDashboardPage({ onNavigate }) {
             </div>
             <div className="flex justify-between items-center text-slate-600">
               <span>Application State:</span>
-              <span className="font-bold text-amber-600 uppercase tracking-wide text-[11px] bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
-                {sellerStatus || 'pending'}
+              <span className={`font-bold uppercase tracking-wide text-[10px] px-2 py-0.5 rounded-full border ${isRejectedState ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                {sellerStatus || (isRejectedState ? 'rejected' : 'pending')}
               </span>
             </div>
           </div>
 
-          <div className="mt-6 flex flex-col gap-2.5">
-            <button
-              onClick={async () => {
-                if (approveSellerApplication) {
-                  await approveSellerApplication();
-                  if (showToast) showToast('🎉 Account APPROVED! Loading Seller Dashboard...');
-                }
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer"
-            >
-              <ShieldCheck size={16} /> Approve Account & Render Dashboard (Demo)
-            </button>
-
+          {/* 50-50 Split Row for Action Buttons */}
+          <div className="mt-5 grid grid-cols-2 gap-3 w-full">
             <button
               onClick={handleCheckApprovalStatus}
               disabled={isRefreshingStatus}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+              className={`w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${isRejectedState ? 'bg-slate-800 hover:bg-slate-900' : 'bg-amber-500 hover:bg-amber-600'}`}
             >
               <RefreshCw size={14} className={isRefreshingStatus ? 'animate-spin' : ''} />
-              {isRefreshingStatus ? 'Checking Status with Server...' : 'Check Approval Status'}
-            </button>
-
-            <button
-              onClick={logoutSeller}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
-            >
-              <LogOut size={15} /> Redirect to Seller Login Page
-            </button>
-
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs shadow-xs transition-all cursor-pointer border border-slate-200"
-            >
-              <Edit3 size={15} /> Edit Application / Update Details
+              <span className="truncate">{isRefreshingStatus ? 'Checking...' : 'Check Approval Status'}</span>
             </button>
 
             <button
@@ -241,11 +274,13 @@ export default function SellerDashboardPage({ onNavigate }) {
                   window.location.href = websiteUrl;
                 }
               }}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer"
             >
-              <ArrowLeft size={14} /> Back to Storefront
+              <ArrowLeft size={14} />
+              <span className="truncate">Back to Storefront</span>
             </button>
           </div>
+
         </div>
 
         <SellerRegistrationModal
@@ -356,7 +391,7 @@ export default function SellerDashboardPage({ onNavigate }) {
       <div className={`min-h-screen bg-gray-50/50 pb-20 transition-all duration-300 ${!isSellerApproved ? 'filter blur-md opacity-40 pointer-events-none select-none' : ''}`}>
         
         {/* Header Banner */}
-        <div className="bg-brand-teal text-white py-4 px-4 border-b border-white/10 relative overflow-hidden sticky top-0 z-40 shadow-sm backdrop-blur-md">
+        <div className="bg-brand-teal text-white py-4 px-4 border-b border-white/10 relative overflow-hidden lg:sticky top-0 z-40 shadow-sm backdrop-blur-md">
           <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-yellow/10 blur-3xl pointer-events-none" />
           <div className="container mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
@@ -486,8 +521,8 @@ export default function SellerDashboardPage({ onNavigate }) {
           <div className="flex flex-col lg:flex-row items-start gap-6">
             
             {/* Sticky Left Sidebar (Desktop) */}
-            <aside className="hidden lg:block w-64 xl:w-72 shrink-0 self-start sticky top-[84px] z-30">
-              <div className="bg-white rounded-2xl border border-gray-200/80 shadow-xs p-3.5 space-y-4 max-h-[calc(100vh-100px)] overflow-y-auto hide-scrollbar no-scrollbar scrollbar-none">
+            <aside className="hidden lg:block w-64 xl:w-72 shrink-0 self-start sticky top-6 z-30">
+              <div className="bg-white rounded-2xl border border-gray-200/80 shadow-xs p-3.5 space-y-4 max-h-[calc(100vh-3rem)] overflow-y-auto hide-scrollbar no-scrollbar scrollbar-none">
                 
                 {/* Store Mini Profile */}
                 {isLoadingSellerData ? (
@@ -589,7 +624,18 @@ export default function SellerDashboardPage({ onNavigate }) {
 
             {/* Main Dashboard Workspace Content */}
             <main className="flex-1 w-full min-w-0 min-h-[calc(100vh-100px)]">
-              {renderContent()}
+              <Suspense fallback={
+                <div className="bg-white rounded-2xl border border-gray-200/80 p-6 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <SkeletonText width="w-48" height="h-6" />
+                    <SkeletonText width="w-24" height="h-6" />
+                  </div>
+                  <SkeletonText width="w-full" height="h-32" />
+                  <SkeletonText width="w-3/4" height="h-20" />
+                </div>
+              }>
+                {renderContent()}
+              </Suspense>
             </main>
 
           </div>

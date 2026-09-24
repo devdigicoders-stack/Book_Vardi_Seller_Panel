@@ -29,6 +29,7 @@ import { useSellerData } from '../context/SellerDataContext';
 import BulkUpdateModal from './BulkUpdateModal';
 import ImageUploadDropzone from './ImageUploadDropzone';
 import SellerProductFormPage from './SellerProductFormPage';
+import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
 
 const CATEGORIES = [
   { id: 'all', label: 'All Categories' },
@@ -59,6 +60,8 @@ export default function ProductsTab() {
   const [deletingProductId, setDeletingProductId] = useState(null);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
   const [detailActiveImg, setDetailActiveImg] = useState(0);
+  const [previewImageModalUrl, setPreviewImageModalUrl] = useState(null);
+  const [previewImageModalTitle, setPreviewImageModalTitle] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const stockInputRef = useRef(null);
 
@@ -411,10 +414,10 @@ export default function ProductsTab() {
                           <div className="flex items-center gap-3">
                             <div className="relative shrink-0">
                               <img
-                                src={p.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100&auto=format&fit=crop&q=80'}
+                                src={resolveImageUrl((Array.isArray(p.images) && p.images[0]) || p.image || p.coverImage || (Array.isArray(p.kitItems) && p.kitItems[0]?.image))}
                                 alt={p.name}
                                 className="w-12 h-12 rounded-xl object-cover border border-gray-100 bg-gray-100 group-hover:ring-2 group-hover:ring-teal-600 transition-all"
-                                onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100&auto=format&fit=crop&q=80'; }}
+                                onError={(e) => { e.target.style.display = 'none'; }}
                               />
                               <div className="absolute inset-0 bg-black/20 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
                                 <Eye size={14} />
@@ -598,27 +601,53 @@ export default function ProductsTab() {
         </div>
       )}
 
-      {/* Product Brief Detail Modal */}
+      {/* Product Comprehensive Detail & Preview Modal (Matches Admin Panel) */}
       {selectedProductForDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
             
             {/* Modal Header */}
-            <div className="px-6 py-4 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-teal-100/70 text-teal-800 rounded-xl">
-                  <Package size={18} />
-                </span>
+            <div className="px-6 py-4 bg-gray-50/90 border-b border-gray-200/80 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-2xl ${
+                  selectedProductForDetail.approvalStatus === 'Pending' 
+                    ? 'bg-amber-100 text-amber-900 ring-2 ring-amber-300' 
+                    : selectedProductForDetail.approvalStatus === 'Rejected'
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  <ShieldCheck size={22} />
+                </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-sm">Product Overview</h3>
-                  <p className="text-[11px] text-gray-500 font-mono">
-                    {selectedProductForDetail.sku || `SKU-${selectedProductForDetail.id}`}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-display font-extrabold text-lg text-gray-900">
+                      Product Details & Catalog Overview
+                    </h3>
+                    {selectedProductForDetail.approvalStatus === 'Pending' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-white animate-pulse">
+                        <Clock size={11} /> PENDING ADMIN REVIEW
+                      </span>
+                    )}
+                    {selectedProductForDetail.approvalStatus === 'Rejected' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">
+                        <AlertTriangle size={11} /> ACTION REQUIRED (REJECTED)
+                      </span>
+                    )}
+                    {selectedProductForDetail.approvalStatus === 'Approved' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white">
+                        <CheckCircle size={11} /> LIVE ON MARKETPLACE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span>SKU: <strong className="font-mono text-gray-700">{selectedProductForDetail.sku || `SKU-${selectedProductForDetail.id}`}</strong></span>
+                    <span>•</span>
+                    <span>Category: <strong className="capitalize text-gray-700">{selectedProductForDetail.subCategory ? `${selectedProductForDetail.category} > ${selectedProductForDetail.subCategory}` : (selectedProductForDetail.category || 'Uniforms')}</strong></span>
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Status toggle pill inside modal */}
                 <button
                   type="button"
                   onClick={() => handleToggleProductStatus(selectedProductForDetail)}
@@ -636,239 +665,502 @@ export default function ProductsTab() {
 
                 <button
                   onClick={() => setSelectedProductForDetail(null)}
-                  className="text-gray-400 hover:text-gray-700 p-1.5 rounded-xl hover:bg-gray-200/60 transition-colors"
+                  className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 transition-colors cursor-pointer"
+                  aria-label="Close"
                 >
-                  <X size={18} />
+                  <X size={20} />
                 </button>
               </div>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-5 text-xs">
+            {/* Modal Scrollable Body */}
+            <div className="overflow-y-auto p-6 space-y-6 text-xs flex-1">
               
-              {/* Product Hero Top Box */}
-              <div className="flex flex-col sm:flex-row gap-4 items-start bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                <div className="flex flex-col items-center gap-2 shrink-0">
-                  <img
-                    src={(Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[detailActiveImg]) || selectedProductForDetail.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=300&auto=format&fit=crop&q=80'}
-                    alt={selectedProductForDetail.name}
-                    className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover bg-white border border-gray-200 shrink-0 shadow-xs"
-                    onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=300&auto=format&fit=crop&q=80'; }}
-                  />
-                  {Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images.length > 1 && (
-                    <div className="flex gap-1.5 max-w-[120px] overflow-x-auto pb-1 no-scrollbar scrollbar-none">
-                      {selectedProductForDetail.images.map((img, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setDetailActiveImg(idx)}
-                          className={`w-7 h-7 rounded-lg overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
-                            detailActiveImg === idx ? 'border-teal-700 scale-105 shadow-2xs' : 'border-gray-200 opacity-60 hover:opacity-100'
-                          }`}
-                        >
-                          <img src={img} alt="" className="w-full h-full object-cover" />
-                        </button>
-                      ))}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                
+                {/* Left Column: Visual Gallery & Product Info */}
+                <div className="lg:col-span-7 space-y-4">
+                  
+                  {/* Image Preview Box */}
+                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200/80">
+                    <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-white border border-gray-200 flex items-center justify-center">
+                      {((Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[detailActiveImg]) || selectedProductForDetail.image || selectedProductForDetail.coverImage) ? (
+                        <img
+                          src={resolveImageUrl((Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[detailActiveImg]) || selectedProductForDetail.image || selectedProductForDetail.coverImage)}
+                          alt={selectedProductForDetail.name}
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+
+                      <div className={`w-full h-full ${((Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[detailActiveImg]) || selectedProductForDetail.image || selectedProductForDetail.coverImage) ? 'hidden' : 'flex'} flex-col items-center justify-center bg-gray-100 text-gray-400 gap-2`}>
+                        <ImageIcon size={36} />
+                        <span className="text-xs font-medium">No Product Image</span>
+                      </div>
+
+                      {Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images.length > 0 && (
+                        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold">
+                          Image {detailActiveImg + 1} of {selectedProductForDetail.images.length}
+                        </div>
+                      )}
+                      {(selectedProductForDetail.badge || selectedProductForDetail.discountBadge) && (
+                        <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-amber-400 text-teal-950 text-[10px] font-extrabold tracking-wide shadow-xs">
+                          {selectedProductForDetail.badge || selectedProductForDetail.discountBadge}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Thumbnail Strip */}
+                    {Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images.length > 1 && (
+                      <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1">
+                        {selectedProductForDetail.images.map((img, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setDetailActiveImg(idx)}
+                            className={`w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
+                              detailActiveImg === idx
+                                ? 'border-teal-700 ring-2 ring-teal-200 scale-105'
+                                : 'border-gray-200 opacity-60 hover:opacity-100'
+                            }`}
+                          >
+                            <img src={resolveImageUrl(img)} alt="" className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Product Comprehensive Specifications & Details Card */}
+                  <div className="bg-white rounded-2xl p-4 border border-gray-200/80 space-y-4 shadow-2xs">
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-display font-extrabold text-base text-gray-900">
+                          {selectedProductForDetail.name}
+                        </h4>
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                          selectedProductForDetail.isMeterBased || selectedProductForDetail.unit === 'meter'
+                            ? 'bg-teal-50 text-teal-800 border-teal-200'
+                            : 'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}>
+                          {selectedProductForDetail.isMeterBased || selectedProductForDetail.unit === 'meter' ? '✂️ Unstitched Fabric (Meters)' : '👔 Ready-To-Wear (Pieces)'}
+                        </span>
+                      </div>
+                      <p className="text-gray-500 text-xs mt-0.5">
+                        {selectedProductForDetail.subtitle || 'Authentic school & student merchandise listed on Book Vardi.'}
+                      </p>
+                    </div>
+
+                    {/* Commercials: Price, MRP, Discount & GST */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-gray-500 block">Selling Price</span>
+                        <span className="text-base font-extrabold text-gray-900">₹{selectedProductForDetail.price}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-gray-500 block">MRP / List Price</span>
+                        <span className="text-base font-bold text-gray-400 line-through">
+                          ₹{selectedProductForDetail.originalPrice || selectedProductForDetail.mrp || Math.round(selectedProductForDetail.price * 1.25)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-gray-500 block">Discount</span>
+                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md inline-block mt-0.5">
+                          {selectedProductForDetail.originalPrice && selectedProductForDetail.originalPrice > selectedProductForDetail.price
+                            ? Math.round(((selectedProductForDetail.originalPrice - selectedProductForDetail.price) / selectedProductForDetail.originalPrice) * 100)
+                            : 0}% OFF
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-gray-500 block">GST Tax Rate</span>
+                        <span className="text-xs font-extrabold text-purple-800 bg-purple-100/80 px-2 py-0.5 rounded-md inline-block mt-0.5">
+                          {selectedProductForDetail.gst ?? selectedProductForDetail.gstPercentage ?? 5}% GST
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Specs Pill Matrix */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Stock Level</span>
+                        <span className="font-extrabold text-gray-800 text-xs">
+                          {selectedProductForDetail.stockQuantity ?? selectedProductForDetail.stock ?? 0} units
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Category</span>
+                        <span className="font-extrabold text-gray-800 text-xs capitalize">
+                          {selectedProductForDetail.subCategory ? `${selectedProductForDetail.category} > ${selectedProductForDetail.subCategory}` : (selectedProductForDetail.category || 'N/A')}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Brand</span>
+                        <span className="font-extrabold text-gray-800 text-xs">
+                          {selectedProductForDetail.brand || 'Unbranded / Generic'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Material / Fabric</span>
+                        <span className="font-extrabold text-gray-800 text-xs">
+                          {selectedProductForDetail.material || 'Not specified'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Target School</span>
+                        <span className="font-extrabold text-gray-800 text-xs">
+                          {selectedProductForDetail.schoolName || selectedProductForDetail.school || 'General Academic'}
+                          {selectedProductForDetail.schoolCode ? ` (${selectedProductForDetail.schoolCode})` : ''}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Grade / Class</span>
+                        <span className="font-extrabold text-gray-800 text-xs">
+                          {selectedProductForDetail.classGrade || selectedProductForDetail.className || 'All Grades'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Target Gender & Age</span>
+                        <span className="font-extrabold text-gray-800 text-xs">
+                          {selectedProductForDetail.gender || 'Unisex'} • {selectedProductForDetail.ageGroup || (Array.isArray(selectedProductForDetail.ages) && selectedProductForDetail.ages.length > 0 ? selectedProductForDetail.ages.join(', ') : 'All Ages')}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Return Policy</span>
+                        <span className={`font-extrabold text-xs ${selectedProductForDetail.isReturnable === false ? 'text-rose-600' : 'text-emerald-700'}`}>
+                          {selectedProductForDetail.isReturnable === false ? 'Non-Returnable' : `${selectedProductForDetail.returnWindowDays || 7}-Day Easy Returns`}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Payment Methods</span>
+                        <span className="font-extrabold text-gray-800 text-xs">
+                          {selectedProductForDetail.paymentMethodAllowed || 'Both (Online & COD)'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Fabric / Meter Quantity Pricing Rule Callout */}
+                    {(selectedProductForDetail.isMeterBased || selectedProductForDetail.unit === 'meter') && (
+                      <div className="p-3 bg-teal-50/70 border border-teal-200 rounded-xl text-xs text-teal-950 font-medium">
+                        ✂️ <strong>Fabric Meter Pricing Rule:</strong> Sold per meter. Min order: <strong>{selectedProductForDetail.minMeter || 0.5}m</strong>, Step: <strong>{selectedProductForDetail.meterStep || 0.5}m</strong>.
+                        Formula: <span className="font-mono font-bold text-teal-900">{`{Customer Selected Meters} × ₹${selectedProductForDetail.price}/meter`}</span>.
+                      </div>
+                    )}
+
+                    {/* Product Scale Variants Matrix & Detail Photos */}
+                    {(() => {
+                      const detailVariants = parseSizeVariants(selectedProductForDetail);
+                      if (!detailVariants || detailVariants.length === 0) return null;
+                      return (
+                        <div className="space-y-2 pt-2 border-t border-gray-100">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                              <Layers size={14} className="text-teal-700" />
+                              <span>Product Variants Matrix & Detail Photos ({detailVariants.length})</span>
+                            </span>
+                            <span className="text-[10px] font-bold text-gray-500">Click photo to view high-res</span>
+                          </div>
+
+                          {/* Variant Preview Image Layout in Row */}
+                          <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 border-b border-gray-100 scrollbar-thin">
+                            {detailVariants.map((v, vIdx) => {
+                              const vRawImg = v.image || (Array.isArray(v.images) && v.images[0]) || selectedProductForDetail.image || (Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[0]);
+                              const vImgUrl = vRawImg ? resolveImageUrl(vRawImg) : '';
+                              const vVal = v.measureValue || v.size || `Var #${vIdx + 1}`;
+
+                              return (
+                                <div
+                                  key={vIdx}
+                                  onClick={() => {
+                                    if (vImgUrl) {
+                                      setPreviewImageModalUrl(vImgUrl);
+                                      setPreviewImageModalTitle(`Variant: ${vVal}`);
+                                    }
+                                  }}
+                                  className="flex items-center gap-2.5 p-2 rounded-xl bg-teal-50/60 hover:bg-teal-100/70 border border-teal-200/80 shrink-0 min-w-[175px] cursor-pointer transition-all"
+                                >
+                                  {vImgUrl ? (
+                                    <img
+                                      src={vImgUrl}
+                                      alt={vVal}
+                                      className="w-12 h-12 rounded-lg object-cover border border-white shadow-2xs shrink-0 bg-white"
+                                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                    />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-lg bg-teal-100 text-teal-950 font-bold text-xs flex items-center justify-center shrink-0 border border-teal-200">
+                                      {vVal.slice(0, 3)}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-extrabold text-xs text-gray-900 truncate">{vVal}</div>
+                                    <div className="text-[11px] font-bold text-teal-800 flex items-center gap-1 mt-0.5">
+                                      <span>₹{v.price}</span>
+                                      {(v.mrp || v.originalPrice) && (
+                                        <span className="text-[9px] text-gray-400 line-through">₹{v.mrp || v.originalPrice}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+                                      {v.stockQuantity ?? v.stock ?? 0} in stock
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-gray-50 text-gray-600 font-bold uppercase text-[10px] border-b border-gray-200">
+                                <tr>
+                                  <th className="px-3 py-2">Variant Value</th>
+                                  <th className="px-3 py-2">Variant Photos</th>
+                                  <th className="px-3 py-2">Scale</th>
+                                  <th className="px-3 py-2">Price (₹)</th>
+                                  <th className="px-3 py-2">MRP (₹)</th>
+                                  <th className="px-3 py-2">Stock</th>
+                                  <th className="px-3 py-2">SKU</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {detailVariants.map((v, vIdx) => {
+                                  const vImages = Array.isArray(v.images) && v.images.length > 0
+                                    ? v.images
+                                    : (v.image ? [v.image] : []);
+
+                                  return (
+                                    <tr key={vIdx} className="hover:bg-gray-50">
+                                      <td className="px-3 py-2 font-bold text-gray-900">
+                                        {v.measureValue || v.size || `Variant #${vIdx + 1}`}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {vImages.length > 0 ? (
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            {vImages.map((img, imgIdx) => (
+                                              <button
+                                                key={imgIdx}
+                                                type="button"
+                                                onClick={() => {
+                                                  setPreviewImageModalUrl(resolveImageUrl(img));
+                                                  setPreviewImageModalTitle(`Variant: ${v.measureValue || v.size || `#${vIdx + 1}`} (Photo ${imgIdx + 1})`);
+                                                }}
+                                                className="relative group w-9 h-9 rounded-lg overflow-hidden border border-gray-200 hover:border-teal-600 hover:ring-2 hover:ring-teal-200 transition-all cursor-pointer bg-gray-50 shrink-0"
+                                                title="Click to view full photo"
+                                              >
+                                                <img src={resolveImageUrl(img)} alt="" className="w-full h-full object-cover" />
+                                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                                                  <Eye size={12} />
+                                                </div>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-gray-400 italic">No photos</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] uppercase font-bold">
+                                          {v.measureScale || v.scaleUnit || 'size'}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 font-extrabold text-gray-900">₹{v.price}</td>
+                                      <td className="px-3 py-2 text-gray-400 line-through">₹{v.mrp || Math.round(v.price * 1.25)}</td>
+                                      <td className="px-3 py-2 font-bold text-emerald-700">{v.stockQuantity ?? v.stock ?? 0}</td>
+                                      <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{v.sku || '-'}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Sizes, Colors & Tags */}
+                    <div className="space-y-2 pt-2 border-t border-gray-100">
+                      {selectedProductForDetail.sizes && (!selectedProductForDetail.sizeVariants || selectedProductForDetail.sizeVariants.length === 0) && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-gray-500 w-24 shrink-0">Sizes / Options:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(selectedProductForDetail.sizes) ? selectedProductForDetail.sizes : String(selectedProductForDetail.sizes).split(',')).map((s, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-800 font-bold rounded-md text-[10px]">
+                                {String(s).trim()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedProductForDetail.colors && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-gray-500 w-24 shrink-0">Colors:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(selectedProductForDetail.colors) ? selectedProductForDetail.colors : String(selectedProductForDetail.colors).split(',')).map((c, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-teal-50 text-teal-800 font-bold rounded-md text-[10px] border border-teal-100">
+                                {String(c).trim()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedProductForDetail.tags && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-gray-500 w-24 shrink-0">Tags:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(selectedProductForDetail.tags) ? selectedProductForDetail.tags : String(selectedProductForDetail.tags).split(',')).map((t, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-amber-50 text-amber-900 font-bold rounded-md text-[10px] border border-amber-200">
+                                #{String(t).trim()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Apparel Size Chart Table (if available) */}
+                    {selectedProductForDetail.sizeChart && Array.isArray(selectedProductForDetail.sizeChart.rows) && selectedProductForDetail.sizeChart.rows.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-gray-100">
+                        <span className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider block">
+                          📐 Size Measurement Chart (Inches)
+                        </span>
+                        <div className="overflow-x-auto rounded-xl border border-indigo-100 bg-indigo-50/30">
+                          <table className="w-full text-left text-[11px]">
+                            <thead className="bg-indigo-100/70 text-indigo-950 font-bold uppercase text-[10px]">
+                              <tr>
+                                <th className="p-2">Size</th>
+                                <th className="p-2">Chest</th>
+                                <th className="p-2">Length</th>
+                                <th className="p-2">Sleeve</th>
+                                <th className="p-2">Waist</th>
+                                <th className="p-2">Shoulder</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-indigo-100 bg-white">
+                              {selectedProductForDetail.sizeChart.rows.map((row, rIdx) => (
+                                <tr key={rIdx}>
+                                  <td className="p-2 font-bold text-gray-900">{row.size}</td>
+                                  <td className="p-2 text-gray-700">{row.chest || '-'}</td>
+                                  <td className="p-2 text-gray-700">{row.length || '-'}</td>
+                                  <td className="p-2 text-gray-700">{row.sleeve || '-'}</td>
+                                  <td className="p-2 text-gray-700">{row.waist || '-'}</td>
+                                  <td className="p-2 text-gray-700">{row.shoulder || '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Description */}
+                    {selectedProductForDetail.description && (
+                      <div className="pt-2 border-t border-gray-100">
+                        <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1">Detailed Description</span>
+                        <p className="text-gray-700 text-xs leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100 whitespace-pre-line">
+                          {selectedProductForDetail.description}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column: Status & Marketplace Actions */}
+                <div className="lg:col-span-5 space-y-4">
+                  
+                  {/* Admin Approval & Quality Review Feedback Card */}
+                  {selectedProductForDetail.approvalStatus === 'Rejected' ? (
+                    <div className="p-4 rounded-2xl border border-rose-300 bg-rose-50/90 text-rose-900 space-y-2.5 shadow-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                          <AlertTriangle size={18} />
+                        </div>
+                        <div>
+                          <h5 className="font-extrabold text-xs text-rose-950">Catalog Listing Rejected by Admin</h5>
+                          <p className="text-[10px] text-rose-700">This product is blocked from appearing on the student marketplace until corrected</p>
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-white border border-rose-200 text-xs font-medium text-rose-950 shadow-2xs">
+                        <strong className="block text-[10px] uppercase tracking-wider text-rose-800 font-extrabold mb-1">
+                          Mandatory Admin Rejection Remark:
+                        </strong>
+                        <p className="italic">"{selectedProductForDetail.rejectionReason || selectedProductForDetail.approvalComment || 'Quality criteria mismatch. Please update details and images.'}"</p>
+                      </div>
+                      <p className="text-[11px] text-rose-800 font-semibold">
+                        👉 To resolve this: Click <strong>"Edit Full Product"</strong> below, fix the highlighted issues, and save to resubmit into the Urgent Approval Queue.
+                      </p>
+                    </div>
+                  ) : selectedProductForDetail.approvalStatus === 'Pending' ? (
+                    <div className="p-3.5 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 flex items-start gap-3 shadow-xs">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <Clock size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-extrabold text-xs text-amber-950">Pending Administrative Review</h5>
+                          <span className="px-2 py-0.2 rounded-full text-[9px] font-bold bg-amber-200 text-amber-900 uppercase">In Queue</span>
+                        </div>
+                        <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                          This item is currently under quality and price inspection in the Book Vardi Urgent Approval Queue. You will be notified once approved.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/70 text-emerald-900 flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                          <CheckCircle size={15} />
+                        </div>
+                        <div>
+                          <span className="font-extrabold text-xs block text-emerald-950">Marketplace Catalog Verified & Approved</span>
+                          <span className="text-[10px] text-emerald-800 block opacity-90">
+                            {selectedProductForDetail.approvalComment || 'Complies with Book Vardi educational marketplace quality criteria.'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Live Catalog
+                      </span>
                     </div>
                   )}
-                </div>
 
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-teal-800 text-white tracking-wider">
-                      {selectedProductForDetail.category || 'Uniforms'}
-                    </span>
-                    {selectedProductForDetail.discountBadge && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                        {selectedProductForDetail.discountBadge}
-                      </span>
-                    )}
-                  </div>
-
-                  <h4 className="font-extrabold text-gray-900 text-base leading-snug">
-                    {selectedProductForDetail.name}
-                  </h4>
-
-                  <p className="text-gray-600 text-xs line-clamp-2">
-                    {selectedProductForDetail.subtitle || selectedProductForDetail.description || 'Verified school marketplace product listed with Book Vardi.'}
-                  </p>
-
-                  <div className="pt-1 flex items-baseline gap-2">
-                    <span className="font-black text-teal-900 text-lg">
-                      ₹{selectedProductForDetail.price}
-                    </span>
-                    {selectedProductForDetail.originalPrice && selectedProductForDetail.originalPrice > selectedProductForDetail.price && (
-                      <span className="text-xs text-gray-400 line-through">
-                        ₹{selectedProductForDetail.originalPrice}
-                      </span>
-                    )}
-                    {selectedProductForDetail.originalPrice && selectedProductForDetail.originalPrice > selectedProductForDetail.price && (
-                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded">
-                        {Math.round(((selectedProductForDetail.originalPrice - selectedProductForDetail.price) / selectedProductForDetail.originalPrice) * 100)}% off
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <span className="block text-[10px] font-bold uppercase text-gray-400">Stock In Hand</span>
-                  <span className="text-sm font-extrabold text-gray-900 flex items-center gap-1 mt-0.5">
-                    {selectedProductForDetail.stockQuantity ?? (selectedProductForDetail.inStock ? 50 : 0)} pcs
-                  </span>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <span className="block text-[10px] font-bold uppercase text-gray-400">Marketplace Rating</span>
-                  <span className="text-sm font-extrabold text-amber-700 flex items-center gap-1 mt-0.5">
-                    ★ {selectedProductForDetail.rating ?? 0} ({selectedProductForDetail.reviewsCount || 0})
-                  </span>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <span className="block text-[10px] font-bold uppercase text-gray-400">Target Fit</span>
-                  <span className="text-sm font-extrabold text-gray-900 capitalize mt-0.5">
-                    {selectedProductForDetail.gender || 'Unisex'}
-                  </span>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <span className="block text-[10px] font-bold uppercase text-gray-400">Listing Status</span>
-                  <span className={`text-sm font-extrabold mt-0.5 ${(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'text-emerald-700' : 'text-red-700'}`}>
-                    {(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Live / Active' : 'Suspended'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Attributes Section */}
-              <div className="space-y-3 bg-white p-4 rounded-2xl border border-gray-100 shadow-2xs">
-                <div>
-                  <span className="block text-[11px] font-bold text-gray-500 mb-1.5">Available Sizes & Dimensions</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(Array.isArray(selectedProductForDetail.sizes)
-                      ? selectedProductForDetail.sizes
-                      : (selectedProductForDetail.sizes || 'S, M, L').split(',')
-                    ).map((s, idx) => (
-                      <span key={idx} className="px-2.5 py-1 bg-gray-100 text-gray-800 font-bold rounded-lg border border-gray-200/60 text-[11px]">
-                        {String(s).trim()}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="block text-[11px] font-bold text-gray-500 mb-1.5">Colors & Hues</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(Array.isArray(selectedProductForDetail.colors)
-                      ? selectedProductForDetail.colors
-                      : (selectedProductForDetail.colors || 'Navy Blue').split(',')
-                    ).map((c, idx) => (
-                      <span key={idx} className="px-2.5 py-1 bg-teal-50 text-teal-900 font-semibold rounded-lg border border-teal-200/60 text-[11px]">
-                        {String(c).trim()}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="block text-[11px] font-bold text-gray-500 mb-1">Full Description & Compliance</span>
-                  <p className="text-gray-700 text-[11px] leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    {selectedProductForDetail.description || 'Pre-shrunk, skin-friendly fabric designed to meet CBSE, ICSE, and state educational board standards for durability and color fastness.'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Admin Approval & Quality Review Feedback Card */}
-              {selectedProductForDetail.approvalStatus === 'Rejected' ? (
-                <div className="p-4 rounded-2xl border border-rose-300 bg-rose-50/90 text-rose-900 space-y-2.5 shadow-xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                      <AlertTriangle size={18} />
-                    </div>
-                    <div>
-                      <h5 className="font-extrabold text-xs text-rose-950">Catalog Listing Rejected by Admin</h5>
-                      <p className="text-[10px] text-rose-700">This product is blocked from appearing on the student marketplace until corrected</p>
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white border border-rose-200 text-xs font-medium text-rose-950 shadow-2xs">
-                    <strong className="block text-[10px] uppercase tracking-wider text-rose-800 font-extrabold mb-1">
-                      Mandatory Admin Rejection Remark:
-                    </strong>
-                    <p className="italic">"{selectedProductForDetail.rejectionReason || selectedProductForDetail.approvalComment || 'Quality criteria mismatch. Please update details and images.'}"</p>
-                  </div>
-                  <p className="text-[11px] text-rose-800 font-semibold">
-                    👉 To resolve this: Click <strong>"Edit Full Product"</strong> below, fix the highlighted issues, and save to resubmit into the Urgent Approval Queue.
-                  </p>
-                </div>
-              ) : selectedProductForDetail.approvalStatus === 'Pending' ? (
-                <div className="p-3.5 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 flex items-start gap-3 shadow-xs">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                    <Clock size={18} />
-                  </div>
-                  <div>
+                  {/* Status Alert Banner */}
+                  <div className={`p-3.5 rounded-2xl border flex flex-col gap-3 ${
+                    (selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0))
+                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900' 
+                      : 'bg-amber-50/70 border-amber-200 text-amber-900'
+                  }`}>
                     <div className="flex items-center gap-2">
-                      <h5 className="font-extrabold text-xs text-amber-950">Pending Administrative Review</h5>
-                      <span className="px-2 py-0.2 rounded-full text-[9px] font-bold bg-amber-200 text-amber-900 uppercase">In Queue</span>
+                      <ShieldCheck size={18} className={(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'text-emerald-700' : 'text-amber-700'} />
+                      <div>
+                        <div className="font-bold text-xs">
+                          {(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0))
+                            ? 'Product is Active & Visible to Parents'
+                            : 'Product is Inactive / Hidden from Customers'}
+                        </div>
+                        <div className="text-[10px] opacity-80 mt-0.5">
+                          Toggle the status switch to show or hide this SKU on the customer store in real time.
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                      This item is currently under quality and price inspection in the Book Vardi Urgent Approval Queue. You will be notified once approved.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/70 text-emerald-900 flex items-center justify-between shadow-2xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                      <CheckCircle size={15} />
-                    </div>
-                    <div>
-                      <span className="font-extrabold text-xs block text-emerald-950">Marketplace Catalog Verified & Approved</span>
-                      <span className="text-[10px] text-emerald-800 block opacity-90">
-                        {selectedProductForDetail.approvalComment || 'Complies with Book Vardi educational marketplace quality criteria.'}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    Live Catalog
-                  </span>
-                </div>
-              )}
 
-              {/* Status Alert Banner */}
-              <div className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${
-                (selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0))
-                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900' 
-                  : 'bg-amber-50/70 border-amber-200 text-amber-900'
-              }`}>
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={18} className={(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'text-emerald-700' : 'text-amber-700'} />
-                  <div>
-                    <div className="font-bold text-xs">
-                      {(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0))
-                        ? 'Product is Active & Visible to Parents'
-                        : 'Product is Inactive / Hidden from Customers'}
-                    </div>
-                    <div className="text-[10px] opacity-80 mt-0.5">
-                      Toggle the status switch above to show or hide this SKU on the customer store in real time.
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleProductStatus(selectedProductForDetail)}
+                      className="w-full px-3 py-2 bg-white text-gray-900 font-bold text-xs rounded-xl border border-gray-200 hover:bg-gray-50 cursor-pointer shadow-2xs text-center"
+                    >
+                      Switch to {(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Inactive' : 'Active'}
+                    </button>
                   </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleToggleProductStatus(selectedProductForDetail)}
-                  className="px-3 py-1.5 bg-white text-gray-900 font-bold text-[11px] rounded-xl border border-gray-200 hover:bg-gray-50 shrink-0 cursor-pointer shadow-2xs"
-                >
-                  Switch to {(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Inactive' : 'Active'}
-                </button>
+                </div>
               </div>
-
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-3.5 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
+            <div className="px-6 py-3.5 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -905,6 +1197,51 @@ export default function ProductsTab() {
         isOpen={isBulkModalOpen}
         onClose={() => setIsBulkModalOpen(false)}
       />
+
+      {/* Variant & Detail Photo High-Res Lightbox Modal */}
+      {previewImageModalUrl && (
+        <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-4 shadow-2xl border border-gray-100 flex flex-col space-y-3 max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h4 className="font-extrabold text-sm text-gray-900 flex items-center gap-2">
+                <ImageIcon size={18} className="text-teal-700" />
+                <span>{previewImageModalTitle || 'Variant Detail Photo'}</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setPreviewImageModalUrl(null)}
+                className="p-1.5 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="relative aspect-4/3 rounded-2xl overflow-hidden bg-gray-50 border border-gray-200 flex items-center justify-center">
+              <img
+                src={previewImageModalUrl}
+                alt="Enlarged Detail"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <div className="w-full h-full hidden flex-col items-center justify-center text-gray-400 gap-2">
+                <ImageIcon size={36} />
+                <span className="text-xs font-medium">Unable to load photo</span>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setPreviewImageModalUrl(null)}
+                className="px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

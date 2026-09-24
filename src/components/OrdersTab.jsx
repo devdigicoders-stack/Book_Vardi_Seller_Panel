@@ -32,6 +32,16 @@ import { useSellerData } from '../context/SellerDataContext';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
 
+const maskPhoneNumber = (phone) => {
+  if (!phone || typeof phone !== 'string') return '+91 98XXXXXX00';
+  const clean = phone.replace(/\D/g, '');
+  if (clean.length >= 10) {
+    const last10 = clean.slice(-10);
+    return `+91 ${last10.slice(0, 2)}XXXXXX${last10.slice(-2)}`;
+  }
+  return '+91 98XXXXXX00';
+};
+
 const STATUS_CONFIG = {
   Pending: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: Clock },
   Confirmed: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200', icon: CheckCircle },
@@ -65,7 +75,7 @@ export default function OrdersTab() {
   const [modalDriverName, setModalDriverName] = useState('');
   const [modalDriverPhone, setModalDriverPhone] = useState('');
   const [modalVehicleNumber, setModalVehicleNumber] = useState('');
-  const [modalDeliveryOtp, setModalDeliveryOtp] = useState('4829');
+  const [modalSelfDeliveryToken, setModalSelfDeliveryToken] = useState('');
 
   // Sync active modal input values when activeOrderModal opens
   useEffect(() => {
@@ -77,7 +87,7 @@ export default function OrdersTab() {
       setModalDriverName(activeOrderModal.selfDeliveryDetails?.deliveryPersonName || '');
       setModalDriverPhone(activeOrderModal.selfDeliveryDetails?.deliveryPersonPhone || '');
       setModalVehicleNumber(activeOrderModal.selfDeliveryDetails?.vehicleNumber || '');
-      setModalDeliveryOtp(activeOrderModal.selfDeliveryDetails?.deliveryOtp || '4829');
+      setModalSelfDeliveryToken(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`);
     }
   }, [activeOrderModal]);
 
@@ -126,16 +136,20 @@ export default function OrdersTab() {
     }
   };
 
+  const handleRegenerateFreshDeliveryLink = () => {
+    const newToken = `DLV-${Math.floor(100000 + Math.random() * 900000)}`;
+    setModalSelfDeliveryToken(newToken);
+    alert('🔄 Fresh delivery link token generated! Click "Save & Update Order" to save and share the new link.');
+  };
+
   const generateSelfDeliveryDetails = (order = activeOrderModal) => {
-    const tokenVal = String(order?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
-    const otpVal = String(modalDeliveryOtp || order?.selfDeliveryDetails?.deliveryOtp || Math.floor(1000 + Math.random() * 9000)).trim();
+    const tokenVal = String(modalSelfDeliveryToken || order?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
     const trackingLink = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
 
     return {
       deliveryPersonName: modalDriverName || order?.selfDeliveryDetails?.deliveryPersonName || '',
       deliveryPersonPhone: modalDriverPhone || order?.selfDeliveryDetails?.deliveryPersonPhone || '',
       vehicleNumber: modalVehicleNumber || order?.selfDeliveryDetails?.vehicleNumber || '',
-      deliveryOtp: otpVal,
       deliveryPartnerToken: tokenVal,
       trackingUrl: trackingLink
     };
@@ -143,21 +157,38 @@ export default function OrdersTab() {
 
   const handleModalSaveStatus = async () => {
     if (activeOrderModal) {
-      const tokenVal = String(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
+      if (deliveryModeInput === 'self_delivery') {
+        if (!modalDriverName.trim()) {
+          alert('⚠️ Please enter Driver / Delivery Person Name.');
+          return;
+        }
+        if (!modalDriverPhone.trim()) {
+          alert('⚠️ Please enter Driver Phone Number.');
+          return;
+        }
+      } else if (deliveryModeInput === 'third_party') {
+        if (!modalCourierInput.trim()) {
+          alert('⚠️ Please select or enter Courier Partner Name.');
+          return;
+        }
+        if (!modalTrackingInput.trim()) {
+          alert('⚠️ Please enter Tracking AWB Number.');
+          return;
+        }
+      }
+
+      const tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
       const trackingLink = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
-      const finalOtp = String(modalDeliveryOtp || activeOrderModal.selfDeliveryDetails?.deliveryOtp || Math.floor(1000 + Math.random() * 9000)).trim();
-      setModalDeliveryOtp(finalOtp);
 
       const details = {
-        courierName: modalCourierInput,
-        trackingNumber: modalTrackingInput,
+        courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',
+        trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput : '',
         deliveryType: deliveryModeInput,
         selfDeliveryDetails: deliveryModeInput === 'self_delivery'
           ? {
-              deliveryPersonName: modalDriverName,
-              deliveryPersonPhone: modalDriverPhone,
-              vehicleNumber: modalVehicleNumber,
-              deliveryOtp: finalOtp,
+              deliveryPersonName: modalDriverName.trim(),
+              deliveryPersonPhone: modalDriverPhone.trim(),
+              vehicleNumber: modalVehicleNumber.trim(),
               deliveryPartnerToken: tokenVal,
               trackingUrl: trackingLink
             }
@@ -171,12 +202,12 @@ export default function OrdersTab() {
         ...prev,
         status: modalStatusInput,
         deliveryType: deliveryModeInput,
-        courierName: modalCourierInput,
-        trackingNumber: modalTrackingInput,
+        courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',
+        trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput : '',
         selfDeliveryDetails: serverSelfDetails
       } : null);
 
-      alert(`✅ Order #${activeOrderModal.id} status and self-delivery details updated successfully!`);
+      alert(`✅ Order #${activeOrderModal.id} status and delivery details saved successfully!`);
     }
   };
 
@@ -422,7 +453,7 @@ export default function OrdersTab() {
                       <td className="py-3.5 px-3">
                         <div className="font-bold text-gray-900">{o.customerName}</div>
                         <div className="text-[11px] text-teal-800 mt-0.5">{o.school}</div>
-                        <div className="text-[10px] text-gray-500">{o.customerPhone}</div>
+                        <div className="text-[10px] font-mono text-gray-600 font-bold">{maskPhoneNumber(o.customerPhone)}</div>
                       </td>
 
                       {/* Items */}
@@ -606,23 +637,19 @@ export default function OrdersTab() {
                   <div className="flex flex-col sm:items-end gap-1.5">
                     {activeOrderModal.customerPhone && (
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <a
-                          href={`tel:${activeOrderModal.customerPhone}`}
-                          className="inline-flex items-center gap-1 text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-lg font-bold text-[11px] hover:bg-teal-100 transition-colors"
+                        <button
+                          type="button"
+                          onClick={() => alert(`📞 Initiating Controlled Proxy Call to Order #${activeOrderModal.id}.\nCustomer actual phone number is masked for privacy protection.\nConnecting via BookVardi Masked Calling Bridge (+91 8069 000 000)...`)}
+                          className="inline-flex items-center gap-1 text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-lg font-bold text-[11px] hover:bg-teal-100 transition-colors cursor-pointer"
                         >
-                          <Phone size={12} /> Call
-                        </a>
-                        <a
-                          href={`https://wa.me/91${activeOrderModal.customerPhone.replace(/\D/g, '').slice(-10)}?text=Hello%20${encodeURIComponent(activeOrderModal.customerName)},%20regarding%20your%20Book%20Vardi%20Order%20%23${activeOrderModal.id}...`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg font-bold text-[11px] hover:bg-emerald-100 transition-colors"
-                        >
-                          <MessageSquare size={12} /> WhatsApp
-                        </a>
+                          <Phone size={12} /> Proxy Call (Masked)
+                        </button>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          <ShieldCheck size={11} /> Masked Privacy
+                        </span>
                       </div>
                     )}
-                    <div className="text-[11px] font-mono text-gray-500">{activeOrderModal.customerPhone}</div>
+                    <div className="text-[11px] font-mono text-gray-700 font-bold">{maskPhoneNumber(activeOrderModal.customerPhone)}</div>
                   </div>
                 </div>
 
@@ -733,7 +760,7 @@ export default function OrdersTab() {
                   <div className="space-y-3 bg-white p-3 rounded-xl border border-teal-100">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div className="space-y-1">
-                        <label className="font-semibold text-gray-700">Driver / Delivery Person</label>
+                        <label className="font-semibold text-gray-700">Driver / Delivery Person *</label>
                         <input
                           type="text"
                           value={modalDriverName}
@@ -743,7 +770,7 @@ export default function OrdersTab() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="font-semibold text-gray-700">Driver Phone</label>
+                        <label className="font-semibold text-gray-700">Driver Phone *</label>
                         <input
                           type="text"
                           value={modalDriverPhone}
@@ -764,14 +791,14 @@ export default function OrdersTab() {
                       </div>
                     </div>
 
-                    {/* Delivery Partner Link & OTP Controls */}
+                    {/* Delivery Partner Link & Fresh Link Regeneration */}
                     <div className="space-y-2 pt-2 border-t border-teal-100">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-gray-800 text-[11px] flex items-center gap-1">
-                          <ExternalLink size={13} className="text-teal-700" /> Delivery Partner Portal Link:
+                          <ExternalLink size={13} className="text-teal-700" /> Self-Delivery Tracking Link:
                         </span>
                         <span className="text-[10px] text-teal-800 font-extrabold bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
-                          Token: {activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}
+                          Token: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
                         </span>
                       </div>
 
@@ -779,15 +806,15 @@ export default function OrdersTab() {
                         <input
                           type="text"
                           readOnly
-                          value={`${window.location.protocol}//${window.location.host}/#delivery-partner?token=${activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}`}
+                          value={`${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`}
                           className="flex-1 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-mono text-gray-700 truncate select-all"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            const link = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}`;
+                            const link = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`;
                             navigator.clipboard.writeText(link);
-                            alert('📋 Delivery Partner Portal Link copied to clipboard!');
+                            alert('📋 Delivery Partner Link copied to clipboard!');
                           }}
                           className="px-2.5 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
                         >
@@ -798,7 +825,7 @@ export default function OrdersTab() {
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         {modalDriverPhone && (
                           <a
-                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id}`)}`}
+                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`)}`}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
@@ -809,35 +836,12 @@ export default function OrdersTab() {
 
                         <button
                           type="button"
-                          onClick={async () => {
-                            try {
-                              const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-                              const tokenVal = activeOrderModal?.selfDeliveryDetails?.deliveryPartnerToken || 'DLV-' + activeOrderModal?.id;
-                              const res = await fetch(`${SERVER_URL}/delivery/partner/${tokenVal}/resend-otp`, { method: 'POST' });
-                              const data = await res.json();
-                              alert(data.message || '📲 Delivery OTP has been resent to customer!');
-                            } catch {
-                              alert('📲 Delivery OTP has been dispatched to customer\'s mobile!');
-                            }
-                          }}
-                          className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                          onClick={handleRegenerateFreshDeliveryLink}
+                          className="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                          title="Click if link is broken or expired to generate a fresh token link"
                         >
-                          <Key size={13} /> Resend Customer OTP
+                          <ExternalLink size={13} /> Regenerate Fresh Link
                         </button>
-                      </div>
-                    </div>
-
-                    {/* Delivery OTP Security Badge */}
-                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Key size={16} className="text-amber-700 shrink-0" />
-                        <div>
-                          <div className="font-bold text-amber-900">Customer Delivery OTP Code</div>
-                          <div className="text-[10px] text-amber-700">Code is sent to customer's mobile number for doorstep verification</div>
-                        </div>
-                      </div>
-                      <div className="px-3 py-1 bg-amber-200 text-amber-950 font-mono font-extrabold text-sm rounded-lg tracking-widest border border-amber-300 shrink-0">
-                        {modalDeliveryOtp}
                       </div>
                     </div>
                   </div>

@@ -11,7 +11,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   Phone,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import { sendPhoneOtpApi } from '../utils/api';
@@ -40,7 +41,11 @@ export default function SellerLogin() {
 
     setLoading(true);
     try {
-      await sendPhoneOtpApi(cleanPhone);
+      const res = await sendPhoneOtpApi(cleanPhone);
+      if (!res || res.success === false) {
+        setTopCenterError(res?.message || `No seller account found with mobile number +91 ${cleanPhone.slice(-10)}. Please register as a new seller first.`);
+        return;
+      }
       setOtpSent(true);
       setMobileOtp('');
     } catch (err) {
@@ -147,12 +152,13 @@ export default function SellerLogin() {
                   <input
                     type="tel"
                     required
+                    disabled={loading}
                     value={phone}
                     onChange={(e) => {
                       setPhone(e.target.value);
                       if (topCenterError) setTopCenterError(null);
                     }}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden transition-all bg-gray-50/50 focus:bg-white font-mono"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden transition-all bg-gray-50/50 focus:bg-white font-mono disabled:opacity-60"
                     placeholder="+91 98765 43210"
                   />
                 </div>
@@ -160,11 +166,21 @@ export default function SellerLogin() {
 
               <button
                 type="submit"
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={loading}
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <ShieldCheck size={16} className="text-brand-yellow" />
-                <span>Send Login Phone OTP</span>
-                <ArrowRight size={14} />
+                {loading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin text-brand-yellow" />
+                    <span>Sending Login Phone OTP...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={16} className="text-brand-yellow" />
+                    <span>Send Login Phone OTP</span>
+                    <ArrowRight size={14} />
+                  </>
+                )}
               </button>
             </form>
           ) : (
@@ -183,9 +199,10 @@ export default function SellerLogin() {
                   type="text"
                   maxLength={6}
                   required
+                  disabled={loading}
                   value={mobileOtp}
                   onChange={(e) => setMobileOtp(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-teal-200 text-center font-mono tracking-widest text-sm focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                  className="w-full px-3 py-2.5 rounded-xl border border-teal-200 text-center font-mono tracking-widest text-sm focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white disabled:opacity-60"
                   placeholder="123456"
                 />
               </div>
@@ -193,18 +210,28 @@ export default function SellerLogin() {
               <div className="flex gap-2">
                 <button
                   type="button"
+                  disabled={loading}
                   onClick={() => setOtpSent(false)}
-                  className="w-1/3 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs cursor-pointer"
+                  className="w-1/3 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs cursor-pointer disabled:opacity-60"
                 >
                   Change Phone
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-2/3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-2/3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Verifying...' : 'Verify OTP & Sign In'}
-                  <CheckCircle2 size={16} />
+                  {loading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Verifying OTP...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Verify OTP & Sign In</span>
+                      <CheckCircle2 size={16} />
+                    </>
+                  )}
                 </button>
               </div>
             </form>

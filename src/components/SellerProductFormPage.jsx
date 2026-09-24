@@ -27,8 +27,9 @@ import {
   Layers3
 } from 'lucide-react';
 import ImageUploadDropzone from './ImageUploadDropzone';
+import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
 
-// Sizing & Scale Presets
+// Sizing & Scale Presets with Base Variant Values (250g, 3pcs, 3metre, 2.5m, etc.)
 const SIZE_PRESETS = [
   {
     id: 'standard',
@@ -43,22 +44,28 @@ const SIZE_PRESETS = [
     sizes: ['26', '28', '30', '32', '34', '36', '38']
   },
   {
+    id: 'weight_custom',
+    label: 'Weight Units (250g, 500g, 1kg, 2kg)',
+    scale: 'kg',
+    sizes: ['250g', '500g', '1kg', '2kg', '5kg']
+  },
+  {
+    id: 'piece_count',
+    label: 'Piece Count (1pc, 3pcs, 6pcs, 12pcs)',
+    scale: 'count',
+    sizes: ['1pc', '3pcs', '6pcs', '12pcs']
+  },
+  {
+    id: 'meters_custom',
+    label: 'Fabric Length (1m, 1.8m, 2.5m, 3m, 5m)',
+    scale: 'meter',
+    sizes: ['1m', '1.8m', '2.5m', '3m', '5m']
+  },
+  {
     id: 'book_sets',
     label: 'Books & Counts (Single / Sets)',
     scale: 'count',
     sizes: ['1 Book', 'Set of 3 Books', 'Set of 5 Books', 'Set of 10 Books']
-  },
-  {
-    id: 'meters',
-    label: 'Fabric Length (Meters)',
-    scale: 'meter',
-    sizes: ['1 Meter', '2.5 Meters', '5 Meters', '10 Meters']
-  },
-  {
-    id: 'weight',
-    label: 'Weight (Grams / Kg)',
-    scale: 'kg',
-    sizes: ['250 Grams', '500 Grams', '1 Kg', '2 Kg', '5 Kg']
   },
   {
     id: 'packaging',
@@ -70,11 +77,11 @@ const SIZE_PRESETS = [
 
 const MEASURE_SCALES = [
   { id: 'size', label: 'Clothes & Shoes (Size: S, M, XL, 32)', defaultUnit: 'Size', placeholder: 'e.g. S, M, L, XL, 32, UK 8' },
-  { id: 'count', label: 'Books & Sets (Count: 1 Book, Set of 5)', defaultUnit: 'Count', placeholder: 'e.g. 1 Book, Set of 3, Pack of 10' },
-  { id: 'meter', label: 'Fabric & Materials (Meters / Yards)', defaultUnit: 'Meter', placeholder: 'e.g. 1 Meter, 2.5 Meters, 5 Meters' },
-  { id: 'kg', label: 'Weight & Bulk (Kg / Grams)', defaultUnit: 'Kg', placeholder: 'e.g. 500 Grams, 1 Kg, 5 Kg' },
+  { id: 'count', label: 'Pieces & Count (3pcs, 6pcs, Set of 5)', defaultUnit: 'Pcs', placeholder: 'e.g. 1pc, 3pcs, 6pcs, Pack of 10' },
+  { id: 'meter', label: 'Fabric & Materials (2.5m, 3m, 3metre)', defaultUnit: 'Meter', placeholder: 'e.g. 1m, 1.8m, 2.5m, 3m, 3metre' },
+  { id: 'kg', label: 'Weight & Mass (250g, 500g, 1kg)', defaultUnit: 'Kg', placeholder: 'e.g. 250g, 500g, 1kg, 2kg, 5kg' },
   { id: 'box', label: 'Packaging (Box / Carton / Pieces)', defaultUnit: 'Box', placeholder: 'e.g. 1 Box (50 Pcs), 1 Carton, 1 Piece' },
-  { id: 'unit', label: 'General Unit (Pair, Pack, Set)', defaultUnit: 'Unit', placeholder: 'e.g. Pair, Pack, Roll, Dozen' }
+  { id: 'custom', label: 'Custom Base Variant (250g, 3pcs, 3metre)', defaultUnit: 'Unit', placeholder: 'e.g. 250g, 3pcs, 3metre, 2.5m' }
 ];
 
 const CATEGORIES = [
@@ -111,16 +118,39 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     category: 'uniforms',
     subCategory: '',
     schoolName: '',
+    schoolCode: '',
+    classGrade: '',
     gender: 'Unisex',
-    discountBadge: 'NEW',
-    stockQuantity: '50',
+    ageGroup: '',
+    ages: '',
+    colors: '',
     material: '',
     brand: '',
+    gst: '5',
+    tags: '',
+    status: 'Pending',
+    discountBadge: '',
+    stockQuantity: '',
     paymentMethodAllowed: 'Both',
     description: '',
     sku: '',
     image: '',
-    images: []
+    images: [],
+    isMeterBased: false,
+    minMeter: '0.5',
+    meterStep: '0.5',
+    isReturnable: true,
+    returnWindowDays: '7',
+    enableSizeChart: false,
+    sizeChart: {
+      chestInches: '',
+      lengthInches: '',
+      sleeveInches: '',
+      waistInches: '',
+      shoulderInches: '',
+      sizeGuideText: '',
+      rows: []
+    }
   });
 
   // Variants & Measuring Scales
@@ -136,7 +166,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     unit: 'Size',
     price: '',
     mrp: '',
-    stock: '25',
+    stock: '',
     sku: '',
     image: '',
     images: []
@@ -146,12 +176,12 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   const [kitData, setKitData] = useState({
     title: '',
     schoolName: '',
-    classGrade: 'Class 1-5',
+    classGrade: '',
     gender: 'Unisex',
-    badgeTag: 'School Approved',
+    badgeTag: '',
     bundlePrice: '',
     totalMrp: '',
-    stock: '20',
+    stock: '',
     description: '',
     paymentMethodAllowed: 'Both',
     images: []
@@ -182,22 +212,52 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         originalPrice: product.originalPrice || product.mrp ? String(product.originalPrice || product.mrp) : '',
         category: product.category || 'uniforms',
         subCategory: product.subCategory || '',
-        schoolName: product.schoolName || '',
+        schoolName: product.schoolName || product.school || '',
+        schoolCode: product.schoolCode || '',
+        classGrade: product.classGrade || product.className || '',
         gender: product.gender || 'Unisex',
-        discountBadge: product.discountBadge || product.badge || 'NEW',
-        stockQuantity: product.stockQuantity !== undefined ? String(product.stockQuantity) : (product.stock !== undefined ? String(product.stock) : '50'),
+        ageGroup: product.ageGroup || '',
+        ages: Array.isArray(product.ages) ? product.ages.join(', ') : (product.ages || ''),
+        colors: Array.isArray(product.colors) ? product.colors.join(', ') : (product.colors || ''),
         material: product.material || '',
         brand: product.brand || '',
+        gst: product.gst !== undefined ? String(product.gst) : (product.gstPercentage !== undefined ? String(product.gstPercentage) : '5'),
+        tags: Array.isArray(product.tags) ? product.tags.join(', ') : (product.tags || ''),
+        status: product.approvalStatus || product.status || 'Pending',
+        discountBadge: product.discountBadge || product.badge || 'NEW',
+        stockQuantity: product.stockQuantity !== undefined ? String(product.stockQuantity) : (product.stock !== undefined ? String(product.stock) : '50'),
         paymentMethodAllowed: product.paymentMethodAllowed || 'Both',
         description: product.description || '',
         sku: product.sku || '',
         image: prodImages[0] || product.image || '',
-        images: prodImages
+        images: prodImages,
+        isMeterBased: Boolean(product.isMeterBased),
+        minMeter: product.minMeter !== undefined ? String(product.minMeter) : '0.5',
+        meterStep: product.meterStep !== undefined ? String(product.meterStep) : '0.5',
+        isReturnable: product.isReturnable !== undefined ? Boolean(product.isReturnable) : true,
+        returnWindowDays: product.returnWindowDays !== undefined ? String(product.returnWindowDays) : '7',
+        enableSizeChart: Boolean(product.sizeChart && product.sizeChart.rows && product.sizeChart.rows.length > 0),
+        sizeChart: (product.sizeChart && product.sizeChart.rows && product.sizeChart.rows.length > 0) ? product.sizeChart : {
+          chestInches: '',
+          lengthInches: '',
+          sleeveInches: '',
+          waistInches: '',
+          shoulderInches: '',
+          sizeGuideText: '',
+          rows: [
+            { size: 'S', chest: '36', length: '26', sleeve: '8', waist: '30', shoulder: '16' },
+            { size: 'M', chest: '38', length: '27', sleeve: '8.5', waist: '32', shoulder: '17' },
+            { size: 'L', chest: '40', length: '28', sleeve: '9', waist: '34', shoulder: '18' },
+            { size: 'XL', chest: '42', length: '29', sleeve: '9.5', waist: '36', shoulder: '19' },
+            { size: 'XXL', chest: '44', length: '30', sleeve: '10', waist: '38', shoulder: '20' }
+          ]
+        }
       });
 
-      // Load sizeVariants if existing
-      if (Array.isArray(product.sizeVariants) && product.sizeVariants.length > 0) {
-        setSizeVariants(product.sizeVariants.map(v => ({
+      // Load sizeVariants safely via parseSizeVariants
+      const parsedVariants = parseSizeVariants(product);
+      if (parsedVariants.length > 0) {
+        setSizeVariants(parsedVariants.map(v => ({
           size: v.size || v.measureValue || '',
           measureScale: v.measureScale || 'size',
           measureValue: v.measureValue || v.size || '',
@@ -261,27 +321,50 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         category: 'uniforms',
         subCategory: '',
         schoolName: '',
+        schoolCode: '',
+        classGrade: '',
         gender: 'Unisex',
-        discountBadge: 'NEW',
-        stockQuantity: '50',
+        ageGroup: '',
+        ages: '',
+        colors: '',
         material: '',
         brand: '',
+        gst: '5',
+        tags: '',
+        status: 'Pending',
+        discountBadge: '',
+        stockQuantity: '',
         paymentMethodAllowed: 'Both',
         description: '',
-        sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+        sku: '',
         image: '',
-        images: []
+        images: [],
+        isMeterBased: false,
+        minMeter: '0.5',
+        meterStep: '0.5',
+        isReturnable: true,
+        returnWindowDays: '7',
+        enableSizeChart: false,
+        sizeChart: {
+          chestInches: '',
+          lengthInches: '',
+          sleeveInches: '',
+          waistInches: '',
+          shoulderInches: '',
+          sizeGuideText: '',
+          rows: []
+        }
       });
       setSizeVariants([]);
       setKitData({
         title: '',
         schoolName: '',
-        classGrade: 'Class 1-5',
+        classGrade: '',
         gender: 'Unisex',
-        badgeTag: 'School Approved',
+        badgeTag: '',
         bundlePrice: '',
         totalMrp: '',
-        stock: '20',
+        stock: '',
         description: '',
         paymentMethodAllowed: 'Both',
         images: []
@@ -291,8 +374,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
   // Variant Modal Handlers
   const openAddVariantModal = () => {
-    const defaultPrice = formData.price || '499';
-    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+    const defaultPrice = formData.price || '';
+    const defaultMrp = formData.originalPrice || '';
     setEditingVariantIndex(null);
     setVariantForm({
       size: '',
@@ -301,8 +384,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
       unit: 'Size',
       price: defaultPrice,
       mrp: defaultMrp,
-      stock: '25',
-      sku: formData.sku ? `${formData.sku}-V${sizeVariants.length + 1}` : `SKU-V${sizeVariants.length + 1}`,
+      stock: formData.stockQuantity || '',
+      sku: '',
       image: formData.images[0] || '',
       images: formData.images.length > 0 ? [formData.images[0]] : []
     });
@@ -458,16 +541,41 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         const minVariantPrice = validPrices.length > 0 ? Math.min(...validPrices) : Number(formData.price);
         const totalVariantStock = sizeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
 
-        const primaryImage = formData.images[0] || formData.image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80';
+        const primaryImage = formData.images[0] || formData.image || '';
 
         const paymentAllowedStr = formData.paymentMethodAllowed || 'Both';
         const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
           ? ['Online'] 
           : (paymentAllowedStr === 'COD_Only' ? ['COD'] : ['COD', 'Online']);
 
+        const parsedAges = typeof formData.ages === 'string'
+          ? formData.ages.split(',').map(s => s.trim()).filter(Boolean)
+          : (Array.isArray(formData.ages) ? formData.ages : []);
+
+        const parsedColors = typeof formData.colors === 'string'
+          ? formData.colors.split(',').map(s => s.trim()).filter(Boolean)
+          : (Array.isArray(formData.colors) ? formData.colors : []);
+
+        const parsedTags = typeof formData.tags === 'string'
+          ? formData.tags.split(',').map(s => s.trim()).filter(Boolean)
+          : (Array.isArray(formData.tags) ? formData.tags : []);
+
         const payload = {
           ...formData,
           bundleType: 'single',
+          schoolName: formData.schoolName || '',
+          schoolCode: formData.schoolCode || '',
+          classGrade: formData.classGrade || '',
+          ageGroup: formData.ageGroup || '',
+          ages: parsedAges,
+          colors: parsedColors,
+          material: formData.material || '',
+          brand: formData.brand || '',
+          gst: Number(formData.gst) || 5,
+          gstPercentage: Number(formData.gst) || 5,
+          tags: parsedTags,
+          status: product ? (product.approvalStatus === 'Rejected' ? 'Pending' : (product.approvalStatus || 'Approved')) : 'Pending',
+          approvalStatus: product ? (product.approvalStatus === 'Rejected' ? 'Pending' : (product.approvalStatus || 'Approved')) : 'Pending',
           price: sizeVariants.length > 0 ? minVariantPrice : Number(formData.price),
           originalPrice: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
           mrp: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
@@ -477,6 +585,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           images: formData.images.length > 0 ? formData.images : [primaryImage],
           paymentMethodAllowed: paymentAllowedStr,
           paymentMethodsAllowed: paymentAllowedArr,
+          isMeterBased: Boolean(formData.isMeterBased),
+          minMeter: Number(formData.minMeter) || 0.5,
+          meterStep: Number(formData.meterStep) || 0.5,
+          unit: formData.isMeterBased ? 'meter' : (formData.unit || 'piece'),
+          isReturnable: Boolean(formData.isReturnable),
+          returnWindowDays: Number(formData.returnWindowDays) || 7,
+          sizeChart: formData.enableSizeChart ? formData.sizeChart : { rows: [] },
           sizes: sizeVariants.map(v => v.size || v.measureValue),
           sizeVariants: sizeVariants.map(v => ({
             size: v.size || v.measureValue,
@@ -484,11 +599,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
             measureValue: v.measureValue || v.size,
             unit: v.unit || 'Size',
             price: Number(v.price) || minVariantPrice,
-            mrp: Number(v.mrp) || Math.round(minVariantPrice * 1.25),
+            mrp: Number(v.mrp || v.originalPrice) || Math.round(minVariantPrice * 1.25),
+            originalPrice: Number(v.originalPrice || v.mrp) || Math.round(minVariantPrice * 1.25),
             stock: Number(v.stock) || 0,
+            stockQuantity: Number(v.stockQuantity || v.stock) || 0,
             image: v.image || primaryImage,
             images: Array.isArray(v.images) && v.images.length > 0 ? v.images : [v.image || primaryImage],
-            sku: v.sku || `${formData.sku}-${v.size}`
+            sku: v.sku || `${formData.sku || 'SKU'}-${v.size || v.measureValue}`
           }))
         };
 
@@ -546,7 +663,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
       try {
         const finalImages = (kitData.images && kitData.images.length > 0)
           ? kitData.images
-          : (formData.images && formData.images.length > 0 ? formData.images : ['https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500&auto=format&fit=crop&q=80']);
+          : (formData.images && formData.images.length > 0 ? formData.images : (formData.image ? [formData.image] : []));
 
         const paymentAllowedStr = kitData.paymentMethodAllowed || 'Both';
         const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
@@ -791,7 +908,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Price, MRP, GST Percentage */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Base Price (₹) *</label>
                     <input
@@ -812,6 +930,124 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">GST Tax Rate (%) *</label>
+                    <select
+                      value={formData.gst}
+                      onChange={e => setFormData({ ...formData, gst: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer"
+                    >
+                      <option value="0">0% (Tax Exempt / Books)</option>
+                      <option value="5">5% GST (Apparel / Uniforms)</option>
+                      <option value="12">12% GST (Stationery / Footwear)</option>
+                      <option value="18">18% GST (Standard)</option>
+                      <option value="28">28% GST (Luxury)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Brand & Material */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Brand Name</label>
+                    <input
+                      type="text"
+                      value={formData.brand}
+                      onChange={e => setFormData({ ...formData, brand: e.target.value })}
+                      placeholder="e.g. SchoolKart, Sharma Uniforms, Camlin"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Material / Fabric</label>
+                    <input
+                      type="text"
+                      value={formData.material}
+                      onChange={e => setFormData({ ...formData, material: e.target.value })}
+                      placeholder="e.g. 100% Premium Cotton, Oxford Weave"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* School Name, School Code, Grade / Class */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Target School Name</label>
+                    <input
+                      type="text"
+                      value={formData.schoolName}
+                      onChange={e => setFormData({ ...formData, schoolName: e.target.value })}
+                      placeholder="e.g. Delhi Public School"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">School Abbreviation Code</label>
+                    <input
+                      type="text"
+                      value={formData.schoolCode}
+                      onChange={e => setFormData({ ...formData, schoolCode: e.target.value })}
+                      placeholder="e.g. DPS, KV, STX"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none uppercase font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Grade / Class</label>
+                    <input
+                      type="text"
+                      value={formData.classGrade}
+                      onChange={e => setFormData({ ...formData, classGrade: e.target.value })}
+                      placeholder="e.g. Class 1-5, Nursery, All Grades"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Age Group, Colors, Tags & Gender */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Target Gender *</label>
+                    <select
+                      value={formData.gender || 'Unisex'}
+                      onChange={e => setFormData({ ...formData, gender: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 font-bold rounded-xl text-xs outline-none cursor-pointer"
+                    >
+                      <option value="Unisex">👫 Unisex (All Students)</option>
+                      <option value="Boys">👦 Boys</option>
+                      <option value="Girls">👧 Girls</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Age Group / Ages</label>
+                    <input
+                      type="text"
+                      value={formData.ageGroup || formData.ages}
+                      onChange={e => setFormData({ ...formData, ageGroup: e.target.value, ages: e.target.value })}
+                      placeholder="e.g. 3-5 Years, 6-8 Years"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Available Colors</label>
+                    <input
+                      type="text"
+                      value={formData.colors}
+                      onChange={e => setFormData({ ...formData, colors: e.target.value })}
+                      placeholder="e.g. White, Navy Blue, Red"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Product Tags</label>
+                    <input
+                      type="text"
+                      value={formData.tags}
+                      onChange={e => setFormData({ ...formData, tags: e.target.value })}
+                      placeholder="e.g. Best Seller, Pure Cotton"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    />
+                  </div>
                 </div>
 
                 {/* Base Image Dropzone */}
@@ -823,6 +1059,263 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     maxImages={8}
                     helperText="Drag & drop primary product photos here"
                   />
+                </div>
+
+                {/* 1. Apparel Selling Unit Type: Ready-To-Wear (Pieces) vs Unstitched Cloth (Meters) */}
+                <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-200/80 space-y-3">
+                  <label className="block text-xs font-bold text-teal-950 uppercase tracking-wider">
+                    Apparel Selling Unit & Pricing Calculation
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div
+                      onClick={() => setFormData({ ...formData, isMeterBased: false, unit: 'piece' })}
+                      className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
+                        !formData.isMeterBased
+                          ? 'border-brand-teal bg-white shadow-xs font-bold'
+                          : 'border-gray-200 bg-white/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
+                        <span>👔 Ready-To-Wear / Stitched Item</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Sold in <strong>Pieces (pcs)</strong> or standard sizes (S, M, L, XL, 32, 34). Base price is calculated per piece.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => setFormData({ ...formData, isMeterBased: true, unit: 'meter' })}
+                      className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
+                        formData.isMeterBased
+                          ? 'border-brand-teal bg-white shadow-xs font-bold'
+                          : 'border-gray-200 bg-white/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
+                        <span>✂️ Unstitched Fabric / Not Ready-To-Wear</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Customer orders cloth in <strong>Meters (e.g. 2.5m pant cloth)</strong>. Price calculated as <strong>{`{x} meters * 1-meter price`}</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  {formData.isMeterBased && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-teal-100">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Minimum Meter Quantity (e.g. 0.5m or 1m)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={formData.minMeter}
+                          onChange={e => setFormData({ ...formData, minMeter: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
+                          placeholder="0.5"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Meter Increment Step (e.g. 0.5m)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={formData.meterStep}
+                          onChange={e => setFormData({ ...formData, meterStep: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
+                          placeholder="0.5"
+                        />
+                      </div>
+                      <div className="sm:col-span-2 text-[11px] font-bold text-teal-900 bg-teal-100/80 p-2.5 rounded-lg border border-teal-200">
+                        💡 Price Calculation Formula: Customer Price = {`{x} Meters`} × 1-Meter Base Price. (Example: 2.5m Pant Cloth × ₹200/meter = ₹500 Total Price).
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Return & Exchange Policy Window */}
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-gray-900">
+                      <input
+                        type="checkbox"
+                        checked={formData.isReturnable}
+                        onChange={e => setFormData({ ...formData, isReturnable: e.target.checked })}
+                        className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal cursor-pointer"
+                      />
+                      <span>Product is Returnable / Exchangeable</span>
+                    </label>
+                  </div>
+                  {formData.isReturnable ? (
+                    <div className="pt-2 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Return / Exchange Window (Days) *</label>
+                        <input
+                          type="number"
+                          value={formData.returnWindowDays}
+                          onChange={e => setFormData({ ...formData, returnWindowDays: e.target.value })}
+                          className="w-48 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold"
+                          placeholder="7"
+                        />
+                      </div>
+                      <span className="text-[11px] text-gray-500">
+                        Specify return/exchange days for customer notice (e.g. 7-Day Easy Returns, 10-Day Exchange Policy).
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-amber-800 font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
+                      ⚠️ This product will be explicitly marked as "Non-Returnable" on storefront.
+                    </p>
+                  )}
+                </div>
+
+                {/* 3. Apparel Size Chart Editor */}
+                <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-gray-900">
+                      <input
+                        type="checkbox"
+                        checked={formData.enableSizeChart}
+                        onChange={e => setFormData({ ...formData, enableSizeChart: e.target.checked })}
+                        className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal cursor-pointer"
+                      />
+                      <span>Include Size Chart / Measurement Guide (Clothing & Uniforms)</span>
+                    </label>
+                  </div>
+
+                  {formData.enableSizeChart && (
+                    <div className="space-y-3 pt-3 border-t border-indigo-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-indigo-950">Size Chart Matrix (Inches)</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rows = formData.sizeChart?.rows || [];
+                            setFormData({
+                              ...formData,
+                              sizeChart: {
+                                ...formData.sizeChart,
+                                rows: [...rows, { size: '', chest: '', length: '', sleeve: '', waist: '', shoulder: '' }]
+                              }
+                            });
+                          }}
+                          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                        >
+                          + Add Size Row
+                        </button>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-lg border border-indigo-200 bg-white">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-indigo-100/70 text-indigo-950 font-bold uppercase text-[10px]">
+                            <tr>
+                              <th className="p-2">Size</th>
+                              <th className="p-2">Chest (in)</th>
+                              <th className="p-2">Length (in)</th>
+                              <th className="p-2">Sleeve (in)</th>
+                              <th className="p-2">Waist (in)</th>
+                              <th className="p-2">Shoulder (in)</th>
+                              <th className="p-2 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-indigo-100">
+                            {(formData.sizeChart?.rows || []).map((row, idx) => (
+                              <tr key={idx}>
+                                <td className="p-1.5">
+                                  <input
+                                    type="text"
+                                    value={row.size}
+                                    onChange={e => {
+                                      const rows = [...(formData.sizeChart?.rows || [])];
+                                      rows[idx].size = e.target.value;
+                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                    }}
+                                    placeholder="e.g. S"
+                                    className="w-16 px-2 py-1 border border-gray-200 rounded font-bold text-xs"
+                                  />
+                                </td>
+                                <td className="p-1.5">
+                                  <input
+                                    type="text"
+                                    value={row.chest}
+                                    onChange={e => {
+                                      const rows = [...(formData.sizeChart?.rows || [])];
+                                      rows[idx].chest = e.target.value;
+                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                    }}
+                                    placeholder='36"'
+                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                  />
+                                </td>
+                                <td className="p-1.5">
+                                  <input
+                                    type="text"
+                                    value={row.length}
+                                    onChange={e => {
+                                      const rows = [...(formData.sizeChart?.rows || [])];
+                                      rows[idx].length = e.target.value;
+                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                    }}
+                                    placeholder='26"'
+                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                  />
+                                </td>
+                                <td className="p-1.5">
+                                  <input
+                                    type="text"
+                                    value={row.sleeve}
+                                    onChange={e => {
+                                      const rows = [...(formData.sizeChart?.rows || [])];
+                                      rows[idx].sleeve = e.target.value;
+                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                    }}
+                                    placeholder='8"'
+                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                  />
+                                </td>
+                                <td className="p-1.5">
+                                  <input
+                                    type="text"
+                                    value={row.waist}
+                                    onChange={e => {
+                                      const rows = [...(formData.sizeChart?.rows || [])];
+                                      rows[idx].waist = e.target.value;
+                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                    }}
+                                    placeholder='30"'
+                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                  />
+                                </td>
+                                <td className="p-1.5">
+                                  <input
+                                    type="text"
+                                    value={row.shoulder}
+                                    onChange={e => {
+                                      const rows = [...(formData.sizeChart?.rows || [])];
+                                      rows[idx].shoulder = e.target.value;
+                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                    }}
+                                    placeholder='16"'
+                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                  />
+                                </td>
+                                <td className="p-1.5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const rows = (formData.sizeChart?.rows || []).filter((_, i) => i !== idx);
+                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                    }}
+                                    className="text-red-600 hover:text-red-800 text-xs font-bold p-1 cursor-pointer"
+                                  >
+                                    ✕
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -883,7 +1376,50 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   </button>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                <div className="space-y-3">
+                  {/* Variant Preview Image Layout in Row */}
+                  <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+                    {sizeVariants.map((v, vIdx) => {
+                      const vImgUrl = v.image ? resolveImageUrl(v.image) : '';
+                      const vVal = v.size || v.measureValue || `Variant #${vIdx + 1}`;
+
+                      return (
+                        <div
+                          key={vIdx}
+                          onClick={() => openEditVariantModal(vIdx)}
+                          className="flex items-center gap-2.5 p-2 rounded-xl bg-teal-50/70 hover:bg-teal-100/80 border border-teal-200/80 shrink-0 min-w-[175px] cursor-pointer transition-all shadow-2xs"
+                          title="Click to edit this variant"
+                        >
+                          {vImgUrl ? (
+                            <img
+                              src={vImgUrl}
+                              alt={vVal}
+                              className="w-12 h-12 rounded-lg object-cover border border-white shadow-2xs shrink-0 bg-white"
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-teal-100 text-teal-950 font-bold text-xs flex items-center justify-center shrink-0 border border-teal-200">
+                              {vVal.slice(0, 3)}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-extrabold text-xs text-gray-900 truncate">{vVal}</div>
+                            <div className="text-[11px] font-bold text-teal-800 flex items-center gap-1 mt-0.5">
+                              <span>₹{v.price}</span>
+                              {v.mrp && Number(v.mrp) > Number(v.price) && (
+                                <span className="text-[9px] text-gray-400 line-through">₹{v.mrp}</span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+                              {v.stock || 0} pcs in stock
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px]">
                       <tr>
@@ -910,7 +1446,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                           <td className="px-3 py-2.5 font-bold text-emerald-700">{v.stock}</td>
                           <td className="px-3 py-2.5">
                             {v.image ? (
-                              <img src={v.image} alt={v.size} className="w-9 h-9 rounded object-cover border border-gray-200" />
+                              <img src={resolveImageUrl(v.image)} alt={v.size} className="w-9 h-9 rounded object-cover border border-gray-200" />
                             ) : (
                               <span className="text-[10px] text-gray-400 italic">No image</span>
                             )}
@@ -936,7 +1472,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     </tbody>
                   </table>
                 </div>
-              )}
+              </div>
+            )}
             </div>
           )}
         </div>
@@ -1155,15 +1692,28 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Variant Value *</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Base Variant Value *</label>
                 <input
                   type="text"
                   required
                   value={variantForm.measureValue}
                   onChange={e => setVariantForm({ ...variantForm, measureValue: e.target.value, size: e.target.value })}
-                  placeholder={MEASURE_SCALES.find(s => s.id === variantForm.measureScale)?.placeholder || 'e.g. XL, 2.5 Meters'}
+                  placeholder={MEASURE_SCALES.find(s => s.id === variantForm.measureScale)?.placeholder || 'e.g. 250g, 3pcs, 3metre, 2.5m'}
                   className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none"
                 />
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[10px] text-gray-500 font-bold mr-1">Quick Base Values:</span>
+                  {['250g', '500g', '1kg', '1pc', '3pcs', '6pcs', '1.8m', '2.5m', '3metre'].map(val => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setVariantForm({ ...variantForm, measureValue: val, size: val })}
+                      className="px-2 py-0.5 rounded-md bg-gray-100 hover:bg-brand-teal hover:text-white text-gray-700 text-[10px] font-bold transition-colors cursor-pointer border border-gray-200"
+                    >
+                      + {val}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

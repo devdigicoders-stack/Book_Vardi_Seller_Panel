@@ -1,8 +1,7 @@
 import React from 'react';
 import { Printer, Download, X, Building2, MapPin, Phone, Mail, FileText, ShieldCheck } from 'lucide-react';
 import { downloadSellerInvoiceApi } from '../utils/api';
-
-const FALLBACK_IMAGE = '/images/gel-pen-set.jpg';
+import { resolveImageUrl } from '../utils/mediaUrl';
 
 export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser }) {
   if (!isOpen || !order) return null;
@@ -45,8 +44,26 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser }) 
     }
   ];
 
+  const getTaxRate = (item) => {
+    if (item.taxRate !== undefined && item.taxRate !== null) return Number(item.taxRate);
+    if (item.gstRate !== undefined && item.gstRate !== null) return Number(item.gstRate);
+    if (item.tax !== undefined && item.tax !== null) return Number(item.tax);
+    const cat = (item.category || '').toLowerCase();
+    const name = (item.name || '').toLowerCase();
+    if (cat.includes('ncert') || cat.includes('book') || name.includes('ncert') || name.includes('textbook') || name.includes('book')) {
+      return 0; // 0% GST on NCERT Textbooks per Admin Setting
+    }
+    return 5;
+  };
+
+  const calculatedTaxAmount = items.reduce((sum, item) => {
+    const itemTotal = Number(item.price || 0) * Number(item.quantity || 1);
+    const rate = getTaxRate(item);
+    return sum + Math.round((itemTotal * rate) / 100);
+  }, 0);
+
   const subtotal = order.subtotal || items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
-  const taxAmount = Math.round(subtotal * 0.05);
+  const taxAmount = order.taxAmount !== undefined ? Number(order.taxAmount) : calculatedTaxAmount;
   const grandTotal = order.total || (subtotal + taxAmount);
 
   const handlePrint = () => {
@@ -164,30 +181,35 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser }) 
                   <th className="py-2 px-3">Item Description & Photo</th>
                   <th className="py-2 px-3 text-center w-12">Qty</th>
                   <th className="py-2 px-3 text-right w-20">Price</th>
-                  <th className="py-2 px-3 text-right w-16">Tax (5%)</th>
+                  <th className="py-2 px-3 text-right w-20">GST Tax</th>
                   <th className="py-2 px-3 text-right w-20">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 text-[11px]">
                 {items.map((item, idx) => {
-                  const itemImg = item.image || (Array.isArray(item.images) && item.images[0]) || order.image || (Array.isArray(order.images) && order.images[0]) || FALLBACK_IMAGE;
+                  const itemImgRaw = item.image || (Array.isArray(item.images) && item.images[0]) || order.image || (Array.isArray(order.images) && order.images[0]);
+                  const itemImg = itemImgRaw ? resolveImageUrl(itemImgRaw) : '';
                   const qty = Number(item.quantity || 1);
                   const price = Number(item.price || 0);
+                  const rate = getTaxRate(item);
+                  const itemTax = Math.round((price * qty * rate) / 100);
 
                   return (
                     <tr key={item.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="py-2.5 px-3 font-bold text-gray-500 text-center">{idx + 1}</td>
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-2.5">
-                          <img
-                            src={itemImg}
-                            alt={item.name}
-                            className="w-10 h-10 object-cover rounded-lg border border-gray-200 shrink-0 bg-gray-50 shadow-2xs"
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = FALLBACK_IMAGE;
-                            }}
-                          />
+                          {itemImg ? (
+                            <img
+                              src={itemImg}
+                              alt={item.name}
+                              className="w-10 h-10 object-cover rounded-lg border border-gray-200 shrink-0 bg-gray-50 shadow-2xs"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg border border-gray-200 shrink-0 bg-gray-100 flex items-center justify-center text-gray-400 text-[9px] font-bold">
+                              No Img
+                            </div>
+                          )}
                           <div>
                             <p className="font-bold text-gray-900 leading-snug">{item.name}</p>
                             {item.category && <p className="text-[10px] text-gray-500">Cat: {item.category}</p>}
@@ -196,8 +218,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser }) 
                       </td>
                       <td className="py-2.5 px-3 text-center font-bold text-gray-900">{qty}</td>
                       <td className="py-2.5 px-3 text-right font-mono">₹{price.toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹{(price * 0.05).toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-right font-bold text-gray-900 font-mono">₹{(price * qty).toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹{itemTax.toFixed(2)} ({rate}%)</td>
+                      <td className="py-2.5 px-3 text-right font-bold text-gray-900 font-mono">₹{((price * qty) + itemTax).toFixed(2)}</td>
                     </tr>
                   );
                 })}
@@ -213,7 +235,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser }) 
                 <span className="font-mono">₹{subtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
-                <span>GST (5%):</span>
+                <span>GST Tax Total:</span>
                 <span className="font-mono">₹{taxAmount.toFixed(2)}</span>
               </div>
               <div className="border-t border-teal-300 pt-1.5 flex justify-between items-center text-xs font-black text-teal-950">
