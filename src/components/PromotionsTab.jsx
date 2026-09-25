@@ -121,8 +121,8 @@ export default function PromotionsTab() {
             setSelectedProduct(null);
             setProductSearchQuery('');
             setFormData({
-              code: 'SAVEMORE' + Math.floor(10 + Math.random() * 90),
-              title: 'Special Student Discount',
+              code: '',
+              title: '',
               scope: 'storewide',
               discountType: 'percentage',
               discountValue: 15,

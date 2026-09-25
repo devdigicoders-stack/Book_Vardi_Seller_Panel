@@ -682,57 +682,90 @@ export default function ProductsTab() {
                 <div className="lg:col-span-7 space-y-4">
                   
                   {/* Image Preview Box */}
-                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200/80">
-                    <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-white border border-gray-200 flex items-center justify-center">
-                      {((Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[detailActiveImg]) || selectedProductForDetail.image || selectedProductForDetail.coverImage) ? (
-                        <img
-                          src={resolveImageUrl((Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[detailActiveImg]) || selectedProductForDetail.image || selectedProductForDetail.coverImage)}
-                          alt={selectedProductForDetail.name}
-                          className="w-full h-full object-contain"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
-                          }}
-                        />
-                      ) : null}
+                  {(() => {
+                    const extractUrl = (val) => {
+                      if (!val) return '';
+                      if (typeof val === 'string') return val.trim();
+                      if (typeof val === 'object') return (val.url || val.src || val.path || val.data || val.link || '').trim();
+                      return '';
+                    };
+                    const galleryList = [];
+                    const primary = extractUrl(selectedProductForDetail.image || selectedProductForDetail.coverImage || selectedProductForDetail.imageUrl || selectedProductForDetail.photo);
+                    if (primary) galleryList.push(primary);
+                    if (Array.isArray(selectedProductForDetail.images)) {
+                      selectedProductForDetail.images.forEach(img => {
+                        const u = extractUrl(img);
+                        if (u && !galleryList.includes(u)) galleryList.push(u);
+                      });
+                    }
+                    const vars = parseSizeVariants(selectedProductForDetail);
+                    vars.forEach(v => {
+                      const vImg = extractUrl(v.image);
+                      if (vImg && !galleryList.includes(vImg)) galleryList.push(vImg);
+                      if (Array.isArray(v.images)) {
+                        v.images.forEach(img => {
+                          const u = extractUrl(img);
+                          if (u && !galleryList.includes(u)) galleryList.push(u);
+                        });
+                      }
+                    });
+                    const resolvedGallery = [...new Set(galleryList.map(img => resolveImageUrl(img)).filter(Boolean))];
+                    const activeImg = resolvedGallery[detailActiveImg] || resolvedGallery[0] || '';
 
-                      <div className={`w-full h-full ${((Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[detailActiveImg]) || selectedProductForDetail.image || selectedProductForDetail.coverImage) ? 'hidden' : 'flex'} flex-col items-center justify-center bg-gray-100 text-gray-400 gap-2`}>
-                        <ImageIcon size={36} />
-                        <span className="text-xs font-medium">No Product Image</span>
-                      </div>
+                    return (
+                      <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200/80">
+                        <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-white border border-gray-200 flex items-center justify-center">
+                          {activeImg ? (
+                            <img
+                              src={activeImg}
+                              alt={selectedProductForDetail.name}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                              }}
+                            />
+                          ) : null}
 
-                      {Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images.length > 0 && (
-                        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold">
-                          Image {detailActiveImg + 1} of {selectedProductForDetail.images.length}
+                          <div className={`w-full h-full ${activeImg ? 'hidden' : 'flex'} flex-col items-center justify-center bg-gray-100 text-gray-400 gap-2`}>
+                            <ImageIcon size={36} />
+                            <span className="text-xs font-medium">No Product Image</span>
+                          </div>
+
+                          {resolvedGallery.length > 1 && (
+                            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold">
+                              Image {detailActiveImg + 1} of {resolvedGallery.length}
+                            </div>
+                          )}
+                          {(selectedProductForDetail.badge || selectedProductForDetail.discountBadge) && (
+                            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-amber-400 text-teal-950 text-[10px] font-extrabold tracking-wide shadow-xs">
+                              {selectedProductForDetail.badge || selectedProductForDetail.discountBadge}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {(selectedProductForDetail.badge || selectedProductForDetail.discountBadge) && (
-                        <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-amber-400 text-teal-950 text-[10px] font-extrabold tracking-wide shadow-xs">
-                          {selectedProductForDetail.badge || selectedProductForDetail.discountBadge}
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Thumbnail Strip */}
-                    {Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images.length > 1 && (
-                      <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1">
-                        {selectedProductForDetail.images.map((img, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => setDetailActiveImg(idx)}
-                            className={`w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
-                              detailActiveImg === idx
-                                ? 'border-teal-700 ring-2 ring-teal-200 scale-105'
-                                : 'border-gray-200 opacity-60 hover:opacity-100'
-                            }`}
-                          >
-                            <img src={resolveImageUrl(img)} alt="" className="w-full h-full object-cover" />
-                          </button>
-                        ))}
+                        {/* Thumbnail Strip */}
+                        {resolvedGallery.length > 1 && (
+                          <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1 scrollbar-thin">
+                            {resolvedGallery.map((img, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setDetailActiveImg(idx)}
+                                className={`w-14 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition-all cursor-pointer bg-white ${
+                                  detailActiveImg === idx
+                                    ? 'border-teal-700 ring-2 ring-teal-200 scale-105'
+                                    : 'border-gray-200 opacity-60 hover:opacity-100'
+                                }`}
+                              >
+                                <img src={img} alt="" className="w-full h-full object-cover" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   {/* Product Comprehensive Specifications & Details Card */}
                   <div className="bg-white rounded-2xl p-4 border border-gray-200/80 space-y-4 shadow-2xs">
@@ -879,20 +912,19 @@ export default function ProductsTab() {
                                       setPreviewImageModalTitle(`Variant: ${vVal}`);
                                     }
                                   }}
-                                  className="flex items-center gap-2.5 p-2 rounded-xl bg-teal-50/60 hover:bg-teal-100/70 border border-teal-200/80 shrink-0 min-w-[175px] cursor-pointer transition-all"
+                                  className="flex items-center gap-2.5 p-2 rounded-xl bg-teal-50/60 hover:bg-teal-100/70 border border-teal-200/80 shrink-0 min-w-[175px] cursor-pointer transition-all shadow-2xs"
                                 >
-                                  {vImgUrl ? (
-                                    <img
-                                      src={vImgUrl}
-                                      alt={vVal}
-                                      className="w-12 h-12 rounded-lg object-cover border border-white shadow-2xs shrink-0 bg-white"
-                                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                    />
-                                  ) : (
-                                    <div className="w-12 h-12 rounded-lg bg-teal-100 text-teal-950 font-bold text-xs flex items-center justify-center shrink-0 border border-teal-200">
-                                      {vVal.slice(0, 3)}
-                                    </div>
-                                  )}
+                                  <div className="relative w-12 h-12 rounded-lg bg-teal-100 text-teal-950 font-bold text-xs flex items-center justify-center shrink-0 border border-teal-200 overflow-hidden">
+                                    {vImgUrl ? (
+                                      <img
+                                        src={vImgUrl}
+                                        alt={vVal}
+                                        className="w-full h-full object-cover relative z-10"
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                      />
+                                    ) : null}
+                                    <span className="select-none absolute z-0">{vVal.slice(0, 3)}</span>
+                                  </div>
                                   <div className="min-w-0 flex-1">
                                     <div className="font-extrabold text-xs text-gray-900 truncate">{vVal}</div>
                                     <div className="text-[11px] font-bold text-teal-800 flex items-center gap-1 mt-0.5">
@@ -937,23 +969,32 @@ export default function ProductsTab() {
                                       <td className="px-3 py-2">
                                         {vImages.length > 0 ? (
                                           <div className="flex items-center gap-1.5 flex-wrap">
-                                            {vImages.map((img, imgIdx) => (
-                                              <button
-                                                key={imgIdx}
-                                                type="button"
-                                                onClick={() => {
-                                                  setPreviewImageModalUrl(resolveImageUrl(img));
-                                                  setPreviewImageModalTitle(`Variant: ${v.measureValue || v.size || `#${vIdx + 1}`} (Photo ${imgIdx + 1})`);
-                                                }}
-                                                className="relative group w-9 h-9 rounded-lg overflow-hidden border border-gray-200 hover:border-teal-600 hover:ring-2 hover:ring-teal-200 transition-all cursor-pointer bg-gray-50 shrink-0"
-                                                title="Click to view full photo"
-                                              >
-                                                <img src={resolveImageUrl(img)} alt="" className="w-full h-full object-cover" />
-                                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
-                                                  <Eye size={12} />
-                                                </div>
-                                              </button>
-                                            ))}
+                                            {vImages.map((img, imgIdx) => {
+                                              const fullUrl = resolveImageUrl(img);
+                                              return (
+                                                <button
+                                                  key={imgIdx}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setPreviewImageModalUrl(fullUrl);
+                                                    setPreviewImageModalTitle(`Variant: ${v.measureValue || v.size || `#${vIdx + 1}`} (Photo ${imgIdx + 1})`);
+                                                  }}
+                                                  className="relative group w-9 h-9 rounded-lg overflow-hidden border border-gray-200 hover:border-teal-600 hover:ring-2 hover:ring-teal-200 transition-all cursor-pointer bg-teal-50 shrink-0 flex items-center justify-center"
+                                                  title="Click to view full photo"
+                                                >
+                                                  <img
+                                                    src={fullUrl}
+                                                    alt=""
+                                                    className="w-full h-full object-cover relative z-10"
+                                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                  />
+                                                  <span className="text-[9px] font-bold text-teal-900 absolute z-0 select-none">IMG</span>
+                                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity z-20">
+                                                    <Eye size={12} />
+                                                  </div>
+                                                </button>
+                                              );
+                                            })}
                                           </div>
                                         ) : (
                                           <span className="text-[10px] text-gray-400 italic">No photos</span>
