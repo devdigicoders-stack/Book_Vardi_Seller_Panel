@@ -703,4 +703,28 @@ export const updateDeliveryLocationApi = async (token, lat, lng) => {
   }
 };
 
+// Fetch list of Admin-added schools
+export const fetchSchoolsApi = async () => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/schools`);
+    const data = await res.json();
+    return data.schools || data || [];
+  } catch (error) {
+    console.warn('Failed to fetch schools:', error);
+    return [];
+  }
+};
+
+// Fetch categories with GST %
+export const fetchCategoriesApi = async () => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/categories`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.categories || []);
+  } catch (error) {
+    console.warn('Failed to fetch categories:', error);
+    return [];
+  }
+};
+
 

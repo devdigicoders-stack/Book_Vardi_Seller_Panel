@@ -178,7 +178,8 @@ export default function OrdersTab() {
       }
 
       const tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
-      const trackingLink = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+      const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
+      const trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
 
       const details = {
         courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',

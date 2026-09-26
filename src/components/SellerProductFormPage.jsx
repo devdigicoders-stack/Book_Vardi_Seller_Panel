@@ -28,6 +28,120 @@ import {
 } from 'lucide-react';
 import ImageUploadDropzone from './ImageUploadDropzone';
 import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
+import { fetchSchoolsApi, fetchCategoriesApi } from '../utils/api';
+
+// Universal Category Form Configuration Schema Matrix
+export const CATEGORY_FORM_SCHEMA = {
+  // 1. NCERT & Books
+  ncert: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['book_sets', 'piece_count', 'packaging']
+  },
+  practice_books: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['book_sets', 'piece_count', 'packaging']
+  },
+  drawing_books: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['book_sets', 'piece_count', 'packaging']
+  },
+
+  // 2. Notebooks & Stationery
+  notebooks: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'kg', 'custom'],
+    allowedPresets: ['piece_count', 'weight_custom', 'packaging', 'book_sets']
+  },
+  stationery: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['piece_count', 'packaging']
+  },
+  writing: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['piece_count', 'packaging']
+  },
+  drawing: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['piece_count', 'packaging']
+  },
+  bottles: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: false,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['piece_count', 'packaging']
+  },
+  bags: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: true,
+    allowedScales: ['count', 'box', 'custom'],
+    allowedPresets: ['piece_count', 'packaging']
+  },
+
+  // 3. Shoes & Socks
+  shoes: {
+    showMeterCalculation: false,
+    showSizeChart: false,
+    showGender: true,
+    allowedScales: ['size', 'count', 'custom'],
+    allowedPresets: ['standard', 'piece_count']
+  },
+
+  // 4. Uniforms & Clothing
+  uniforms: {
+    showMeterCalculation: true,
+    showSizeChart: true,
+    showGender: true,
+    allowedScales: ['size', 'meter', 'count', 'custom'],
+    allowedPresets: ['standard', 'uniform_waist', 'meters_custom', 'piece_count']
+  },
+  rain_winter: {
+    showMeterCalculation: true,
+    showSizeChart: true,
+    showGender: true,
+    allowedScales: ['size', 'meter', 'count', 'custom'],
+    allowedPresets: ['standard', 'uniform_waist', 'meters_custom']
+  },
+  sports: {
+    showMeterCalculation: true,
+    showSizeChart: true,
+    showGender: true,
+    allowedScales: ['size', 'meter', 'count', 'custom'],
+    allowedPresets: ['standard', 'uniform_waist', 'meters_custom']
+  }
+};
+
+export function getCategorySchema(categoryKey) {
+  const cat = String(categoryKey || '').toLowerCase().trim();
+  return CATEGORY_FORM_SCHEMA[cat] || {
+    showMeterCalculation: true,
+    showSizeChart: true,
+    showGender: true,
+    allowedScales: ['size', 'count', 'meter', 'kg', 'box', 'custom'],
+    allowedPresets: ['standard', 'uniform_waist', 'weight_custom', 'piece_count', 'meters_custom', 'book_sets', 'packaging']
+  };
+}
 
 // Sizing & Scale Presets with Base Variant Values (250g, 3pcs, 3metre, 2.5m, etc.)
 const SIZE_PRESETS = [
@@ -127,6 +241,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     material: '',
     brand: '',
     gst: '5',
+    isGstInclusive: true,
     tags: '',
     status: 'Pending',
     discountBadge: '',
@@ -152,6 +267,9 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
       rows: []
     }
   });
+
+  // Dynamic Category Form Schema (Hides meter calculations/kg/size-charts for NCERT books & non-apparel)
+  const categorySchema = getCategorySchema(formData.category);
 
   // Variants & Measuring Scales
   const [sizeVariants, setSizeVariants] = useState([]);
@@ -196,6 +314,22 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('general'); // 'general' | 'variants' | 'kit' | 'payment'
 
+  const [schoolOptions, setSchoolOptions] = useState([]);
+  const [dbCategories, setDbCategories] = useState([]);
+
+  // Fetch Admin-added schools and Categories with GST
+  useEffect(() => {
+    async function loadMetadata() {
+      const [schoolsData, catsData] = await Promise.all([
+        fetchSchoolsApi(),
+        fetchCategoriesApi()
+      ]);
+      if (Array.isArray(schoolsData)) setSchoolOptions(schoolsData);
+      if (Array.isArray(catsData)) setDbCategories(catsData);
+    }
+    loadMetadata();
+  }, []);
+
   // Initialize form
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -222,6 +356,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         material: product.material || '',
         brand: product.brand || '',
         gst: product.gst !== undefined ? String(product.gst) : (product.gstPercentage !== undefined ? String(product.gstPercentage) : '5'),
+        isGstInclusive: product.isGstInclusive !== undefined ? Boolean(product.isGstInclusive) : true,
         tags: Array.isArray(product.tags) ? product.tags.join(', ') : (product.tags || ''),
         status: product.approvalStatus || product.status || 'Pending',
         discountBadge: product.discountBadge || product.badge || 'NEW',
@@ -573,9 +708,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           brand: formData.brand || '',
           gst: Number(formData.gst) || 5,
           gstPercentage: Number(formData.gst) || 5,
+          isGstInclusive: Boolean(formData.isGstInclusive),
           tags: parsedTags,
-          status: product ? (product.approvalStatus === 'Rejected' ? 'Pending' : (product.approvalStatus || 'Approved')) : 'Pending',
-          approvalStatus: product ? (product.approvalStatus === 'Rejected' ? 'Pending' : (product.approvalStatus || 'Approved')) : 'Pending',
+          status: (sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0)) > 0 ? 'available' : 'out-of-stock',
+          approvalStatus: 'Pending',
           price: sizeVariants.length > 0 ? minVariantPrice : Number(formData.price),
           originalPrice: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
           mrp: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
@@ -594,6 +730,20 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           sizeChart: formData.enableSizeChart ? formData.sizeChart : { rows: [] },
           sizes: sizeVariants.map(v => v.size || v.measureValue),
           sizeVariants: sizeVariants.map(v => ({
+            size: v.size || v.measureValue,
+            measureScale: v.measureScale || 'size',
+            measureValue: v.measureValue || v.size,
+            unit: v.unit || 'Size',
+            price: Number(v.price) || minVariantPrice,
+            mrp: Number(v.mrp || v.originalPrice) || Math.round(minVariantPrice * 1.25),
+            originalPrice: Number(v.originalPrice || v.mrp) || Math.round(minVariantPrice * 1.25),
+            stock: Number(v.stock) || 0,
+            stockQuantity: Number(v.stockQuantity || v.stock) || 0,
+            image: v.image || primaryImage,
+            images: Array.isArray(v.images) && v.images.length > 0 ? v.images : [v.image || primaryImage],
+            sku: v.sku || `${formData.sku || 'SKU'}-${v.size || v.measureValue}`
+          })),
+          variants: sizeVariants.map(v => ({
             size: v.size || v.measureValue,
             measureScale: v.measureScale || 'size',
             measureValue: v.measureValue || v.size,
@@ -867,34 +1017,30 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Category *</label>
-                    <div className="flex flex-col gap-2">
-                      <select
-                        value={CATEGORIES.find(c => c.id === formData.category) ? formData.category : 'custom'}
-                        onChange={e => {
-                          if (e.target.value !== 'custom') {
-                            setFormData({ ...formData, category: e.target.value });
-                          } else {
-                            setFormData({ ...formData, category: '' });
-                          }
-                        }}
-                        className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer"
-                      >
-                        {CATEGORIES.map(c => (
-                          <option key={c.id} value={c.id}>{c.label}</option>
-                        ))}
-                        <option value="custom">Other (Custom)</option>
-                      </select>
-                      {!CATEGORIES.find(c => c.id === formData.category) && (
-                        <input
-                          type="text"
-                          placeholder="Enter custom category..."
-                          value={formData.category}
-                          onChange={e => setFormData({ ...formData, category: e.target.value })}
-                          className="w-full px-3.5 py-2.5 bg-white border border-brand-yellow rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-brand-yellow"
-                          autoFocus
-                        />
-                      )}
-                    </div>
+                    <select
+                      value={formData.category}
+                      onChange={e => {
+                        const selectedCat = e.target.value;
+                        const catObj = dbCategories.find(c => c.name?.toLowerCase() === selectedCat.toLowerCase() || c.slug === selectedCat);
+                        setFormData({
+                          ...formData,
+                          category: selectedCat,
+                          gst: catObj && catObj.gstPercentage !== undefined ? String(catObj.gstPercentage) : formData.gst
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                    >
+                      <option value="uniforms">Uniforms & Blazers</option>
+                      <option value="shoes">Shoes & Socks</option>
+                      <option value="stationery">Pens & Stationery</option>
+                      <option value="ncert">NCERT Books</option>
+                      <option value="practice_books">Practice & Olympiad Books</option>
+                      <option value="sports">Sports Wear</option>
+                      <option value="rain_winter">Winter & Rain Kits</option>
+                      {dbCategories.map(c => (
+                        <option key={c._id || c.name} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Sub-Category</label>
@@ -902,14 +1048,26 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       type="text"
                       value={formData.subCategory}
                       onChange={e => setFormData({ ...formData, subCategory: e.target.value })}
-                      placeholder="e.g. Shirts, Practice Books"
+                      placeholder="e.g. Shirts, Notebook Sets, Jackets"
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                     />
                   </div>
                 </div>
 
-                {/* Price, MRP, GST Percentage */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Subtitle */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Product Subtitle / Short Summary</label>
+                  <input
+                    type="text"
+                    value={formData.subtitle}
+                    onChange={e => setFormData({ ...formData, subtitle: e.target.value })}
+                    placeholder="e.g. Premium 100% Cotton School Uniform Shirt for Daily Wear"
+                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                  />
+                </div>
+
+                {/* Price, MRP, Stock, GST Percentage, GST Included Toggle & Auto Discount */}
+                <div className="grid grid-cols-1 sm:grid-cols-6 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Base Price (₹) *</label>
                     <input
@@ -917,7 +1075,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       value={formData.price}
                       onChange={e => setFormData({ ...formData, price: e.target.value })}
                       placeholder="499"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none"
                     />
                   </div>
                   <div>
@@ -927,22 +1085,62 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       value={formData.originalPrice}
                       onChange={e => setFormData({ ...formData, originalPrice: e.target.value })}
                       placeholder="699"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">GST Tax Rate (%) *</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Base Stock (Qty) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formData.stockQuantity}
+                      onChange={e => setFormData({ ...formData, stockQuantity: e.target.value, stock: e.target.value })}
+                      placeholder="50"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">GST Rate (%) *</label>
                     <select
                       value={formData.gst}
                       onChange={e => setFormData({ ...formData, gst: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
                     >
-                      <option value="0">0% (Tax Exempt / Books)</option>
-                      <option value="5">5% GST (Apparel / Uniforms)</option>
-                      <option value="12">12% GST (Stationery / Footwear)</option>
-                      <option value="18">18% GST (Standard)</option>
-                      <option value="28">28% GST (Luxury)</option>
+                      <option value="0">0%</option>
+                      <option value="5">5%</option>
+                      <option value="12">12%</option>
+                      <option value="18">18%</option>
+                      <option value="28">28%</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">GST Included in Price?</label>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, isGstInclusive: !prev.isGstInclusive }))}
+                      className={`w-full px-3 py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs ${
+                        formData.isGstInclusive
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+                          : 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
+                      }`}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full ${formData.isGstInclusive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                      <span>{formData.isGstInclusive ? 'GST Included' : 'GST Extra (+ Tax)'}</span>
+                    </button>
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Calculated Discount</label>
+                    {(() => {
+                      const p = Number(formData.price) || 0;
+                      const m = Number(formData.originalPrice) || 0;
+                      const disc = (m > 0 && p > 0 && m >= p) ? Math.round(((m - p) / m) * 100) : 0;
+                      return (
+                        <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold text-xs rounded-xl flex items-center justify-between">
+                          <span>Discount:</span>
+                          <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-[11px] font-black">{disc}% OFF</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -970,17 +1168,27 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   </div>
                 </div>
 
-                {/* School Name, School Code, Grade / Class */}
+                {/* School Name (Admin Dropdown), School Code, Grade / Class */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Target School Name</label>
-                    <input
-                      type="text"
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Target School Name *</label>
+                    <select
                       value={formData.schoolName}
-                      onChange={e => setFormData({ ...formData, schoolName: e.target.value })}
-                      placeholder="e.g. Delhi Public School"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
-                    />
+                      onChange={e => {
+                        const selSch = schoolOptions.find(s => s.name === e.target.value);
+                        setFormData({
+                          ...formData,
+                          schoolName: e.target.value,
+                          schoolCode: selSch ? (selSch.code || selSch.shortName || '') : formData.schoolCode
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                    >
+                      <option value="">-- All Schools / General --</option>
+                      {schoolOptions.map(sch => (
+                        <option key={sch._id || sch.name} value={sch.name}>{sch.name} ({sch.city || 'Partner School'})</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">School Abbreviation Code</label>
@@ -993,40 +1201,66 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Grade / Class</label>
-                    <input
-                      type="text"
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Grade / Class *</label>
+                    <select
                       value={formData.classGrade}
                       onChange={e => setFormData({ ...formData, classGrade: e.target.value })}
-                      placeholder="e.g. Class 1-5, Nursery, All Grades"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
-                    />
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                    >
+                      <option value="">-- All Grades / General --</option>
+                      <option value="Nursery">Nursery</option>
+                      <option value="LKG">LKG</option>
+                      <option value="UKG">UKG</option>
+                      <option value="Class 1">Class 1</option>
+                      <option value="Class 2">Class 2</option>
+                      <option value="Class 3">Class 3</option>
+                      <option value="Class 4">Class 4</option>
+                      <option value="Class 5">Class 5</option>
+                      <option value="Class 6">Class 6</option>
+                      <option value="Class 7">Class 7</option>
+                      <option value="Class 8">Class 8</option>
+                      <option value="Class 9">Class 9</option>
+                      <option value="Class 10">Class 10</option>
+                      <option value="Class 11">Class 11</option>
+                      <option value="Class 12">Class 12</option>
+                      <option value="Class 1-5">Class 1 to 5</option>
+                      <option value="Class 6-10">Class 6 to 10</option>
+                      <option value="Class 11-12">Class 11 to 12</option>
+                    </select>
                   </div>
                 </div>
 
                 {/* Age Group, Colors, Tags & Gender */}
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  {categorySchema.showGender && (
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Target Gender *</label>
+                      <select
+                        value={formData.gender || 'Unisex'}
+                        onChange={e => setFormData({ ...formData, gender: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 font-bold rounded-xl text-xs outline-none cursor-pointer"
+                      >
+                        <option value="Unisex">👫 Unisex (All Students)</option>
+                        <option value="Boys">👦 Boys</option>
+                        <option value="Girls">👧 Girls</option>
+                        <option value="All">All Students</option>
+                      </select>
+                    </div>
+                  )}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Target Gender *</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Age Group *</label>
                     <select
-                      value={formData.gender || 'Unisex'}
-                      onChange={e => setFormData({ ...formData, gender: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 font-bold rounded-xl text-xs outline-none cursor-pointer"
-                    >
-                      <option value="Unisex">👫 Unisex (All Students)</option>
-                      <option value="Boys">👦 Boys</option>
-                      <option value="Girls">👧 Girls</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Age Group / Ages</label>
-                    <input
-                      type="text"
                       value={formData.ageGroup || formData.ages}
                       onChange={e => setFormData({ ...formData, ageGroup: e.target.value, ages: e.target.value })}
-                      placeholder="e.g. 3-5 Years, 6-8 Years"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
-                    />
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                    >
+                      <option value="">-- Select Age Group --</option>
+                      <option value="3-5 Years">3-5 Years</option>
+                      <option value="6-8 Years">6-8 Years</option>
+                      <option value="9-12 Years">9-12 Years</option>
+                      <option value="13-16 Years">13-16 Years</option>
+                      <option value="16+ Years">16+ Years</option>
+                    </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Available Colors</label>
@@ -1061,75 +1295,77 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   />
                 </div>
 
-                {/* 1. Apparel Selling Unit Type: Ready-To-Wear (Pieces) vs Unstitched Cloth (Meters) */}
-                <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-200/80 space-y-3">
-                  <label className="block text-xs font-bold text-teal-950 uppercase tracking-wider">
-                    Apparel Selling Unit & Pricing Calculation
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div
-                      onClick={() => setFormData({ ...formData, isMeterBased: false, unit: 'piece' })}
-                      className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
-                        !formData.isMeterBased
-                          ? 'border-brand-teal bg-white shadow-xs font-bold'
-                          : 'border-gray-200 bg-white/60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
-                        <span>👔 Ready-To-Wear / Stitched Item</span>
+                {/* 1. Apparel Selling Unit Type: Ready-To-Wear (Pieces) vs Unstitched Cloth (Meters) (Only shown for Clothing/Fabric) */}
+                {categorySchema.showMeterCalculation && (
+                  <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-200/80 space-y-3">
+                    <label className="block text-xs font-bold text-teal-950 uppercase tracking-wider">
+                      Apparel Selling Unit & Pricing Calculation
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div
+                        onClick={() => setFormData({ ...formData, isMeterBased: false, unit: 'piece' })}
+                        className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
+                          !formData.isMeterBased
+                            ? 'border-brand-teal bg-white shadow-xs font-bold'
+                            : 'border-gray-200 bg-white/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
+                          <span>👔 Ready-To-Wear / Stitched Item</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Sold in <strong>Pieces (pcs)</strong> or standard sizes (S, M, L, XL, 32, 34). Base price is calculated per piece.
+                        </p>
                       </div>
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        Sold in <strong>Pieces (pcs)</strong> or standard sizes (S, M, L, XL, 32, 34). Base price is calculated per piece.
-                      </p>
+
+                      <div
+                        onClick={() => setFormData({ ...formData, isMeterBased: true, unit: 'meter' })}
+                        className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
+                          formData.isMeterBased
+                            ? 'border-brand-teal bg-white shadow-xs font-bold'
+                            : 'border-gray-200 bg-white/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
+                          <span>✂️ Unstitched Fabric / Not Ready-To-Wear</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Customer orders cloth in <strong>Meters (e.g. 2.5m pant cloth)</strong>. Price calculated as <strong>{`{x} meters * 1-meter price`}</strong>.
+                        </p>
+                      </div>
                     </div>
 
-                    <div
-                      onClick={() => setFormData({ ...formData, isMeterBased: true, unit: 'meter' })}
-                      className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
-                        formData.isMeterBased
-                          ? 'border-brand-teal bg-white shadow-xs font-bold'
-                          : 'border-gray-200 bg-white/60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
-                        <span>✂️ Unstitched Fabric / Not Ready-To-Wear</span>
+                    {formData.isMeterBased && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-teal-100">
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">Minimum Meter Quantity (e.g. 0.5m or 1m)</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={formData.minMeter}
+                            onChange={e => setFormData({ ...formData, minMeter: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
+                            placeholder="0.5"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">Meter Increment Step (e.g. 0.5m)</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={formData.meterStep}
+                            onChange={e => setFormData({ ...formData, meterStep: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
+                            placeholder="0.5"
+                          />
+                        </div>
+                        <div className="sm:col-span-2 text-[11px] font-bold text-teal-900 bg-teal-100/80 p-2.5 rounded-lg border border-teal-200">
+                          💡 Price Calculation Formula: Customer Price = {`{x} Meters`} × 1-Meter Base Price. (Example: 2.5m Pant Cloth × ₹200/meter = ₹500 Total Price).
+                        </div>
                       </div>
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        Customer orders cloth in <strong>Meters (e.g. 2.5m pant cloth)</strong>. Price calculated as <strong>{`{x} meters * 1-meter price`}</strong>.
-                      </p>
-                    </div>
+                    )}
                   </div>
-
-                  {formData.isMeterBased && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-teal-100">
-                      <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Minimum Meter Quantity (e.g. 0.5m or 1m)</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={formData.minMeter}
-                          onChange={e => setFormData({ ...formData, minMeter: e.target.value })}
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
-                          placeholder="0.5"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">Meter Increment Step (e.g. 0.5m)</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={formData.meterStep}
-                          onChange={e => setFormData({ ...formData, meterStep: e.target.value })}
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
-                          placeholder="0.5"
-                        />
-                      </div>
-                      <div className="sm:col-span-2 text-[11px] font-bold text-teal-900 bg-teal-100/80 p-2.5 rounded-lg border border-teal-200">
-                        💡 Price Calculation Formula: Customer Price = {`{x} Meters`} × 1-Meter Base Price. (Example: 2.5m Pant Cloth × ₹200/meter = ₹500 Total Price).
-                      </div>
-                    </div>
-                  )}
-                </div>
+                )}
 
                 {/* 2. Return & Exchange Policy Window */}
                 <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
@@ -1167,21 +1403,22 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   )}
                 </div>
 
-                {/* 3. Apparel Size Chart Editor */}
-                <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-gray-900">
-                      <input
-                        type="checkbox"
-                        checked={formData.enableSizeChart}
-                        onChange={e => setFormData({ ...formData, enableSizeChart: e.target.checked })}
-                        className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal cursor-pointer"
-                      />
-                      <span>Include Size Chart / Measurement Guide (Clothing & Uniforms)</span>
-                    </label>
-                  </div>
+                {/* 3. Apparel Size Chart Editor (Only shown for Clothing & Uniforms) */}
+                {categorySchema.showSizeChart && (
+                  <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-200/80 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-gray-900">
+                        <input
+                          type="checkbox"
+                          checked={formData.enableSizeChart}
+                          onChange={e => setFormData({ ...formData, enableSizeChart: e.target.checked })}
+                          className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal cursor-pointer"
+                        />
+                        <span>Include Size Chart / Measurement Guide (Clothing & Uniforms)</span>
+                      </label>
+                    </div>
 
-                  {formData.enableSizeChart && (
+                    {formData.enableSizeChart && (
                     <div className="space-y-3 pt-3 border-t border-indigo-100">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-extrabold text-indigo-950">Size Chart Matrix (Inches)</span>
@@ -1317,6 +1554,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     </div>
                   )}
                 </div>
+                )}
               </div>
             </div>
           )}
@@ -1346,7 +1584,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
               <div className="p-4 rounded-xl bg-gray-50 border border-gray-200/80 space-y-2">
                 <span className="text-xs font-extrabold uppercase text-gray-700">1-Click Presets</span>
                 <div className="flex flex-wrap gap-2">
-                  {SIZE_PRESETS.map(preset => (
+                  {SIZE_PRESETS.filter(p => categorySchema.allowedPresets.includes(p.id)).map(preset => (
                     <button
                       key={preset.id}
                       type="button"
@@ -1390,18 +1628,17 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                           className="flex items-center gap-2.5 p-2 rounded-xl bg-teal-50/70 hover:bg-teal-100/80 border border-teal-200/80 shrink-0 min-w-[175px] cursor-pointer transition-all shadow-2xs"
                           title="Click to edit this variant"
                         >
-                          {vImgUrl ? (
-                            <img
-                              src={vImgUrl}
-                              alt={vVal}
-                              className="w-12 h-12 rounded-lg object-cover border border-white shadow-2xs shrink-0 bg-white"
-                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                            />
-                          ) : (
-                            <div className="w-12 h-12 rounded-lg bg-teal-100 text-teal-950 font-bold text-xs flex items-center justify-center shrink-0 border border-teal-200">
-                              {vVal.slice(0, 3)}
-                            </div>
-                          )}
+                          <div className="relative w-12 h-12 rounded-lg bg-teal-100 text-teal-950 font-bold text-xs flex items-center justify-center shrink-0 border border-teal-200 overflow-hidden">
+                            {vImgUrl ? (
+                              <img
+                                src={vImgUrl}
+                                alt={vVal}
+                                className="w-full h-full object-cover relative z-10"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            ) : null}
+                            <span className="select-none absolute z-0">{vVal.slice(0, 3)}</span>
+                          </div>
                           <div className="min-w-0 flex-1">
                             <div className="font-extrabold text-xs text-gray-900 truncate">{vVal}</div>
                             <div className="text-[11px] font-bold text-teal-800 flex items-center gap-1 mt-0.5">
@@ -1443,7 +1680,19 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                           </td>
                           <td className="px-3 py-2.5 font-extrabold text-gray-900">₹{v.price}</td>
                           <td className="px-3 py-2.5 text-gray-500 line-through">₹{v.mrp}</td>
-                          <td className="px-3 py-2.5 font-bold text-emerald-700">{v.stock}</td>
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="number"
+                              min="0"
+                              value={v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : '')}
+                              onChange={(e) => {
+                                const newStock = e.target.value;
+                                setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, stock: newStock, stockQuantity: newStock } : item));
+                              }}
+                              className="w-20 px-2 py-1 bg-teal-50 border border-teal-300 rounded-lg text-xs font-bold text-teal-900 text-center outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
+                              title="Edit variant stock quantity"
+                            />
+                          </td>
                           <td className="px-3 py-2.5">
                             {v.image ? (
                               <img src={resolveImageUrl(v.image)} alt={v.size} className="w-9 h-9 rounded object-cover border border-gray-200" />
@@ -1685,7 +1934,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   }}
                   className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none"
                 >
-                  {MEASURE_SCALES.map(sc => (
+                  {MEASURE_SCALES.filter(sc => categorySchema.allowedScales.includes(sc.id)).map(sc => (
                     <option key={sc.id} value={sc.id}>{sc.label}</option>
                   ))}
                 </select>
@@ -1716,7 +1965,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">Selling Price (₹) *</label>
                   <input
@@ -1738,6 +1987,28 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     onChange={e => setVariantForm({ ...variantForm, mrp: e.target.value })}
                     placeholder="699"
                     className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Stock (Units) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={variantForm.stock}
+                    onChange={e => setVariantForm({ ...variantForm, stock: e.target.value, stockQuantity: e.target.value })}
+                    placeholder="25"
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Variant SKU</label>
+                  <input
+                    type="text"
+                    value={variantForm.sku}
+                    onChange={e => setVariantForm({ ...variantForm, sku: e.target.value })}
+                    placeholder="SKU-VAR"
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-mono font-medium outline-none"
                   />
                 </div>
               </div>

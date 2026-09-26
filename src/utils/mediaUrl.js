@@ -35,45 +35,108 @@ export const resolveImageUrl = (url) => {
 
 export const parseSizeVariants = (product) => {
   if (!product) return [];
-  let raw = product.sizeVariants || product.variants || product.size_variants;
-  if (!raw) return [];
-  if (typeof raw === 'string') {
-    try {
-      raw = JSON.parse(raw);
-    } catch {
-      return [];
+  let raw = product.sizeVariants ?? product.variants ?? product.size_variants ?? product.sizes;
+  let parsed = [];
+
+  if (raw) {
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        if (raw.includes(',')) {
+          raw = raw.split(',').map(s => s.trim()).filter(Boolean);
+        } else if (raw.trim()) {
+          raw = [raw.trim()];
+        } else {
+          raw = [];
+        }
+      }
+    }
+
+    if (Array.isArray(raw)) {
+      parsed = raw.map((v, idx) => {
+        if (typeof v === 'string') {
+          return {
+            id: `var_${idx}_${v}`,
+            size: v,
+            measureScale: 'size',
+            measureValue: v,
+            price: Number(product?.price || 0),
+            mrp: Number(product?.mrp || product?.originalPrice || 0),
+            stock: Number(product?.stockQuantity ?? product?.stock ?? 0),
+            stockQuantity: Number(product?.stockQuantity ?? product?.stock ?? 0),
+            sku: product?.sku ? `${product.sku}-${v}` : `SKU-${idx + 1}`,
+            image: product?.image || (Array.isArray(product?.images) ? product.images[0] : '') || '',
+            images: Array.isArray(product?.images) && product.images.length > 0 ? product.images : (product?.image ? [product.image] : [])
+          };
+        }
+
+        if (typeof v === 'object' && v !== null) {
+          const rawImage = v.image || v.imageUrl || v.photo || v.url || (Array.isArray(v.images) && v.images[0]) || product?.image || (Array.isArray(product?.images) && product.images[0]) || '';
+          let rawImages = Array.isArray(v.images) && v.images.length > 0 ? v.images : (rawImage ? [rawImage] : []);
+          if (typeof rawImages === 'string') {
+            try { rawImages = JSON.parse(rawImages); } catch { rawImages = [rawImages]; }
+          }
+
+          const sizeVal = String(v.size || v.measureValue || v.name || v.label || v.title || `Variant #${idx + 1}`);
+          const priceVal = (v.price !== undefined && v.price !== null && !isNaN(Number(v.price)) && Number(v.price) >= 0)
+            ? Number(v.price)
+            : Number(product?.price || 0);
+
+          const rawMrp = v.mrp ?? v.originalPrice ?? v.regularPrice ?? v.marketPrice;
+          const mrpVal = (rawMrp !== undefined && rawMrp !== null && !isNaN(Number(rawMrp)) && Number(rawMrp) >= 0)
+            ? Number(rawMrp)
+            : (priceVal > 0 ? Math.round(priceVal * 1.25) : Number(product?.mrp || product?.originalPrice || 0));
+
+          const stockVal = v.stock !== undefined ? Number(v.stock) : (v.stockQuantity !== undefined ? Number(v.stockQuantity) : Number(product?.stockQuantity ?? product?.stock ?? 0));
+
+          return {
+            ...v,
+            id: v.id || v._id || `var_${idx}_${sizeVal}`,
+            size: sizeVal,
+            measureValue: sizeVal,
+            measureScale: v.measureScale || v.scale || v.scaleUnit || 'size',
+            price: priceVal,
+            mrp: mrpVal,
+            originalPrice: mrpVal,
+            stock: stockVal,
+            stockQuantity: stockVal,
+            sku: v.sku || (product?.sku ? `${product.sku}-${sizeVal}` : `SKU-VAR-${idx + 1}`),
+            image: rawImage,
+            images: rawImages
+          };
+        }
+
+        return null;
+      }).filter(Boolean);
     }
   }
-  if (Array.isArray(raw)) {
-    return raw.map((v, idx) => {
-      if (typeof v === 'string') {
-        return {
-          size: v,
-          measureScale: 'size',
-          measureValue: v,
-          price: product?.price || 0,
-          mrp: product?.mrp || product?.originalPrice || 0,
-          stock: product?.stockQuantity || product?.stock || 0,
-          image: product?.image || '',
-          images: Array.isArray(product?.images) ? product.images : (product?.image ? [product.image] : [])
-        };
-      }
-      const rawImage = v?.image || (Array.isArray(v?.images) && v.images[0]) || product?.image || '';
-      const rawImages = Array.isArray(v?.images) && v.images.length > 0 ? v.images : (rawImage ? [rawImage] : []);
-      return {
-        ...v,
-        size: v.size || v.measureValue || v.name || `Variant #${idx + 1}`,
-        measureValue: v.measureValue || v.size || v.name || `Variant #${idx + 1}`,
-        measureScale: v.measureScale || v.scale || 'size',
-        price: v.price !== undefined ? v.price : (product?.price || 0),
-        mrp: v.mrp !== undefined ? v.mrp : (v.originalPrice !== undefined ? v.originalPrice : (product?.mrp || product?.originalPrice || 0)),
-        stock: v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 0),
-        image: rawImage,
-        images: rawImages
+
+  // Prepend Base Product if product has variants and base price > 0, and base variant is not already present
+  if (parsed.length > 0 && Number(product?.price || 0) > 0) {
+    const hasBaseVariant = parsed.some(v => v.isBase || String(v.size || '').toLowerCase().includes('base'));
+    if (!hasBaseVariant) {
+      const baseMrp = Number(product.mrp || product.originalPrice || product.regularPrice || product.price || 0);
+      const baseOption = {
+        id: `base_option_${product._id || product.id || '0'}`,
+        size: 'Base Product',
+        measureScale: product.unit || 'unit',
+        measureValue: 'Base Product',
+        price: Number(product.price || 0),
+        mrp: baseMrp > Number(product.price || 0) ? baseMrp : Number(product.price || 0),
+        originalPrice: baseMrp > Number(product.price || 0) ? baseMrp : Number(product.price || 0),
+        stock: Number(product.stockQuantity ?? product.stock ?? 0),
+        stockQuantity: Number(product.stockQuantity ?? product.stock ?? 0),
+        sku: product.sku || `SKU-BASE-${String(product._id || product.id || '').slice(-6).toUpperCase()}`,
+        image: product.image || product.imageUrl || (Array.isArray(product.images) ? product.images[0] : '') || '',
+        images: Array.isArray(product.images) && product.images.length > 0 ? product.images : (product.image ? [product.image] : []),
+        isBase: true
       };
-    });
+      parsed = [baseOption, ...parsed];
+    }
   }
-  return [];
+
+  return parsed;
 };
 
 export const getFileNameOnly = (pathOrName) => {
