@@ -494,6 +494,11 @@ export default function OrdersTab() {
                             <option value="Delivered">🎉 Delivered</option>
                             <option value="Cancelled">❌ Cancelled</option>
                           </select>
+                          {(o.status === 'Cancelled' || o.cancellationReason) && (
+                            <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 truncate max-w-[130px]" title={`Cancelled by ${o.cancelledBy || 'Customer'}. Reason: ${o.cancellationReason || 'Customer requested cancellation'}`}>
+                              Reason: {o.cancellationReason || 'Cancelled'}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -594,6 +599,34 @@ export default function OrdersTab() {
             </div>
 
             <div className="p-6 space-y-5 max-h-[78vh] overflow-y-auto">
+
+              {/* Customer Cancellation Alert Card */}
+              {(activeOrderModal.status === 'Cancelled' || activeOrderModal.cancellationReason || activeOrderModal.cancelledBy) && (
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-2 shadow-xs">
+                  <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-rose-700">
+                    <XCircle size={16} />
+                    <span>Order Cancelled by Customer</span>
+                  </div>
+                  <div className="p-3 bg-white/80 rounded-xl border border-rose-100 text-xs text-rose-900 space-y-1">
+                    <p><strong>Cancelled By:</strong> <span className="font-semibold text-gray-900">{activeOrderModal.cancelledBy || activeOrderModal.customerName || 'Customer'}</span></p>
+                    <p><strong>Cancellation Reason:</strong> <span className="font-semibold text-gray-900">{activeOrderModal.cancellationReason || 'Cancelled by customer'}</span></p>
+                    {activeOrderModal.cancelledAt && (
+                      <p className="text-[11px] text-gray-500">
+                        <strong>Cancelled On:</strong> {new Date(activeOrderModal.cancelledAt).toLocaleString('en-IN')}
+                      </p>
+                    )}
+                  </div>
+                  {activeOrderModal.refundStatus && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-xs flex items-center gap-2">
+                      <CreditCard size={15} className="text-emerald-700 shrink-0" />
+                      <div>
+                        <strong className="font-black text-emerald-900">Refund Status: </strong>
+                        <span className="font-semibold">{activeOrderModal.refundStatus}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Visual Order Progress Stepper */}
               <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 space-y-2">
@@ -906,14 +939,126 @@ export default function OrdersTab() {
                 </div>
               </div>
 
-              {/* Summary Footer */}
-              <div className="p-3.5 bg-teal-50/50 rounded-xl border border-teal-100 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-teal-950">Total Payable Amount</div>
-                  <div className="text-[10px] text-teal-700">{activeOrderModal.paymentMethod} • {activeOrderModal.paymentStatus}</div>
-                </div>
-                <div className="text-lg font-extrabold text-teal-900">₹{activeOrderModal.total}</div>
-              </div>
+              {/* Summary Footer & Complete Itemized Price Breakdown */}
+              {(() => {
+                const subtotalVal = Number(activeOrderModal.subtotal || activeOrderModal.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || activeOrderModal.total || 0);
+                const shipVal = Number(activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 0);
+                const couponVal = Number(activeOrderModal.discountAmount ?? activeOrderModal.discount ?? 0);
+                const grandVal = Number(activeOrderModal.total || activeOrderModal.totalAmount || (subtotalVal + shipVal - couponVal));
+
+                let totalTaxable = 0;
+                let totalTax = 0;
+                (activeOrderModal.items || []).forEach(item => {
+                  const qty = Number(item.quantity || 1);
+                  const unitPrice = Number(item.price || 0);
+                  const grossPrice = unitPrice * qty;
+                  const gstRate = Number(item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.gst ?? 5);
+                  if (gstRate > 0) {
+                    const taxable = grossPrice / (1 + gstRate / 100);
+                    totalTaxable += taxable;
+                    totalTax += (grossPrice - taxable);
+                  } else {
+                    totalTaxable += grossPrice;
+                  }
+                });
+
+                const parseStateKeyFromText = (text) => {
+                  if (!text) return '';
+                  const str = String(text).toLowerCase();
+                  const states = [
+                    { key: 'uttarpradesh', aliases: ['uttar pradesh', 'uttarpradesh', 'up', 'noida', 'lucknow', 'kanpur', 'ghaziabad', 'agra', 'varanasi', 'prayagraj'] },
+                    { key: 'delhi', aliases: ['delhi', 'new delhi', 'nct of delhi', 'nct', 'dl'] },
+                    { key: 'maharashtra', aliases: ['maharashtra', 'mumbai', 'pune', 'nagpur', 'thane', 'mh'] },
+                    { key: 'karnataka', aliases: ['karnataka', 'bangalore', 'bengaluru', 'mysore', 'ka'] },
+                    { key: 'tamilnadu', aliases: ['tamil nadu', 'tamilnadu', 'chennai', 'coimbatore', 'tn'] },
+                    { key: 'haryana', aliases: ['haryana', 'gurugram', 'gurgaon', 'faridabad', 'hr'] },
+                    { key: 'rajasthan', aliases: ['rajasthan', 'jaipur', 'jodhpur', 'udaipur', 'rj'] },
+                    { key: 'westbengal', aliases: ['west bengal', 'westbengal', 'kolkata', 'wb'] },
+                    { key: 'gujarat', aliases: ['gujarat', 'ahmedabad', 'surat', 'vadodara', 'gj'] },
+                    { key: 'punjab', aliases: ['punjab', 'ludhiana', 'amritsar', 'pb'] },
+                    { key: 'madhyapradesh', aliases: ['madhya pradesh', 'madhyapradesh', 'bhopal', 'indore', 'mp'] },
+                    { key: 'bihar', aliases: ['bihar', 'patna', 'br'] },
+                    { key: 'telangana', aliases: ['telangana', 'hyderabad', 'tg', 'ts'] },
+                    { key: 'andhrapradesh', aliases: ['andhra pradesh', 'andhrapradesh', 'visakhapatnam', 'ap'] },
+                    { key: 'kerala', aliases: ['kerala', 'kochi', 'thiruvananthapuram', 'kl'] },
+                    { key: 'uttarakhand', aliases: ['uttarakhand', 'dehradun', 'uk'] }
+                  ];
+
+                  for (const st of states) {
+                    for (const alias of st.aliases) {
+                      if (new RegExp(`\\b${alias}\\b`, 'i').test(str)) {
+                        return st.key;
+                      }
+                    }
+                  }
+                  return str.trim();
+                };
+
+                const getDynamicState = (obj, fallbackText) => {
+                  if (obj && typeof obj === 'object') {
+                    if (obj.state && String(obj.state).trim()) return parseStateKeyFromText(obj.state);
+                    const combined = `${obj.street || ''} ${obj.addressLine || ''} ${obj.city || ''} ${obj.address || ''}`;
+                    if (combined.trim()) return parseStateKeyFromText(combined);
+                  }
+                  return parseStateKeyFromText(fallbackText || '');
+                };
+
+                const firstSellerObj = activeOrderModal.items?.[0]?.sellerId;
+                const sellerStateKey = getDynamicState(firstSellerObj, `${activeOrderModal.sellerState || ''} ${activeOrderModal.sellerCity || ''} ${activeOrderModal.sellerAddress || ''}`);
+                const customerStateKey = getDynamicState(activeOrderModal.shippingAddress, typeof activeOrderModal.shippingAddress === 'string' ? activeOrderModal.shippingAddress : '');
+
+                const isSameState = !sellerStateKey || !customerStateKey || sellerStateKey === customerStateKey;
+                const sellerStateStr = (typeof firstSellerObj === 'object' ? firstSellerObj.state || firstSellerObj.city : '') || activeOrderModal.sellerState || sellerStateKey || 'Seller Location';
+                const customerStateStr = (typeof activeOrderModal.shippingAddress === 'object' ? activeOrderModal.shippingAddress?.state || activeOrderModal.shippingAddress?.city : '') || customerStateKey || 'Customer Location';
+
+                return (
+                  <div className="p-3.5 bg-teal-50/50 rounded-xl border border-teal-100 space-y-2 text-xs">
+                    <div className="flex justify-between text-gray-700">
+                      <span>Items Subtotal:</span>
+                      <span className="font-mono font-bold">₹{subtotalVal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-500 text-[11px]">
+                      <span>Base Taxable Amount (Excl. GST):</span>
+                      <span className="font-mono">₹{totalTaxable.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-teal-900 text-[11px] bg-teal-100/60 p-2 rounded-lg border border-teal-200">
+                      <div>
+                        <span className="font-bold block">GST Tax Breakdown ({isSameState ? 'Intra-State Same State' : 'Inter-State Different State'}):</span>
+                        {isSameState ? (
+                          <span className="text-[10px] text-teal-800">CGST (50%): ₹{(totalTax / 2).toFixed(2)} • SGST (50%): ₹{(totalTax / 2).toFixed(2)}</span>
+                        ) : (
+                          <span className="text-[10px] text-teal-800">IGST (Integrated 100%): ₹{totalTax.toFixed(2)} • Supply ({sellerStateStr} ➔ {customerStateStr})</span>
+                        )}
+                      </div>
+                      <span className="font-mono font-bold self-center text-teal-950">₹{totalTax.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-700">
+                      <span>Delivery Charges:</span>
+                      <span className="font-mono font-bold text-teal-800">
+                        {shipVal === 0 ? 'Not Applied (FREE)' : `₹${shipVal.toFixed(2)}`}
+                      </span>
+                    </div>
+                    {couponVal > 0 ? (
+                      <div className="flex justify-between text-teal-800 font-bold">
+                        <span>Offer / Coupon Applied:</span>
+                        <span className="font-mono">-₹{couponVal.toFixed(2)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-gray-400 text-[11px]">
+                        <span>Offer / Coupon:</span>
+                        <span className="font-mono">Not Applied (₹0.00)</span>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-teal-200 flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-teal-950">Total Payable Amount</div>
+                        <div className="text-[10px] text-teal-700">{activeOrderModal.paymentMethod} • {activeOrderModal.paymentStatus}</div>
+                      </div>
+                      <div className="text-lg font-extrabold text-teal-900 font-mono">₹{grandVal.toFixed(2)}</div>
+                    </div>
+                  </div>
+                );
+              })()}
 
             </div>
           </div>

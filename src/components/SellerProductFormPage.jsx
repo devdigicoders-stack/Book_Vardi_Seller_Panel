@@ -29,6 +29,7 @@ import {
 import ImageUploadDropzone from './ImageUploadDropzone';
 import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
 import { fetchSchoolsApi, fetchCategoriesApi } from '../utils/api';
+import { CATEGORY_STRUCTURE, normalizeCategory, getSubCategories } from '../constants/categories';
 
 // Universal Category Form Configuration Schema Matrix
 export const CATEGORY_FORM_SCHEMA = {
@@ -133,7 +134,14 @@ export const CATEGORY_FORM_SCHEMA = {
 };
 
 export function getCategorySchema(categoryKey) {
-  const cat = String(categoryKey || '').toLowerCase().trim();
+  const normCat = normalizeCategory(categoryKey);
+  const cat = normCat.toLowerCase();
+  if (cat.includes('uniform')) return CATEGORY_FORM_SCHEMA['uniforms'] || CATEGORY_FORM_SCHEMA['uniform'];
+  if (cat.includes('book')) return CATEGORY_FORM_SCHEMA['ncert'] || CATEGORY_FORM_SCHEMA['books'];
+  if (cat.includes('notebook') || cat.includes('stationery') || cat.includes('stationary')) return CATEGORY_FORM_SCHEMA['notebooks'] || CATEGORY_FORM_SCHEMA['stationery'];
+  if (cat.includes('footwear') || cat.includes('shoe')) return CATEGORY_FORM_SCHEMA['shoes'];
+  if (cat.includes('bag') || cat.includes('kit')) return CATEGORY_FORM_SCHEMA['bags'];
+
   return CATEGORY_FORM_SCHEMA[cat] || {
     showMeterCalculation: true,
     showSizeChart: true,
@@ -229,8 +237,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     subtitle: '',
     price: '',
     originalPrice: '',
-    category: 'uniforms',
-    subCategory: '',
+    category: 'School Uniform',
+    subCategory: 'Ready to wear',
     schoolName: '',
     schoolCode: '',
     classGrade: '',
@@ -344,8 +352,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         subtitle: product.subtitle || '',
         price: product.price !== undefined ? String(product.price) : '',
         originalPrice: product.originalPrice || product.mrp ? String(product.originalPrice || product.mrp) : '',
-        category: product.category || 'uniforms',
-        subCategory: product.subCategory || '',
+        category: normalizeCategory(product.category),
+        subCategory: product.subCategory || (getSubCategories(product.category)[0] || 'Ready to wear'),
         schoolName: product.schoolName || product.school || '',
         schoolCode: product.schoolCode || '',
         classGrade: product.classGrade || product.className || '',
@@ -453,8 +461,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         subtitle: '',
         price: '',
         originalPrice: '',
-        category: 'uniforms',
-        subCategory: '',
+        category: 'School Uniform',
+        subCategory: 'Ready to wear',
         schoolName: '',
         schoolCode: '',
         classGrade: '',
@@ -1020,37 +1028,34 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     <select
                       value={formData.category}
                       onChange={e => {
-                        const selectedCat = e.target.value;
+                        const selectedCat = normalizeCategory(e.target.value);
                         const catObj = dbCategories.find(c => c.name?.toLowerCase() === selectedCat.toLowerCase() || c.slug === selectedCat);
+                        const subs = getSubCategories(selectedCat);
                         setFormData({
                           ...formData,
                           category: selectedCat,
+                          subCategory: subs[0] || '',
                           gst: catObj && catObj.gstPercentage !== undefined ? String(catObj.gstPercentage) : formData.gst
                         });
                       }}
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
                     >
-                      <option value="uniforms">Uniforms & Blazers</option>
-                      <option value="shoes">Shoes & Socks</option>
-                      <option value="stationery">Pens & Stationery</option>
-                      <option value="ncert">NCERT Books</option>
-                      <option value="practice_books">Practice & Olympiad Books</option>
-                      <option value="sports">Sports Wear</option>
-                      <option value="rain_winter">Winter & Rain Kits</option>
-                      {dbCategories.map(c => (
-                        <option key={c._id || c.name} value={c.name}>{c.name}</option>
+                      {CATEGORY_STRUCTURE.map(c => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Sub-Category</label>
-                    <input
-                      type="text"
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Sub-Category *</label>
+                    <select
                       value={formData.subCategory}
                       onChange={e => setFormData({ ...formData, subCategory: e.target.value })}
-                      placeholder="e.g. Shirts, Notebook Sets, Jackets"
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
-                    />
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                    >
+                      {getSubCategories(formData.category).map(sub => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
