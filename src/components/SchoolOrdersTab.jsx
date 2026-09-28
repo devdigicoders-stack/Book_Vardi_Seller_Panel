@@ -32,6 +32,7 @@ export default function SchoolOrdersTab() {
 
   // Preview Expanded Detail Modal State
   const [previewOrder, setPreviewOrder] = useState(null);
+  const [initialPreviewTab, setInitialPreviewTab] = useState('specs');
 
   // Quotation Submission Modal State
   const [quotationModalOrder, setQuotationModalOrder] = useState(null);
@@ -235,14 +236,18 @@ export default function SchoolOrdersTab() {
           </div>
         ) : (
           filteredOrders.map((req) => {
+            const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
+            const assignedSellerId = req.sellerId ? (typeof req.sellerId === 'object' ? (req.sellerId._id || req.sellerId.id) : req.sellerId) : '';
+
+            const isAssignedToMe = (req.status === 'assigned' || req.status === 'quote_accepted' || req.status === 'Accepted') && assignedSellerId && String(assignedSellerId) === currentSellerId;
+            const isAcceptedOther = (req.status === 'quote_accepted' || req.acceptedQuoteId) && assignedSellerId && String(assignedSellerId) !== currentSellerId;
+
             const hasSellerQuote = Array.isArray(req.quotations) && req.quotations.some(
-              q => String(q.sellerId) === String(sellerUser?.id || sellerUser?._id)
+              q => String(q.sellerId) === currentSellerId
             );
             const myQuote = hasSellerQuote ? req.quotations.find(
-              q => String(q.sellerId) === String(sellerUser?.id || sellerUser?._id)
+              q => String(q.sellerId) === currentSellerId
             ) : null;
-
-            const isAssignedToMe = req.status === 'assigned' || req.status === 'quote_accepted' || req.status === 'Accepted';
 
             return (
               <div key={req.id || req._id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs hover:border-teal-200 transition-all space-y-4">
@@ -285,12 +290,15 @@ export default function SchoolOrdersTab() {
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
                       isAssignedToMe
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : isAcceptedOther
+                        ? 'bg-amber-50 text-amber-900 border-amber-300'
                         : hasSellerQuote
                         ? 'bg-purple-50 text-purple-800 border-purple-200'
-                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-teal-50 text-teal-800 border-teal-200'
                     }`}>
-                      {isAssignedToMe ? 'Order Assigned to You' :
-                       hasSellerQuote ? 'Your Quote Submitted' : 'RFQ Open for Quotations'}
+                      {isAssignedToMe ? '🎉 Order Received (Quotation Accepted by Customer)' :
+                       isAcceptedOther ? 'ℹ️ User accepted quotation from another seller' :
+                       hasSellerQuote ? 'Your Pitch Submitted' : 'RFQ Open for Quotations'}
                     </span>
                   </div>
                 </div>
@@ -326,15 +334,27 @@ export default function SchoolOrdersTab() {
 
                 {/* Seller Quote Banner if already submitted */}
                 {myQuote && (
-                  <div className="bg-purple-50/80 border border-purple-200 p-3 rounded-xl flex items-center justify-between text-xs">
+                  <div className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
+                    isAssignedToMe
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
+                      : isAcceptedOther
+                      ? 'bg-amber-50 border-amber-200 text-amber-900'
+                      : 'bg-purple-50/80 border-purple-200'
+                  }`}>
                     <div>
-                      <span className="font-bold text-purple-900">Your Submitted Quotation:</span>
-                      <span className="font-extrabold text-purple-950 text-sm ml-2">₹{Number(myQuote.quoteAmount).toLocaleString()}</span>
+                      <span className="font-bold">Your Proposal Pitch:</span>
+                      <span className="font-extrabold text-sm ml-2">₹{Number(myQuote.quoteAmount).toLocaleString()}</span>
                       <span className="text-gray-500 text-[11px] ml-2">({myQuote.estimatedDeliveryDays} days delivery)</span>
                     </div>
 
-                    <span className="text-[11px] font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full">
-                      Status: {myQuote.status === 'approved' ? 'Accepted by Admin' : 'Under Admin Review'}
+                    <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                      isAssignedToMe ? 'bg-emerald-600 text-white' :
+                      isAcceptedOther ? 'bg-amber-200 text-amber-900' :
+                      'bg-purple-100 text-purple-700'
+                    }`}>
+                      {isAssignedToMe ? '🎉 Customer Accepted Your Pitch!' :
+                       isAcceptedOther ? 'Customer Accepted Other Seller' :
+                       'Pitch Under Review'}
                     </span>
                   </div>
                 )}
@@ -350,7 +370,10 @@ export default function SchoolOrdersTab() {
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setPreviewOrder(req)}
+                      onClick={() => {
+                        setPreviewOrder(req);
+                        setInitialPreviewTab('specs');
+                      }}
                       className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-purple-200"
                     >
                       <Eye size={14} />
@@ -369,11 +392,14 @@ export default function SchoolOrdersTab() {
 
                     {/* Submit / Negotiate Quote Button */}
                     <button
-                      onClick={() => handleOpenQuotationModal(req)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                      onClick={() => {
+                        setPreviewOrder(req);
+                        setInitialPreviewTab('submit_quote');
+                      }}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl transition-colors cursor-pointer border border-emerald-300 shadow-2xs"
                     >
                       <Send size={14} />
-                      <span>{hasSellerQuote ? 'Update Your Quotation' : 'Submit Counter Quotation'}</span>
+                      <span>{hasSellerQuote ? 'Update Quotation Pitch' : 'Pitch Updated Quotation'}</span>
                     </button>
                   </div>
                 </div>
@@ -592,6 +618,7 @@ export default function SchoolOrdersTab() {
         onClose={() => setPreviewOrder(null)}
         userRole="seller"
         sellerUser={sellerUser}
+        initialTab={initialPreviewTab}
         onSubmitQuote={(orderId, payload) => {
           submitSchoolQuote(orderId, payload);
           setPreviewOrder(null);

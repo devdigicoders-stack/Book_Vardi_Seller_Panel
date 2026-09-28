@@ -27,7 +27,7 @@ export default function ImageUploadDropzone({
     });
 
     Promise.all(readPromises).then(newImages => {
-      const combined = [...images, ...newImages].slice(0, maxImages);
+      const combined = Array.from(new Set([...images, ...newImages].filter(Boolean))).slice(0, maxImages);
       onChange(combined);
     });
   };
@@ -54,7 +54,7 @@ export default function ImageUploadDropzone({
   const handleAddUrl = (e) => {
     e.preventDefault();
     if (!urlInput.trim()) return;
-    const combined = [...images, urlInput.trim()].slice(0, maxImages);
+    const combined = Array.from(new Set([...images, urlInput.trim()].filter(Boolean))).slice(0, maxImages);
     onChange(combined);
     setUrlInput('');
     setShowUrlInput(false);

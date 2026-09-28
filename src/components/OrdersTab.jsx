@@ -26,7 +26,8 @@ import {
   MessageSquare,
   Key,
   Check,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import TaxInvoiceModal from './TaxInvoiceModal';
@@ -48,11 +49,22 @@ const STATUS_CONFIG = {
   Packed: { bg: 'bg-indigo-50', text: 'text-indigo-800', border: 'border-indigo-200', icon: Package },
   Shipped: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200', icon: Truck },
   Delivered: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', icon: CheckCircle },
-  Cancelled: { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', icon: XCircle }
+  Cancelled: { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', icon: XCircle },
+  'Return Requested': { bg: 'bg-amber-100', text: 'text-amber-950', border: 'border-amber-300', icon: RefreshCw },
+  'Exchange Requested': { bg: 'bg-purple-100', text: 'text-purple-950', border: 'border-purple-300', icon: RefreshCw },
+  'Return Approved': { bg: 'bg-teal-50', text: 'text-teal-900', border: 'border-teal-200', icon: CheckCircle },
+  'Exchange Approved': { bg: 'bg-teal-50', text: 'text-teal-900', border: 'border-teal-200', icon: CheckCircle },
+  'Return Rejected': { bg: 'bg-rose-100', text: 'text-rose-950', border: 'border-rose-300', icon: XCircle },
+  'Exchange Rejected': { bg: 'bg-rose-100', text: 'text-rose-950', border: 'border-rose-300', icon: XCircle },
+  'Pickup Scheduled': { bg: 'bg-blue-50', text: 'text-blue-900', border: 'border-blue-200', icon: Truck },
+  'Product Received': { bg: 'bg-indigo-50', text: 'text-indigo-900', border: 'border-indigo-200', icon: Package },
+  Refunded: { bg: 'bg-emerald-100', text: 'text-emerald-950', border: 'border-emerald-300', icon: CheckCircle },
+  'Exchange Dispatched': { bg: 'bg-purple-100', text: 'text-purple-950', border: 'border-purple-300', icon: Truck },
+  Exchanged: { bg: 'bg-emerald-100', text: 'text-emerald-950', border: 'border-emerald-300', icon: CheckCircle }
 };
 
 export default function OrdersTab() {
-  const { orders, products = [], updateOrderStatus, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
+  const { orders, products = [], updateOrderStatus, updateReturnExchangeStatus, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOrderModal, setActiveOrderModal] = useState(null);
@@ -83,7 +95,11 @@ export default function OrdersTab() {
       setModalStatusInput(activeOrderModal.status || 'Pending');
       setModalCourierInput(activeOrderModal.courierName || 'Delhivery');
       setModalTrackingInput(activeOrderModal.trackingNumber || '');
-      setDeliveryModeInput(activeOrderModal.deliveryType || 'third_party');
+      const isSelf = activeOrderModal.deliveryMode === 'self_delivery' ||
+        activeOrderModal.deliveryType === 'self_delivery' ||
+        activeOrderModal.deliveryType === 'self' ||
+        Boolean(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken);
+      setDeliveryModeInput(isSelf ? 'self_delivery' : (activeOrderModal.deliveryMode || activeOrderModal.deliveryType || 'third_party'));
       setModalDriverName(activeOrderModal.selfDeliveryDetails?.deliveryPersonName || '');
       setModalDriverPhone(activeOrderModal.selfDeliveryDetails?.deliveryPersonPhone || '');
       setModalVehicleNumber(activeOrderModal.selfDeliveryDetails?.vehicleNumber || '');
@@ -106,9 +122,24 @@ export default function OrdersTab() {
     shippingAddress: ''
   });
 
+  const isReturnExchangeOrder = (order) => {
+    if (!order) return false;
+    if (order.returnRequest && (order.returnRequest.type || order.returnRequest.status)) return true;
+    const s = String(order.status || order.rawStatus || '').toLowerCase();
+    return s.includes('return') || s.includes('exchange') || s.includes('refund') || [
+      'return_requested', 'exchange_requested', 'return_approved', 'exchange_approved',
+      'return_rejected', 'exchange_rejected', 'pickup_scheduled', 'product_received',
+      'refund_completed', 'exchanged', 'exchange_dispatched'
+    ].includes(s);
+  };
+
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      const matchesStatus = selectedStatus === 'All' || order.status === selectedStatus;
+      const matchesStatus = selectedStatus === 'All' 
+        ? true 
+        : selectedStatus === 'Returns & Exchanges'
+        ? isReturnExchangeOrder(order)
+        : order.status === selectedStatus;
       const query = searchQuery.toLowerCase();
       const matchesSearch = 
         order.id?.toLowerCase().includes(query) ||
@@ -181,10 +212,31 @@ export default function OrdersTab() {
       const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
       const trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
 
+      const sellerPayload = {
+        sellerId: sellerUser?.id || sellerUser?._id || activeOrderModal.sellerDetails?.sellerId,
+        storeName: sellerUser?.storeName || sellerUser?.tradeName || sellerUser?.name || activeOrderModal.sellerDetails?.storeName || 'Partner Merchant',
+        sellerName: sellerUser?.name || sellerUser?.ownerFullName || sellerUser?.storeName || activeOrderModal.sellerDetails?.sellerName || 'Partner Merchant',
+        phone: sellerUser?.phone || sellerUser?.sellerPhone || activeOrderModal.sellerDetails?.phone || '',
+        email: sellerUser?.email || sellerUser?.sellerEmail || activeOrderModal.sellerDetails?.email || '',
+        address: sellerUser?.address || sellerUser?.registeredAddress || activeOrderModal.sellerDetails?.address || '',
+        city: sellerUser?.city || activeOrderModal.sellerDetails?.city || ''
+      };
+
+      const carrierUrl = deliveryModeInput === 'third_party' && modalTrackingInput.trim() ? (
+        modalCourierInput.toLowerCase().includes('delhivery') ? `https://www.delhivery.com/track/package/${modalTrackingInput.trim()}` :
+        modalCourierInput.toLowerCase().includes('bluedart') ? `https://www.bluedart.com/tracking?awb=${modalTrackingInput.trim()}` :
+        modalCourierInput.toLowerCase().includes('dtdc') ? `https://www.dtdc.in/tracking/shipment-tracking.asp?awb=${modalTrackingInput.trim()}` :
+        modalCourierInput.toLowerCase().includes('ekart') ? `https://ekartlogistics.com/shipmenttrack/${modalTrackingInput.trim()}` :
+        `https://track.shiprocket.in/tracking/${modalTrackingInput.trim()}`
+      ) : '';
+
       const details = {
         courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',
-        trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput : '',
+        trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput.trim() : tokenVal,
+        trackingUrl: deliveryModeInput === 'self_delivery' ? trackingLink : carrierUrl,
+        deliveryMode: deliveryModeInput,
         deliveryType: deliveryModeInput,
+        sellerDetails: sellerPayload,
         selfDeliveryDetails: deliveryModeInput === 'self_delivery'
           ? {
               deliveryPersonName: modalDriverName.trim(),
@@ -202,9 +254,12 @@ export default function OrdersTab() {
       setActiveOrderModal(prev => prev ? {
         ...prev,
         status: modalStatusInput,
+        deliveryMode: deliveryModeInput,
         deliveryType: deliveryModeInput,
         courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',
-        trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput : '',
+        trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput.trim() : tokenVal,
+        trackingUrl: deliveryModeInput === 'self_delivery' ? trackingLink : carrierUrl,
+        sellerDetails: sellerPayload,
         selfDeliveryDetails: serverSelfDetails
       } : null);
 
@@ -329,9 +384,13 @@ export default function OrdersTab() {
       </div>
 
       {/* KPI Status Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {['All', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'].map((st) => {
-          const count = st === 'All' ? orders.length : orders.filter(o => o.status === st).length;
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+        {['All', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returns & Exchanges', 'Cancelled'].map((st) => {
+          const count = st === 'All' 
+            ? orders.length 
+            : st === 'Returns & Exchanges'
+            ? orders.filter(o => isReturnExchangeOrder(o)).length
+            : orders.filter(o => o.status === st).length;
           const isSelected = selectedStatus === st;
           return (
             <button
@@ -343,7 +402,7 @@ export default function OrdersTab() {
                   : 'bg-white text-gray-700 border-gray-100 hover:border-gray-200'
               }`}
             >
-              <div className="text-[11px] font-medium opacity-80">{st} Orders</div>
+              <div className="text-[11px] font-medium opacity-80">{st}</div>
               <div className="text-xl font-extrabold mt-1">{count}</div>
             </button>
           );
@@ -447,7 +506,18 @@ export default function OrdersTab() {
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-gray-900 font-mono">{o.id}</div>
                         <div className="text-[11px] text-gray-500 mt-0.5">{o.date}</div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">{o.paymentMethod}</div>
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          <span className="text-[10px] text-gray-500">{o.paymentMethod}</span>
+                          {(o.deliveryMode === 'self_delivery' || o.deliveryType === 'self_delivery' || o.selfDeliveryDetails?.deliveryPartnerToken) ? (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800">
+                              🛵 Self-Delivery
+                            </span>
+                          ) : o.courierName ? (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
+                              🚚 {o.courierName}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
 
                       {/* Customer */}
@@ -625,6 +695,135 @@ export default function OrdersTab() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Customer Return & Exchange Request Card */}
+              {(activeOrderModal.returnRequest?.type || isReturnExchangeOrder(activeOrderModal)) && (
+                <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-950 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
+                    <span className="font-extrabold text-xs uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                      <RefreshCw size={15} className="text-amber-700" />
+                      {activeOrderModal.returnRequest?.type === 'exchange' || activeOrderModal.status?.includes('Exchange')
+                        ? '🔄 Product Exchange Request'
+                        : '📦 Product Return & Refund Request'}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-950 border border-amber-300">
+                      Status: {activeOrderModal.returnRequest?.status || activeOrderModal.status}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
+                      <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.type || 'Return/Exchange'}</span></p>
+                      <p><strong>Reason:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest?.reason || 'Customer requested return'}</span></p>
+                      {activeOrderModal.returnRequest?.comment && (
+                        <p><strong>Comments:</strong> <span className="text-gray-800 italic">"{activeOrderModal.returnRequest.comment}"</span></p>
+                      )}
+                      {activeOrderModal.returnRequest?.exchangeSize && (
+                        <p><strong>Requested Size:</strong> <span className="font-extrabold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">{activeOrderModal.returnRequest.exchangeSize}</span></p>
+                      )}
+                      {activeOrderModal.returnRequest?.exchangeColor && (
+                        <p><strong>Requested Color:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest.exchangeColor}</span></p>
+                      )}
+                    </div>
+
+                    <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
+                      <p className="font-bold text-gray-900 flex items-center gap-1">
+                        <CreditCard size={13} className="text-teal-700" /> Refund Account Details:
+                      </p>
+                      {activeOrderModal.returnRequest?.refundDetails?.upiId || activeOrderModal.refundDetails?.upiId ? (
+                        <p><strong>UPI ID:</strong> <span className="font-mono font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded">{activeOrderModal.returnRequest?.refundDetails?.upiId || activeOrderModal.refundDetails?.upiId}</span></p>
+                      ) : activeOrderModal.returnRequest?.refundDetails?.bankName || activeOrderModal.refundDetails?.bankName ? (
+                        <>
+                          <p><strong>Bank:</strong> {activeOrderModal.returnRequest?.refundDetails?.bankName || activeOrderModal.refundDetails?.bankName}</p>
+                          <p><strong>A/C:</strong> {activeOrderModal.returnRequest?.refundDetails?.accountNumber || activeOrderModal.refundDetails?.accountNumber}</p>
+                          <p><strong>IFSC:</strong> {activeOrderModal.returnRequest?.refundDetails?.ifscCode || activeOrderModal.refundDetails?.ifscCode}</p>
+                        </>
+                      ) : (
+                        <p className="text-gray-500 italic">Original Payment Method (UPI/Online Auto-Refund)</p>
+                      )}
+                      {activeOrderModal.returnRequest?.refundTxnId && (
+                        <p className="text-emerald-800 font-bold"><strong>Refund TXN ID:</strong> {activeOrderModal.returnRequest.refundTxnId}</p>
+                      )}
+                      {activeOrderModal.returnRequest?.rejectionReason && (
+                        <p className="text-rose-700 font-bold"><strong>Rejection Reason:</strong> {activeOrderModal.returnRequest.rejectionReason}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Return / Exchange Action Controls */}
+                  <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold text-amber-900 mr-1">Manage Request:</span>
+                    
+                    <button
+                      type="button"
+                      onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'approved', { notes: 'Approved by merchant' })}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    >
+                      ✓ Approve {activeOrderModal.returnRequest?.type === 'exchange' ? 'Exchange' : 'Return'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const reason = prompt('Enter rejection reason for customer:');
+                        if (reason !== null) {
+                          handleReturnExchangeAction(activeOrderModal.id, 'rejected', { rejectionReason: reason || 'Criteria not met' });
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    >
+                      ✕ Reject Request
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'pickup_scheduled', { pickupDate: new Date() })}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    >
+                      📦 Schedule Pickup
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'product_received', { notes: 'Item received back & stock auto-restored' })}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                      title="Mark item received & automatically restore inventory stock"
+                    >
+                      📥 Mark Product Received (Auto-Restores Stock)
+                    </button>
+
+                    {(activeOrderModal.returnRequest?.type === 'return' || !activeOrderModal.returnRequest?.type) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const txnId = prompt('Enter Refund Reference/Transaction ID:');
+                          if (txnId !== null) {
+                            handleReturnExchangeAction(activeOrderModal.id, 'refund_completed', { refundTxnId: txnId || `REF-${Date.now()}` });
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                      >
+                        💳 Process Refund
+                      </button>
+                    )}
+
+                    {activeOrderModal.returnRequest?.type === 'exchange' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const awb = prompt('Enter Replacement Courier Tracking AWB:');
+                          if (awb !== null) {
+                            handleReturnExchangeAction(activeOrderModal.id, 'exchange_dispatched', { exchangeAwb: awb || 'AWB-EXCHANGE', exchangeCourier: 'Delhivery' });
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                      >
+                        🚀 Dispatch Replacement Unit
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 

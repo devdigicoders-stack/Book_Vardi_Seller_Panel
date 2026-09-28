@@ -270,6 +270,22 @@ export const updateOrderStatusApi = async (orderId, status, details = {}) => {
   }
 };
 
+export const updateReturnExchangeStatusApi = async (orderId, payload) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/return-exchange/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
 export const downloadSellerInvoiceApi = async (orderId) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/invoice`, {
