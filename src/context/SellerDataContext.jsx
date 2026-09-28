@@ -12,6 +12,7 @@ import {
   updateStockApi,
   fetchSellerOrdersApi,
   updateOrderStatusApi,
+  updateReturnExchangeStatusApi,
   fetchSchoolOrdersApi,
   createSchoolOrderApi,
   updateSchoolOrderApi,
@@ -46,6 +47,18 @@ export const APPROVED_SELLER_ROLES = [
 const SellerDataContext = createContext();
 
 export const useSellerData = () => useContext(SellerDataContext) || {};
+
+const parseBool = (val, defaultVal = true) => {
+  if (val === undefined || val === null || val === '') return defaultVal;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    if (s === 'false' || s === '0' || s === 'off' || s === 'no') return false;
+    if (s === 'true' || s === '1' || s === 'on' || s === 'yes') return true;
+  }
+  if (typeof val === 'number') return val !== 0;
+  return Boolean(val);
+};
 
 // Helper to resolve active seller profile from active user session keys first
 // Helper to resolve active seller profile from active user session keys first
@@ -975,25 +988,41 @@ export const SellerDataProvider = ({ children }) => {
     }
 
     const createdProduct = {
+      ...newProduct,
       id: newProduct.id ? Number(newProduct.id) : Date.now(),
-      name: newProduct.name.trim(),
+      name: (newProduct.name || newProduct.title || '').trim(),
       subtitle: newProduct.subtitle || '',
       category: newProduct.category || 'uniforms',
+      subCategory: newProduct.subCategory || '',
+      schoolName: newProduct.schoolName || '',
+      schoolCode: newProduct.schoolCode || '',
+      classGrade: newProduct.classGrade || '',
       price: price,
       originalPrice: Number(newProduct.originalPrice) || Math.round(price * 1.25),
+      mrp: Number(newProduct.mrp || newProduct.originalPrice) || Math.round(price * 1.25),
       discountBadge: newProduct.discountBadge || 'NEW',
       rating: newProduct.rating !== undefined ? Number(newProduct.rating) : 0,
       reviewsCount: Number(newProduct.reviewsCount) || 0,
-      stock: newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : 50,
-      stockQuantity: newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : 50,
-      inStock: newProduct.inStock !== undefined ? Boolean(newProduct.inStock) : ((newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : 50) > 0),
-      image: newProduct.image || '',
+      stock: newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : (newProduct.stock !== undefined ? Number(newProduct.stock) : 50),
+      stockQuantity: newProduct.stockQuantity !== undefined ? Number(newProduct.stockQuantity) : (newProduct.stock !== undefined ? Number(newProduct.stock) : 50),
+      inStock: newProduct.inStock !== undefined ? Boolean(newProduct.inStock) : ((newProduct.stockQuantity ?? newProduct.stock ?? 50) > 0),
+      image: newProduct.image || (Array.isArray(newProduct.images) ? newProduct.images[0] : '') || '',
       images: Array.isArray(newProduct.images) ? newProduct.images : (newProduct.image ? [newProduct.image] : []),
-      sizes: Array.isArray(newProduct.sizes) ? newProduct.sizes : (newProduct.sizes ? String(newProduct.sizes).split(',').map(s => s.trim()) : ['S', 'M', 'L', 'XL']),
-      colors: Array.isArray(newProduct.colors) ? newProduct.colors : (newProduct.colors ? String(newProduct.colors).split(',').map(c => c.trim()) : ['Navy Blue', 'White']),
+      sizes: Array.isArray(newProduct.sizes) ? newProduct.sizes : [],
+      sizeVariants: Array.isArray(newProduct.sizeVariants) ? newProduct.sizeVariants : [],
+      colors: Array.isArray(newProduct.colors) ? newProduct.colors : [],
       gender: newProduct.gender || 'Unisex',
-      description: newProduct.description || 'Premium quality school uniform & educational product.',
+      description: newProduct.description || '',
       sku: newProduct.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+      gst: newProduct.gst !== undefined ? Number(newProduct.gst) : 5,
+      gstPercentage: newProduct.gstPercentage !== undefined ? Number(newProduct.gstPercentage) : (newProduct.gst !== undefined ? Number(newProduct.gst) : 5),
+      isGstInclusive: parseBool(newProduct.isGstInclusive, true),
+      isReturnable: newProduct.isReturnable !== undefined ? Boolean(newProduct.isReturnable) : true,
+      isExchangeable: newProduct.isExchangeable !== undefined ? Boolean(newProduct.isExchangeable) : true,
+      returnWindowDays: Number(newProduct.returnWindowDays) || 7,
+      isMeterBased: Boolean(newProduct.isMeterBased),
+      minMeter: Number(newProduct.minMeter) || 0.5,
+      meterStep: Number(newProduct.meterStep) || 0.5,
       paymentMethodAllowed: newProduct.paymentMethodAllowed || 'Both',
       paymentMethodsAllowed: newProduct.paymentMethodsAllowed || (newProduct.paymentMethodAllowed === 'COD_Only' ? ['COD'] : newProduct.paymentMethodAllowed === 'Online_Only' ? ['Online'] : ['COD', 'Online']),
       approvalStatus: newProduct.approvalStatus || 'Pending',
@@ -1079,6 +1108,9 @@ export const SellerDataProvider = ({ children }) => {
             price: updates.price !== undefined ? Number(updates.price) : p.price,
             originalPrice: updates.originalPrice !== undefined ? Number(updates.originalPrice) : p.originalPrice,
             stockQuantity: updates.stockQuantity !== undefined ? Number(updates.stockQuantity) : (p.stockQuantity ?? 50),
+            isGstInclusive: updates.isGstInclusive !== undefined 
+              ? parseBool(updates.isGstInclusive, p.isGstInclusive ?? true) 
+              : (p.isGstInclusive ?? true),
             inStock: updates.inStock !== undefined 
               ? updates.inStock 
               : (updates.stockQuantity !== undefined ? Number(updates.stockQuantity) > 0 : p.inStock),
@@ -1209,6 +1241,52 @@ export const SellerDataProvider = ({ children }) => {
     updateStockApi(id, qty).catch(() => {});
   };
 
+  const updateVariantStock = (id, updatedSizeVariants) => {
+    checkPermission();
+    const strId = String(id);
+
+    if (Array.isArray(updatedSizeVariants)) {
+      const totalVariantStock = updatedSizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stockQuantity ?? v.stock ?? 0)), 0);
+
+      setProducts(prev => {
+        const updated = prev.map(p => {
+          if (String(p.id) === strId || String(p._id) === strId || p.id == id || p._id == id) {
+            return {
+              ...p,
+              sizeVariants: updatedSizeVariants,
+              stockQuantity: totalVariantStock,
+              stock: totalVariantStock,
+              inStock: totalVariantStock > 0
+            };
+          }
+          return p;
+        });
+
+        try {
+          localStorage.setItem('bv_seller_products', JSON.stringify(updated));
+          localStorage.setItem('admin_products', JSON.stringify(updated));
+          localStorage.setItem('bv_sync_products', JSON.stringify(updated));
+          window.dispatchEvent(new CustomEvent('bv_products_updated', { detail: updated }));
+        } catch (e) {}
+
+        return updated;
+      });
+
+      updateSellerProductApi(id, {
+        sizeVariants: updatedSizeVariants,
+        stockQuantity: totalVariantStock,
+        stock: totalVariantStock,
+        inStock: totalVariantStock > 0
+      }).catch(err => {
+        console.error('Failed to update variant stock on server backend:', err);
+      });
+
+      showToast('Variant stock updated successfully!');
+    } else {
+      updateProductStock(id, updatedSizeVariants);
+    }
+  };
+
   // Order Actions
   const addOrder = (order) => {
     checkPermission();
@@ -1256,6 +1334,28 @@ export const SellerDataProvider = ({ children }) => {
       return res;
     } catch (err) {
       showToast(`Order #${id} status updated locally.`);
+      return null;
+    }
+  };
+
+  const updateReturnExchangeStatus = async (id, payload) => {
+    checkPermission();
+    try {
+      const res = await updateReturnExchangeStatusApi(id, payload);
+      if (res && res.order) {
+        editOrder(id, {
+          ...res.order,
+          status: res.order.status || payload.status,
+          returnRequest: res.order.returnRequest
+        });
+      }
+      showToast(`Return/Exchange request updated successfully!`);
+      fetchSellerOrdersApi().then(orderList => {
+        if (Array.isArray(orderList)) setOrders(orderList);
+      }).catch(() => {});
+      return res;
+    } catch (err) {
+      showToast(`Failed to update Return/Exchange status.`);
       return null;
     }
   };
@@ -1695,10 +1795,12 @@ export const SellerDataProvider = ({ children }) => {
         deleteProduct,
         bulkAddOrUpdateProducts,
         updateProductStock,
+        updateVariantStock,
         // Order actions
         addOrder,
         editOrder,
         updateOrderStatus,
+        updateReturnExchangeStatus,
         deleteOrder,
         downloadSellerInvoice,
         // Promo actions

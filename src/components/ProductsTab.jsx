@@ -29,6 +29,7 @@ import { useSellerData } from '../context/SellerDataContext';
 import BulkUpdateModal from './BulkUpdateModal';
 import ImageUploadDropzone from './ImageUploadDropzone';
 import SellerProductFormPage from './SellerProductFormPage';
+import VariantStockModal from './VariantStockModal';
 import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
 
 const CATEGORIES = [
@@ -44,7 +45,7 @@ const CATEGORIES = [
 ];
 
 export default function ProductsTab() {
-  const { isLoadingProducts, products, addProduct, editProduct, toggleProductStatus, deleteProduct, isApproved } = useSellerData();
+  const { isLoadingProducts, products, addProduct, editProduct, toggleProductStatus, deleteProduct, updateVariantStock, isApproved } = useSellerData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all'); // all | in_stock | low_stock | out_of_stock
@@ -59,6 +60,7 @@ export default function ProductsTab() {
   const [editingProduct, setEditingProduct] = useState(null);
   const [deletingProductId, setDeletingProductId] = useState(null);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
+  const [variantStockModalProduct, setVariantStockModalProduct] = useState(null);
   const [detailActiveImg, setDetailActiveImg] = useState(0);
   const [previewImageModalUrl, setPreviewImageModalUrl] = useState(null);
   const [previewImageModalTitle, setPreviewImageModalTitle] = useState('');
@@ -473,16 +475,46 @@ export default function ProductsTab() {
                         </td>
 
                         {/* Stock Units */}
-                        <td className="py-3.5 px-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-gray-800">{qty}</span>
-                            <span className="text-[10px] text-gray-500">pcs</span>
-                          </div>
+                        <td className="py-3.5 px-3" onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            const pVars = parseSizeVariants(p);
+                            const hasVariantList = pVars && pVars.length > 0;
+
+                            return hasVariantList ? (
+                              <button
+                                type="button"
+                                onClick={() => setVariantStockModalProduct(p)}
+                                className="group/stock flex flex-col items-start gap-0.5 p-1.5 rounded-xl bg-teal-50/90 hover:bg-teal-100 border border-teal-200 transition-all cursor-pointer text-left shadow-2xs"
+                                title="Click to view & edit variant stocks"
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-extrabold text-teal-950 text-xs">{qty} pcs</span>
+                                  <span className="text-[9px] font-extrabold text-teal-800 bg-teal-200/80 px-1.5 py-0.2 rounded-md">
+                                    {pVars.length} Vars
+                                  </span>
+                                </div>
+                                <span className="text-[9px] text-teal-700 font-bold group-hover/stock:text-teal-900 flex items-center gap-0.5">
+                                  <Layers size={10} /> Edit Variant Stock
+                                </span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setVariantStockModalProduct(p)}
+                                className="flex items-center gap-1.5 hover:bg-teal-50 p-1.5 rounded-xl border border-transparent hover:border-teal-200 transition-all cursor-pointer"
+                                title="Click to adjust product stock"
+                              >
+                                <span className="font-extrabold text-gray-900 text-xs">{qty}</span>
+                                <span className="text-[10px] text-gray-500 font-medium">pcs</span>
+                                <Edit3 size={12} className="text-gray-400 hover:text-teal-700" />
+                              </button>
+                            );
+                          })()}
                           {isLow && (
-                            <span className="text-[10px] font-medium text-amber-700 block">Low stock</span>
+                            <span className="text-[10px] font-bold text-amber-700 block mt-0.5">Low stock</span>
                           )}
                           {isOut && (
-                            <span className="text-[10px] font-medium text-red-600 block">Out of stock</span>
+                            <span className="text-[10px] font-bold text-red-600 block mt-0.5">Out of stock</span>
                           )}
                         </td>
 
@@ -861,9 +893,17 @@ export default function ProductsTab() {
                         </span>
                       </div>
                       <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Return Policy</span>
-                        <span className={`font-extrabold text-xs ${selectedProductForDetail.isReturnable === false ? 'text-rose-600' : 'text-emerald-700'}`}>
-                          {selectedProductForDetail.isReturnable === false ? 'Non-Returnable' : `${selectedProductForDetail.returnWindowDays || 7}-Day Easy Returns`}
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Return & Exchange Policy</span>
+                        <span className="font-extrabold text-xs block">
+                          {selectedProductForDetail.isReturnable !== false && selectedProductForDetail.isExchangeable !== false && selectedProductForDetail.isRefundable !== false ? (
+                            <span className="text-emerald-700">✅ {selectedProductForDetail.returnWindowDays || 7}-Day Return & Exchange</span>
+                          ) : selectedProductForDetail.isReturnable !== false && selectedProductForDetail.isExchangeable === false ? (
+                            <span className="text-blue-700">🔄 {selectedProductForDetail.returnWindowDays || 7}-Day Return Only (Non-Exchangeable)</span>
+                          ) : selectedProductForDetail.isReturnable === false && (selectedProductForDetail.isExchangeable !== false || selectedProductForDetail.isRefundable !== false) ? (
+                            <span className="text-purple-700">🔄 {selectedProductForDetail.returnWindowDays || 7}-Day Exchange Only (No Return)</span>
+                          ) : (
+                            <span className="text-rose-600">⚠️ Non-Returnable & Non-Exchangeable</span>
+                          )}
                         </span>
                       </div>
                       <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
@@ -893,7 +933,13 @@ export default function ProductsTab() {
                               <Layers size={14} className="text-teal-700" />
                               <span>Product Variants Matrix & Detail Photos ({detailVariants.length})</span>
                             </span>
-                            <span className="text-[10px] font-bold text-gray-500">Click photo to view high-res</span>
+                            <button
+                              type="button"
+                              onClick={() => setVariantStockModalProduct(selectedProductForDetail)}
+                              className="px-2.5 py-1 bg-teal-800 hover:bg-teal-900 text-white text-[10px] font-extrabold rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <Edit3 size={11} /> Update Variant Stock
+                            </button>
                           </div>
 
                           {/* Variant Preview Image Layout in Row */}
@@ -1283,6 +1329,24 @@ export default function ProductsTab() {
           </div>
         </div>
       )}
+
+      {/* Variant Stock Modal */}
+      <VariantStockModal
+        product={variantStockModalProduct}
+        isOpen={Boolean(variantStockModalProduct)}
+        onClose={() => setVariantStockModalProduct(null)}
+        onSave={(productId, updatedData) => {
+          updateVariantStock(productId, updatedData);
+          if (selectedProductForDetail && (selectedProductForDetail.id === productId || selectedProductForDetail._id === productId)) {
+            if (Array.isArray(updatedData)) {
+              const total = updatedData.reduce((s, v) => s + Math.max(0, Number(v.stockQuantity ?? v.stock ?? 0)), 0);
+              setSelectedProductForDetail(prev => ({ ...prev, sizeVariants: updatedData, stockQuantity: total, stock: total, inStock: total > 0 }));
+            } else {
+              setSelectedProductForDetail(prev => ({ ...prev, stockQuantity: updatedData, stock: updatedData, inStock: updatedData > 0 }));
+            }
+          }
+        }}
+      />
 
     </div>
   );

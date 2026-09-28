@@ -33,6 +33,27 @@ export const resolveImageUrl = (url) => {
   return `${backendBase}${cleanPath}`;
 };
 
+export const dedupeImages = (imgList) => {
+  if (!Array.isArray(imgList)) {
+    if (typeof imgList === 'string' && imgList.trim()) return [imgList.trim()];
+    return [];
+  }
+  const seen = new Set();
+  const result = [];
+  imgList.forEach(img => {
+    if (!img) return;
+    const raw = typeof img === 'string' ? img.trim() : (img.url || img.src || img.dataUrl || '');
+    if (!raw) return;
+    const resolved = resolveImageUrl(raw);
+    const key = resolved || raw;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(raw);
+    }
+  });
+  return result;
+};
+
 export const parseSizeVariants = (product) => {
   if (!product) return [];
   let raw = product.sizeVariants ?? product.variants ?? product.size_variants ?? product.sizes;

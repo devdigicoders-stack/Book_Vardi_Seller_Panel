@@ -27,7 +27,7 @@ import {
   Layers3
 } from 'lucide-react';
 import ImageUploadDropzone from './ImageUploadDropzone';
-import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
+import { resolveImageUrl, parseSizeVariants, dedupeImages } from '../utils/mediaUrl';
 import { fetchSchoolsApi, fetchCategoriesApi } from '../utils/api';
 import { CATEGORY_STRUCTURE, normalizeCategory, getSubCategories } from '../constants/categories';
 
@@ -217,6 +217,26 @@ const CATEGORIES = [
   { id: 'stationery', label: 'Pens & Stationery' }
 ];
 
+export const GRADE_OPTIONS = [
+  'Nursery', 'LKG', 'UKG',
+  'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
+  'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
+  'Class 11', 'Class 12',
+  'Class 1-5', 'Class 6-10', 'Class 11-12', 'All Grades'
+];
+
+export function parseBool(val, defaultVal = true) {
+  if (val === undefined || val === null) return defaultVal;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    if (s === 'false' || s === '0') return false;
+    if (s === 'true' || s === '1') return true;
+  }
+  if (typeof val === 'number') return val !== 0;
+  return Boolean(val);
+}
+
 export default function SellerProductFormPage({ product, existingProducts = [], onSave, onBack }) {
   const isEdit = Boolean(product);
 
@@ -263,6 +283,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     minMeter: '0.5',
     meterStep: '0.5',
     isReturnable: true,
+    isExchangeable: true,
+    isRefundable: true,
     returnWindowDays: '7',
     enableSizeChart: false,
     sizeChart: {
@@ -278,6 +300,9 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
   // Dynamic Category Form Schema (Hides meter calculations/kg/size-charts for NCERT books & non-apparel)
   const categorySchema = getCategorySchema(formData.category);
+
+  // Multi-Select Grade State
+  const [selectedGrades, setSelectedGrades] = useState([]);
 
   // Variants & Measuring Scales
   const [sizeVariants, setSizeVariants] = useState([]);
@@ -343,9 +368,26 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (product) {
-      const prodImages = Array.isArray(product.images) && product.images.length > 0
+      const rawProdImages = Array.isArray(product.images) && product.images.length > 0
         ? product.images
         : (product.image ? [product.image] : []);
+      const prodImages = dedupeImages(rawProdImages);
+
+      const gradeStr = product.classGrade || product.className || '';
+      const initialGrades = typeof gradeStr === 'string'
+        ? gradeStr.split(',').map(s => s.trim()).filter(Boolean)
+        : (Array.isArray(gradeStr) ? gradeStr : []);
+      setSelectedGrades(initialGrades);
+
+      const parsedGst = product.gst !== undefined && product.gst !== null
+        ? String(product.gst)
+        : (product.gstPercentage !== undefined && product.gstPercentage !== null
+          ? String(product.gstPercentage)
+          : (product.gstPercent !== undefined && product.gstPercent !== null
+            ? String(product.gstPercent)
+            : (product.gstRate !== undefined && product.gstRate !== null
+              ? String(product.gstRate)
+              : '5')));
 
       setFormData({
         name: product.name || product.title || '',
@@ -363,8 +405,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         colors: Array.isArray(product.colors) ? product.colors.join(', ') : (product.colors || ''),
         material: product.material || '',
         brand: product.brand || '',
-        gst: product.gst !== undefined ? String(product.gst) : (product.gstPercentage !== undefined ? String(product.gstPercentage) : '5'),
-        isGstInclusive: product.isGstInclusive !== undefined ? Boolean(product.isGstInclusive) : true,
+        gst: parsedGst,
+        isGstInclusive: parseBool(product.isGstInclusive, true),
         tags: Array.isArray(product.tags) ? product.tags.join(', ') : (product.tags || ''),
         status: product.approvalStatus || product.status || 'Pending',
         discountBadge: product.discountBadge || product.badge || 'NEW',
@@ -374,10 +416,12 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         sku: product.sku || '',
         image: prodImages[0] || product.image || '',
         images: prodImages,
-        isMeterBased: Boolean(product.isMeterBased),
+        isMeterBased: parseBool(product.isMeterBased, false),
         minMeter: product.minMeter !== undefined ? String(product.minMeter) : '0.5',
         meterStep: product.meterStep !== undefined ? String(product.meterStep) : '0.5',
-        isReturnable: product.isReturnable !== undefined ? Boolean(product.isReturnable) : true,
+        isReturnable: parseBool(product.isReturnable, true),
+        isExchangeable: parseBool(product.isExchangeable ?? product.isRefundable ?? product.isReturnable, true),
+        isRefundable: parseBool(product.isRefundable ?? product.isExchangeable ?? product.isReturnable, true),
         returnWindowDays: product.returnWindowDays !== undefined ? String(product.returnWindowDays) : '7',
         enableSizeChart: Boolean(product.sizeChart && product.sizeChart.rows && product.sizeChart.rows.length > 0),
         sizeChart: (product.sizeChart && product.sizeChart.rows && product.sizeChart.rows.length > 0) ? product.sizeChart : {
@@ -486,6 +530,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         minMeter: '0.5',
         meterStep: '0.5',
         isReturnable: true,
+        isExchangeable: true,
+        isRefundable: true,
         returnWindowDays: '7',
         enableSizeChart: false,
         sizeChart: {
@@ -498,6 +544,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           rows: []
         }
       });
+      setSelectedGrades([]);
       setSizeVariants([]);
       setKitData({
         title: '',
@@ -684,7 +731,14 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         const minVariantPrice = validPrices.length > 0 ? Math.min(...validPrices) : Number(formData.price);
         const totalVariantStock = sizeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
 
+        const gstNum = Number(formData.gst);
+        const finalGst = !isNaN(gstNum) ? gstNum : 5;
+
         const primaryImage = formData.images[0] || formData.image || '';
+        const rawImages = (formData.images && formData.images.length > 0) ? formData.images : (primaryImage ? [primaryImage] : []);
+        const finalImages = dedupeImages(rawImages);
+
+        const formattedClassGrade = selectedGrades.length > 0 ? selectedGrades.join(', ') : (formData.classGrade || '');
 
         const paymentAllowedStr = formData.paymentMethodAllowed || 'Both';
         const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
@@ -708,15 +762,15 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           bundleType: 'single',
           schoolName: formData.schoolName || '',
           schoolCode: formData.schoolCode || '',
-          classGrade: formData.classGrade || '',
+          classGrade: formattedClassGrade,
           ageGroup: formData.ageGroup || '',
           ages: parsedAges,
           colors: parsedColors,
           material: formData.material || '',
           brand: formData.brand || '',
-          gst: Number(formData.gst) || 5,
-          gstPercentage: Number(formData.gst) || 5,
-          isGstInclusive: Boolean(formData.isGstInclusive),
+          gst: finalGst,
+          gstPercentage: finalGst,
+          isGstInclusive: parseBool(formData.isGstInclusive, true),
           tags: parsedTags,
           status: (sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0)) > 0 ? 'available' : 'out-of-stock',
           approvalStatus: 'Pending',
@@ -725,15 +779,17 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           mrp: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
           stockQuantity: sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
           stock: sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
-          image: primaryImage,
-          images: formData.images.length > 0 ? formData.images : [primaryImage],
+          image: finalImages[0] || primaryImage || '',
+          images: finalImages,
           paymentMethodAllowed: paymentAllowedStr,
           paymentMethodsAllowed: paymentAllowedArr,
-          isMeterBased: Boolean(formData.isMeterBased),
+          isMeterBased: parseBool(formData.isMeterBased, false),
           minMeter: Number(formData.minMeter) || 0.5,
           meterStep: Number(formData.meterStep) || 0.5,
           unit: formData.isMeterBased ? 'meter' : (formData.unit || 'piece'),
-          isReturnable: Boolean(formData.isReturnable),
+          isReturnable: parseBool(formData.isReturnable, true),
+          isExchangeable: parseBool(formData.isExchangeable ?? formData.isReturnable, true),
+          isRefundable: parseBool(formData.isRefundable ?? formData.isExchangeable ?? formData.isReturnable, true),
           returnWindowDays: Number(formData.returnWindowDays) || 7,
           sizeChart: formData.enableSizeChart ? formData.sizeChart : { rows: [] },
           sizes: sizeVariants.map(v => v.size || v.measureValue),
@@ -1029,14 +1085,12 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       value={formData.category}
                       onChange={e => {
                         const selectedCat = normalizeCategory(e.target.value);
-                        const catObj = dbCategories.find(c => c.name?.toLowerCase() === selectedCat.toLowerCase() || c.slug === selectedCat);
                         const subs = getSubCategories(selectedCat);
-                        setFormData({
-                          ...formData,
+                        setFormData(prev => ({
+                          ...prev,
                           category: selectedCat,
-                          subCategory: subs[0] || '',
-                          gst: catObj && catObj.gstPercentage !== undefined ? String(catObj.gstPercentage) : formData.gst
-                        });
+                          subCategory: subs[0] || ''
+                        }));
                       }}
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
                     >
@@ -1173,8 +1227,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   </div>
                 </div>
 
-                {/* School Name (Admin Dropdown), School Code, Grade / Class */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* School Name & School Code */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Target School Name *</label>
                     <select
@@ -1205,34 +1259,81 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none uppercase font-mono"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Grade / Class *</label>
-                    <select
-                      value={formData.classGrade}
-                      onChange={e => setFormData({ ...formData, classGrade: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                    >
-                      <option value="">-- All Grades / General --</option>
-                      <option value="Nursery">Nursery</option>
-                      <option value="LKG">LKG</option>
-                      <option value="UKG">UKG</option>
-                      <option value="Class 1">Class 1</option>
-                      <option value="Class 2">Class 2</option>
-                      <option value="Class 3">Class 3</option>
-                      <option value="Class 4">Class 4</option>
-                      <option value="Class 5">Class 5</option>
-                      <option value="Class 6">Class 6</option>
-                      <option value="Class 7">Class 7</option>
-                      <option value="Class 8">Class 8</option>
-                      <option value="Class 9">Class 9</option>
-                      <option value="Class 10">Class 10</option>
-                      <option value="Class 11">Class 11</option>
-                      <option value="Class 12">Class 12</option>
-                      <option value="Class 1-5">Class 1 to 5</option>
-                      <option value="Class 6-10">Class 6 to 10</option>
-                      <option value="Class 11-12">Class 11 to 12</option>
-                    </select>
+                </div>
+
+                {/* Multi-Select Grade / Class Selection */}
+                <div className="space-y-2 bg-teal-50/40 p-4 rounded-2xl border border-teal-200/70">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
+                        Grade / Class Selection (Select Multiple if Applicable) *
+                      </label>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Click pills to select one or multiple grades for this product item.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGrades(['Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5'])}
+                        className="px-2.5 py-1 bg-white hover:bg-teal-100 text-teal-800 rounded-lg border border-teal-300 text-[11px] cursor-pointer shadow-2xs"
+                      >
+                        + Primary (1-5)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGrades(['Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10'])}
+                        className="px-2.5 py-1 bg-white hover:bg-teal-100 text-teal-800 rounded-lg border border-teal-300 text-[11px] cursor-pointer shadow-2xs"
+                      >
+                        + Secondary (6-10)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGrades([])}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 text-[11px] cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {GRADE_OPTIONS.map(grade => {
+                      const isSelected = selectedGrades.includes(grade);
+                      return (
+                        <button
+                          key={grade}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedGrades(prev => prev.filter(g => g !== grade));
+                            } else {
+                              setSelectedGrades(prev => [...prev, grade]);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                            isSelected
+                              ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                              : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                          }`}
+                        >
+                          {isSelected && <span className="mr-1">✓</span>}
+                          {grade}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedGrades.length > 0 ? (
+                    <div className="text-[11px] text-teal-950 font-bold bg-white p-2 rounded-xl border border-teal-200 mt-2 flex items-center justify-between">
+                      <span>Selected Grades ({selectedGrades.length}): <strong>{selectedGrades.join(', ')}</strong></span>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-amber-800 font-semibold bg-amber-50 p-2 rounded-xl border border-amber-200 mt-2">
+                      ℹ️ No specific grade selected. Product will be marked as "All Grades / General".
+                    </div>
+                  )}
                 </div>
 
                 {/* Age Group, Colors, Tags & Gender */}
@@ -1373,20 +1474,31 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 )}
 
                 {/* 2. Return & Exchange Policy Window */}
-                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-gray-900">
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-200">
+                    <label className="flex items-center gap-2.5 cursor-pointer font-bold text-xs text-gray-900 select-none">
                       <input
                         type="checkbox"
                         checked={formData.isReturnable}
                         onChange={e => setFormData({ ...formData, isReturnable: e.target.checked })}
                         className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal cursor-pointer"
                       />
-                      <span>Product is Returnable / Exchangeable</span>
+                      <span>Item is Returnable (Physical Return Supported)</span>
+                    </label>
+
+                    <label className="flex items-center gap-2.5 cursor-pointer font-bold text-xs text-gray-900 select-none">
+                      <input
+                        type="checkbox"
+                        checked={formData.isExchangeable}
+                        onChange={e => setFormData({ ...formData, isExchangeable: e.target.checked, isRefundable: e.target.checked })}
+                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <span>Item is Exchangeable (Size & Replacement Supported)</span>
                     </label>
                   </div>
-                  {formData.isReturnable ? (
-                    <div className="pt-2 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center gap-3">
+
+                  {(formData.isReturnable || formData.isExchangeable) && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                       <div>
                         <label className="block text-[11px] font-bold text-gray-700 mb-1">Return / Exchange Window (Days) *</label>
                         <input
@@ -1398,14 +1510,31 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                         />
                       </div>
                       <span className="text-[11px] text-gray-500">
-                        Specify return/exchange days for customer notice (e.g. 7-Day Easy Returns, 10-Day Exchange Policy).
+                        Specify days within which customer can claim return or exchange (e.g. 7-Day Policy).
                       </span>
                     </div>
-                  ) : (
-                    <p className="text-[11px] text-amber-800 font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
-                      ⚠️ This product will be explicitly marked as "Non-Returnable" on storefront.
-                    </p>
                   )}
+
+                  {/* Summary Status Badge */}
+                  <div className="text-[11px] font-semibold">
+                    {formData.isReturnable && formData.isExchangeable ? (
+                      <p className="text-emerald-800 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg">
+                        ✅ <strong>Full Return & Size Exchange Policy:</strong> Customers can return or request size replacement for this item within {formData.returnWindowDays || 7} days.
+                      </p>
+                    ) : formData.isReturnable && !formData.isExchangeable ? (
+                      <p className="text-blue-800 bg-blue-50 border border-blue-200 p-2.5 rounded-lg">
+                        🔄 <strong>Returnable Only (Non-Exchangeable):</strong> Customers can return for refund, but size replacement/exchange is not supported.
+                      </p>
+                    ) : !formData.isReturnable && formData.isExchangeable ? (
+                      <p className="text-purple-800 bg-purple-50 border border-purple-200 p-2.5 rounded-lg">
+                        🔄 <strong>Exchangeable Only (No Return):</strong> Size exchange or replacement allowed without monetary return.
+                      </p>
+                    ) : (
+                      <p className="text-rose-800 bg-rose-50 border border-rose-200 p-2.5 rounded-lg">
+                        ⚠️ <strong>Final Sale:</strong> This item is strictly Non-Returnable and Non-Exchangeable on the storefront.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* 3. Apparel Size Chart Editor (Only shown for Clothing & Uniforms) */}
