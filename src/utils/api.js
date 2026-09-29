@@ -1,5 +1,5 @@
-const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const API_BASE_URL = `${SERVER_URL}/seller`;
+export const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+export const API_BASE_URL = `${SERVER_URL}/seller`;
 
 // Helper to get auth header dynamically for whichever user is logged in
 const getAuthHeaders = () => {
@@ -240,6 +240,67 @@ export const updateStockApi = async (id, stockQuantity) => {
 };
 
 // ==========================================
+// 2.5. Seller Complete Kit & Bundle APIs
+// ==========================================
+export const fetchSellerKitsApi = async () => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/kits`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.kits || []);
+  } catch (error) {
+    console.error('Fetch seller kits error:', error);
+    return null;
+  }
+};
+
+export const createSellerKitApi = async (payload) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/kits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const updateSellerKitApi = async (id, updates) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/kits/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(updates)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const deleteSellerKitApi = async (id) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/kits/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+// ==========================================
 // 3. Customer & School Orders APIs
 // ==========================================
 export const fetchSellerOrdersApi = async () => {
@@ -352,6 +413,26 @@ export const updateSchoolOrderApi = async (id, updates) => {
   }
 };
 
+export const updateSchoolOrderStatusApi = async (id, status, deliveryDetails = {}) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({
+        status,
+        deliveryMode: 'self_delivery',
+        deliveryDetails
+      })
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
 export const deleteSchoolOrderApi = async (id) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}`, {
@@ -379,6 +460,38 @@ export const acceptSchoolOrderApi = async (id) => {
 export const submitSchoolQuoteApi = async (id, quoteData) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/quote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(quoteData)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const acceptBuyerCounterDemandApi = async (id, quoteId, payload = {}) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/quotations/${quoteId}/accept-counter`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const reviseSchoolQuoteApi = async (id, quoteId, quoteData) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/quotations/${quoteId}/revise`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

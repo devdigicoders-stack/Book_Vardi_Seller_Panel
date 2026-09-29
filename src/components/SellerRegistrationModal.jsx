@@ -2059,7 +2059,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     className="mt-0.5 rounded text-brand-teal focus:ring-brand-yellow"
                   />
                   <span>
-                    <strong>Commission Schedule:</strong> Standard platform take rate of 10% - 14% on delivered school supplies with zero listing fee.
+                    <strong>Commission Schedule:</strong> Standard platform fee of 5% (95% Payout) on delivered school supplies with zero listing fee.
                   </span>
                 </label>
 

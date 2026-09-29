@@ -3,6 +3,7 @@ import Overview from '../components/Overview';
 import SellerLogin from '../components/SellerLogin';
 
 const ProductsTab = lazy(() => import('../components/ProductsTab'));
+const KitsTab = lazy(() => import('../components/KitsTab'));
 const OrdersTab = lazy(() => import('../components/OrdersTab'));
 const InventoryTab = lazy(() => import('../components/InventoryTab'));
 const SchoolOrdersTab = lazy(() => import('../components/SchoolOrdersTab'));
@@ -19,6 +20,7 @@ const ProfileTab = lazy(() => import('../components/ProfileTab'));
 import { 
   Home, 
   Package, 
+  Boxes,
   ShoppingBag, 
   Box, 
   Building2, 
@@ -114,8 +116,21 @@ export default function SellerDashboardPage({ onNavigate }) {
       }, 100);
     };
 
+    const handleOpenKitsTab = () => {
+      setActiveTab('kits');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('openAddKitModalInternal'));
+      }, 100);
+    };
+
     window.addEventListener('openAddProductModal', handleAddProductEvent);
-    return () => window.removeEventListener('openAddProductModal', handleAddProductEvent);
+    window.addEventListener('openKitsTab', handleOpenKitsTab);
+    window.addEventListener('openAddKitModal', handleOpenKitsTab);
+    return () => {
+      window.removeEventListener('openAddProductModal', handleAddProductEvent);
+      window.removeEventListener('openKitsTab', handleOpenKitsTab);
+      window.removeEventListener('openAddKitModal', handleOpenKitsTab);
+    };
   }, []);
 
   if (!isAuthenticated) {
@@ -311,6 +326,7 @@ export default function SellerDashboardPage({ onNavigate }) {
       title: 'Catalog & Stock',
       items: [
         { id: 'products', label: 'Products', icon: <Package size={17} /> },
+        { id: 'kits', label: 'Kits & Bundles', icon: <Boxes size={17} /> },
         { id: 'inventory', label: 'Inventory & Stock', icon: <Box size={17} /> },
         { id: 'promotions', label: 'Promotions & Coupons', icon: <Tag size={17} /> }
       ]
@@ -346,6 +362,8 @@ export default function SellerDashboardPage({ onNavigate }) {
         return <ProfileTab />;
       case 'products':
         return <ProductsTab />;
+      case 'kits':
+        return <KitsTab />;
       case 'orders':
         return <OrdersTab />;
       case 'inventory':

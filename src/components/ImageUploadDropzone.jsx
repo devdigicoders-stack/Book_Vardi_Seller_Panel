@@ -5,6 +5,7 @@ import { resolveImageUrl } from '../utils/mediaUrl';
 export default function ImageUploadDropzone({ 
   images = [], 
   onChange, 
+  onImagesChange,
   maxImages = 8,
   helperText = "Drag & drop product photos here, or browse files" 
 }) {
@@ -12,6 +13,17 @@ export default function ImageUploadDropzone({
   const [urlInput, setUrlInput] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
   const fileInputRef = useRef(null);
+
+  const safeImages = Array.isArray(images) ? images : [];
+
+  const notifyChange = (updatedImages) => {
+    if (typeof onChange === 'function') {
+      onChange(updatedImages);
+    }
+    if (typeof onImagesChange === 'function') {
+      onImagesChange(updatedImages);
+    }
+  };
 
   const handleFiles = (files) => {
     if (!files || files.length === 0) return;
@@ -27,8 +39,8 @@ export default function ImageUploadDropzone({
     });
 
     Promise.all(readPromises).then(newImages => {
-      const combined = Array.from(new Set([...images, ...newImages].filter(Boolean))).slice(0, maxImages);
-      onChange(combined);
+      const combined = Array.from(new Set([...safeImages, ...newImages].filter(Boolean))).slice(0, maxImages);
+      notifyChange(combined);
     });
   };
 
@@ -54,24 +66,24 @@ export default function ImageUploadDropzone({
   const handleAddUrl = (e) => {
     e.preventDefault();
     if (!urlInput.trim()) return;
-    const combined = Array.from(new Set([...images, urlInput.trim()].filter(Boolean))).slice(0, maxImages);
-    onChange(combined);
+    const combined = Array.from(new Set([...safeImages, urlInput.trim()].filter(Boolean))).slice(0, maxImages);
+    notifyChange(combined);
     setUrlInput('');
     setShowUrlInput(false);
   };
 
   const handleRemove = (index, e) => {
     e.stopPropagation();
-    const updated = images.filter((_, i) => i !== index);
-    onChange(updated);
+    const updated = safeImages.filter((_, i) => i !== index);
+    notifyChange(updated);
   };
 
   const handleSetPrimary = (index, e) => {
     e.stopPropagation();
     if (index === 0) return;
-    const selected = images[index];
-    const filtered = images.filter((_, i) => i !== index);
-    onChange([selected, ...filtered]);
+    const selected = safeImages[index];
+    const filtered = safeImages.filter((_, i) => i !== index);
+    notifyChange([selected, ...filtered]);
   };
 
   return (

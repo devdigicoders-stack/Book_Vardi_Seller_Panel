@@ -1477,7 +1477,7 @@ export default function ProfileTab() {
 
               <div className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
                 <span className="text-gray-700 font-medium">Commission Rate</span>
-                <span className="font-bold text-brand-teal">12% Standard</span>
+                <span className="font-bold text-brand-teal">{sellerUser?.commissionPercentage ?? sellerUser?.commissionRate ?? 5}% Platform Fee ({100 - (sellerUser?.commissionPercentage ?? sellerUser?.commissionRate ?? 5)}% Payout)</span>
               </div>
             </div>
           </div>

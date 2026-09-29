@@ -9,6 +9,10 @@ import {
   createSellerProductApi,
   updateSellerProductApi,
   deleteSellerProductApi,
+  fetchSellerKitsApi,
+  createSellerKitApi,
+  updateSellerKitApi,
+  deleteSellerKitApi,
   updateStockApi,
   fetchSellerOrdersApi,
   updateOrderStatusApi,
@@ -16,9 +20,12 @@ import {
   fetchSchoolOrdersApi,
   createSchoolOrderApi,
   updateSchoolOrderApi,
+  updateSchoolOrderStatusApi,
   deleteSchoolOrderApi,
   acceptSchoolOrderApi,
   submitSchoolQuoteApi,
+  acceptBuyerCounterDemandApi,
+  reviseSchoolQuoteApi,
   fetchPromotionsApi,
   createPromotionApi,
   deletePromotionApi,
@@ -165,6 +172,8 @@ export const readActiveSellerProfile = () => {
       selectedCategories: (sellerUser.selectedCategories && sellerUser.selectedCategories.length > 0) ? sellerUser.selectedCategories : ((sellerProf.selectedCategories && sellerProf.selectedCategories.length > 0) ? sellerProf.selectedCategories : (regData.selectedCategories || [])),
       primaryBrands: (sellerUser.primaryBrands && sellerUser.primaryBrands.length > 0) ? sellerUser.primaryBrands : ((sellerProf.primaryBrands && sellerProf.primaryBrands.length > 0) ? sellerProf.primaryBrands : (regData.primaryBrands || [])),
       estimatedSkuCount: pickFirst(sellerUser.estimatedSkuCount, sellerProf.estimatedSkuCount, regData.estimatedSkuCount, ''),
+      commissionPercentage: pickFirst(sellerUser.commissionPercentage, sellerUser.commissionRate, sellerProf.commissionPercentage, sellerProf.commissionRate, regData.commissionPercentage, regData.commissionRate, 5),
+      commissionRate: pickFirst(sellerUser.commissionRate, sellerUser.commissionPercentage, sellerProf.commissionRate, sellerProf.commissionPercentage, regData.commissionRate, regData.commissionPercentage, 5),
       lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     };
   } catch {
@@ -314,6 +323,15 @@ export const SellerDataProvider = ({ children }) => {
       return [];
     }
   });
+  const [kits, setKits] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_seller_kits');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isLoadingKits, setIsLoadingKits] = useState(false);
   const [orders, setOrders] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_seller_orders');
@@ -323,7 +341,19 @@ export const SellerDataProvider = ({ children }) => {
     }
   });
   const [promotions, setPromotions] = useState([]);
-  const [schoolOrders, setSchoolOrders] = useState([]);
+  const [schoolOrders, setSchoolOrders] = useState(() => {
+    try {
+      const savedSync = localStorage.getItem('bv_sync_school_orders');
+      if (savedSync) return JSON.parse(savedSync);
+      const savedAdmin = localStorage.getItem('admin_school_orders');
+      if (savedAdmin) return JSON.parse(savedAdmin);
+      const savedCust = localStorage.getItem('bv_customer_bulk_orders');
+      if (savedCust) return JSON.parse(savedCust);
+      return [];
+    } catch {
+      return [];
+    }
+  });
   const [customers, setCustomers] = useState([]);
   const [finance, setFinance] = useState({ totalRevenue: 0, netProfit: 0, pendingPayout: 0, availableBalance: 0, recentTransactions: [] });
   const [reviews, setReviews] = useState([]);
@@ -505,9 +535,11 @@ export const SellerDataProvider = ({ children }) => {
       setIsLoadingProducts(true);
       setIsLoadingSellerData(true);
       try {
+        setIsLoadingKits(true);
         const [
           statusRes,
           productsRes,
+          kitsRes,
           ordersRes,
           schoolRes,
           promosRes,
@@ -519,6 +551,7 @@ export const SellerDataProvider = ({ children }) => {
         ] = await Promise.allSettled([
           fetchSellerStatusApi(),
           fetchSellerProductsApi(),
+          fetchSellerKitsApi(),
           fetchSellerOrdersApi(),
           fetchSchoolOrdersApi(),
           fetchPromotionsApi(),
@@ -574,6 +607,21 @@ export const SellerDataProvider = ({ children }) => {
           } catch (e) {}
         }
 
+        if (kitsRes.status === 'fulfilled' && Array.isArray(kitsRes.value)) {
+          const normalizedKits = kitsRes.value.map(k => ({
+            ...k,
+            id: k._id || k.id,
+            _id: k._id || k.id,
+            stockQuantity: k.stockQuantity ?? k.stock ?? 25,
+            inStock: (k.stockQuantity ?? k.stock ?? 25) > 0
+          }));
+          setKits(normalizedKits);
+          try {
+            localStorage.setItem('bv_seller_kits', JSON.stringify(normalizedKits));
+          } catch (e) {}
+        }
+        setIsLoadingKits(false);
+
         if (ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value)) {
           const normalizedOrders = ordersRes.value.map(o => ({
             ...o,
@@ -601,7 +649,25 @@ export const SellerDataProvider = ({ children }) => {
         }
 
         if (schoolRes.status === 'fulfilled' && Array.isArray(schoolRes.value)) {
-          setSchoolOrders(schoolRes.value);
+          const apiList = schoolRes.value;
+          let localList = [];
+          try {
+            const raw = localStorage.getItem('bv_sync_school_orders') || localStorage.getItem('admin_school_orders') || localStorage.getItem('bv_customer_bulk_orders');
+            if (raw) localList = JSON.parse(raw);
+          } catch {}
+          const merged = [...apiList];
+          if (Array.isArray(localList)) {
+            localList.forEach(l => {
+              const idx = merged.findIndex(m => String(m.id || m._id || m.referenceId) === String(l.id || l._id || l.referenceId));
+              if (idx === -1) {
+                merged.push(l);
+              } else {
+                merged[idx] = { ...merged[idx], ...l };
+              }
+            });
+          }
+          setSchoolOrders(merged);
+          try { localStorage.setItem('bv_sync_school_orders', JSON.stringify(merged)); } catch {}
         }
 
         if (promosRes.status === 'fulfilled' && Array.isArray(promosRes.value)) {
@@ -704,6 +770,40 @@ export const SellerDataProvider = ({ children }) => {
 
     return () => { isMounted = false; };
   }, [isAuthenticated]);
+
+  // Real-time synchronization of school orders across browser tabs/panels
+  useEffect(() => {
+    const handleSyncSchoolOrders = () => {
+      try {
+        const raw = localStorage.getItem('bv_sync_school_orders') || localStorage.getItem('admin_school_orders') || localStorage.getItem('bv_customer_bulk_orders');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list) && list.length > 0) {
+            setSchoolOrders(prev => {
+              const merged = [...prev];
+              list.forEach(item => {
+                const idx = merged.findIndex(m => String(m.id || m._id || m.referenceId) === String(item.id || item._id || item.referenceId));
+                if (idx === -1) {
+                  merged.push(item);
+                } else {
+                  merged[idx] = { ...merged[idx], ...item };
+                }
+              });
+              return merged;
+            });
+          }
+        }
+      } catch (err) {}
+    };
+
+    window.addEventListener('storage', handleSyncSchoolOrders);
+    window.addEventListener('bv_school_orders_updated', handleSyncSchoolOrders);
+
+    return () => {
+      window.removeEventListener('storage', handleSyncSchoolOrders);
+      window.removeEventListener('bv_school_orders_updated', handleSyncSchoolOrders);
+    };
+  }, []);
 
   const checkPermission = useCallback(() => {
     if (!isApproved) {
@@ -1198,6 +1298,134 @@ export const SellerDataProvider = ({ children }) => {
     showToast('Product deleted successfully!');
   };
 
+  // ==========================================
+  // Kit / Bundle Actions
+  // ==========================================
+  const addKit = async (newKit) => {
+    checkPermission();
+    if (!newKit.title && !newKit.name) {
+      throw new Error('Validation failed: Kit Bundle Title is required.');
+    }
+    if (!newKit.schoolName) {
+      throw new Error('Validation failed: School Name is required.');
+    }
+    if (!Array.isArray(newKit.items) || newKit.items.length === 0) {
+      throw new Error('Validation failed: Kit must contain at least one item.');
+    }
+
+    const tempId = newKit.id || newKit._id || Date.now();
+    const createdKit = {
+      ...newKit,
+      id: tempId,
+      _id: tempId,
+      title: (newKit.title || newKit.name).trim(),
+      name: (newKit.title || newKit.name).trim(),
+      category: 'kits',
+      approvalStatus: newKit.approvalStatus || 'Pending',
+      status: newKit.status || 'available'
+    };
+
+    setKits(prev => {
+      const updated = [createdKit, ...prev];
+      try { localStorage.setItem('bv_seller_kits', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+    showToast(`Kit Bundle "${createdKit.title}" submitted for Admin Approval!`);
+
+    try {
+      const res = await createSellerKitApi(createdKit);
+      if (res && res.kit && (res.kit._id || res.kit.id)) {
+        const realId = res.kit._id || res.kit.id;
+        setKits(prev => {
+          const updated = prev.map(k => (k.id === tempId || k.title === createdKit.title) ? { ...k, ...res.kit, id: realId, _id: realId } : k);
+          try { localStorage.setItem('bv_seller_kits', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+        return res.kit;
+      }
+    } catch (err) {
+      console.error('Failed to create kit on server:', err);
+    }
+    return createdKit;
+  };
+
+  const editKit = async (id, updates) => {
+    checkPermission();
+    const strId = String(id);
+    setKits(prev => {
+      const updated = prev.map(k => {
+        if (String(k.id || k._id) === strId) {
+          return {
+            ...k,
+            ...updates,
+            title: (updates.title || updates.name || k.title).trim(),
+            name: (updates.title || updates.name || k.title).trim()
+          };
+        }
+        return k;
+      });
+      try { localStorage.setItem('bv_seller_kits', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+
+    showToast('Kit Bundle updated successfully!');
+    try {
+      await updateSellerKitApi(id, updates);
+    } catch (err) {
+      console.error('Failed to update kit on server:', err);
+    }
+  };
+
+  const deleteKit = async (id) => {
+    checkPermission();
+    const strId = String(id);
+    setKits(prev => {
+      const updated = prev.filter(k => String(k.id || k._id) !== strId);
+      try { localStorage.setItem('bv_seller_kits', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+    showToast('Kit Bundle deleted successfully!');
+    try {
+      await deleteSellerKitApi(id);
+    } catch (err) {
+      console.error('Failed to delete kit on server:', err);
+    }
+  };
+
+  const toggleKitStatus = async (id) => {
+    checkPermission();
+    const strId = String(id);
+    let nextStatus = 'available';
+    setKits(prev => {
+      const updated = prev.map(k => {
+        if (String(k.id || k._id) === strId) {
+          nextStatus = k.status === 'available' ? 'inactive' : 'available';
+          return { ...k, status: nextStatus };
+        }
+        return k;
+      });
+      try { localStorage.setItem('bv_seller_kits', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+    try {
+      await updateSellerKitApi(id, { status: nextStatus });
+    } catch (err) {}
+  };
+
+  const refreshKits = async () => {
+    setIsLoadingKits(true);
+    try {
+      const res = await fetchSellerKitsApi();
+      if (Array.isArray(res)) {
+        const normalized = res.map(k => ({ ...k, id: k._id || k.id, _id: k._id || k.id }));
+        setKits(normalized);
+        try { localStorage.setItem('bv_seller_kits', JSON.stringify(normalized)); } catch (e) {}
+      }
+    } finally {
+      setIsLoadingKits(false);
+    }
+  };
+
   const bulkAddOrUpdateProducts = (productList) => {
     checkPermission();
     if (!Array.isArray(productList) || productList.length === 0) {
@@ -1504,36 +1732,231 @@ export const SellerDataProvider = ({ children }) => {
 
   const submitSchoolQuote = async (id, quoteData) => {
     checkPermission();
-    setSchoolOrders(prev => prev.map(s => {
-      if (String(s.id || s._id) === String(id)) {
-        const existingQuotes = Array.isArray(s.quotations) ? s.quotations : [];
-        const newQuote = {
-          _id: Date.now(),
-          sellerName: sellerUser?.name || 'Seller',
-          sellerStoreName: sellerUser?.storeName || 'My Store',
-          quoteAmount: Number(quoteData.quoteAmount),
-          unitPrice: Number(quoteData.unitPrice) || 0,
-          estimatedDeliveryDays: Number(quoteData.estimatedDeliveryDays) || 7,
-          notes: quoteData.notes || '',
-          status: 'submitted',
-          submittedAt: new Date().toISOString()
-        };
-        return {
-          ...s,
-          status: 'quoted',
-          quotations: [...existingQuotes, newQuote]
-        };
-      }
-      return s;
-    }));
+    const currentSellerId = sellerUser?.id || sellerUser?._id || '';
+
+    setSchoolOrders(prev => {
+      const updatedList = prev.map(s => {
+        if (String(s.id || s._id) === String(id) || String(s.referenceId) === String(id)) {
+          const existingQuotes = Array.isArray(s.quotations) ? s.quotations : [];
+          const newQuote = {
+            _id: Date.now(),
+            sellerId: currentSellerId,
+            sellerName: sellerUser?.name || 'Seller',
+            sellerStoreName: sellerUser?.storeName || 'My Store',
+            sellerPhone: sellerUser?.phone || '',
+            sellerCity: sellerUser?.city || '',
+            quoteAmount: Number(quoteData.quoteAmount),
+            unitPrice: Number(quoteData.unitPrice) || 0,
+            itemPrices: quoteData.itemPrices || [],
+            volumeDiscountNote: quoteData.volumeDiscountNote || '',
+            estimatedDeliveryDays: Number(quoteData.estimatedDeliveryDays) || 7,
+            notes: quoteData.notes || '',
+            sellerAdvanceType: quoteData.prepaymentType || quoteData.sellerAdvanceType || 'percentage',
+            sellerAdvancePercentage: Number(quoteData.prepaymentPercentage ?? quoteData.sellerAdvancePercentage ?? 0),
+            sellerAdvanceAmount: Number(quoteData.prepaymentAmount ?? quoteData.sellerAdvanceAmount ?? 0),
+            sellerAdvanceTerms: quoteData.prepaymentTerms || quoteData.sellerAdvanceTerms || '',
+            prepaymentType: quoteData.prepaymentType || quoteData.sellerAdvanceType || 'percentage',
+            prepaymentPercentage: Number(quoteData.prepaymentPercentage ?? quoteData.sellerAdvancePercentage ?? 0),
+            prepaymentAmount: Number(quoteData.prepaymentAmount ?? quoteData.sellerAdvanceAmount ?? 0),
+            prepaymentTerms: quoteData.prepaymentTerms || quoteData.sellerAdvanceTerms || '',
+            status: 'submitted',
+            submittedAt: new Date().toISOString()
+          };
+          return {
+            ...s,
+            status: 'quoted',
+            sellerAdvanceType: quoteData.prepaymentType || quoteData.sellerAdvanceType || 'percentage',
+            sellerAdvancePercentage: Number(quoteData.prepaymentPercentage ?? quoteData.sellerAdvancePercentage ?? 0),
+            sellerAdvanceAmount: Number(quoteData.prepaymentAmount ?? quoteData.sellerAdvanceAmount ?? 0),
+            sellerAdvanceTerms: quoteData.prepaymentTerms || quoteData.sellerAdvanceTerms || '',
+            prepaymentType: quoteData.prepaymentType || quoteData.sellerAdvanceType || 'percentage',
+            prepaymentPercentage: Number(quoteData.prepaymentPercentage ?? quoteData.sellerAdvancePercentage ?? 0),
+            prepaymentAmount: Number(quoteData.prepaymentAmount ?? quoteData.sellerAdvanceAmount ?? 0),
+            prepaymentTerms: quoteData.prepaymentTerms || quoteData.sellerAdvanceTerms || '',
+            quotations: [...existingQuotes, newQuote]
+          };
+        }
+        return s;
+      });
+
+      try {
+        localStorage.setItem('bv_sync_school_orders', JSON.stringify(updatedList));
+        ['bv_customer_bulk_orders', 'admin_school_orders'].forEach(k => {
+          try {
+            const list = JSON.parse(localStorage.getItem(k) || '[]');
+            const idx = list.findIndex(o => String(o.id || o._id) === String(id) || (o.referenceId && String(o.referenceId) === String(id)));
+            if (idx !== -1) {
+              const prevQuotes = Array.isArray(list[idx].quotations) ? list[idx].quotations : [];
+              const matchedOrder = updatedList.find(u => String(u.id || u._id) === String(id) || String(u.referenceId) === String(id));
+              if (matchedOrder) {
+                list[idx] = { ...list[idx], status: 'quoted', quotations: matchedOrder.quotations };
+                localStorage.setItem(k, JSON.stringify(list));
+              }
+            }
+          } catch (e) {}
+        });
+        window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+
+      return updatedList;
+    });
 
     try {
-      const res = await submitSchoolQuoteApi(id, quoteData);
+      const res = await submitSchoolQuoteApi(id, {
+        ...quoteData,
+        sellerId: currentSellerId,
+        sellerName: sellerUser?.name || 'Seller',
+        sellerStoreName: sellerUser?.storeName || 'My Store',
+        sellerPhone: sellerUser?.phone || '',
+        sellerCity: sellerUser?.city || ''
+      });
       if (res?.success) {
         showToast('Quotation proposal submitted successfully!');
       }
     } catch (e) {
       console.warn('Backend submit quotation fallback:', e);
+    }
+  };
+
+  const acceptBuyerCounterDemand = async (orderId, quoteId, payload = {}) => {
+    checkPermission();
+    try {
+      const res = await acceptBuyerCounterDemandApi(orderId, quoteId, payload);
+      if (res?.success) {
+        showToast('Buyer counter-demand accepted successfully!');
+        if (res.order) {
+          setSchoolOrders(prev => prev.map(o => String(o.id || o._id) === String(orderId) ? res.order : o));
+          // Sync localStorage
+          ['bv_sync_school_orders', 'bv_customer_bulk_orders', 'admin_school_orders'].forEach(k => {
+            try {
+              const list = JSON.parse(localStorage.getItem(k) || '[]');
+              const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && String(o.referenceId) === String(orderId)));
+              if (idx !== -1) {
+                list[idx] = res.order;
+                localStorage.setItem(k, JSON.stringify(list));
+              }
+            } catch (e) {}
+          });
+          window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+          window.dispatchEvent(new Event('storage'));
+        }
+        return { success: true, order: res.order };
+      } else {
+        showToast(res?.message || 'Failed to accept counter-demand');
+        return { success: false, message: res?.message };
+      }
+    } catch (e) {
+      showToast(e.message || 'Error accepting counter-demand');
+      return { success: false, message: e.message };
+    }
+  };
+
+  const reviseSchoolQuote = async (orderId, quoteId, quoteData) => {
+    checkPermission();
+    try {
+      const res = await reviseSchoolQuoteApi(orderId, quoteId, quoteData);
+      if (res?.success) {
+        showToast(res.message || 'Revised quotation submitted successfully!');
+        if (res.order) {
+          setSchoolOrders(prev => prev.map(o => String(o.id || o._id) === String(orderId) ? res.order : o));
+          // Sync localStorage
+          ['bv_sync_school_orders', 'bv_customer_bulk_orders', 'admin_school_orders'].forEach(k => {
+            try {
+              const list = JSON.parse(localStorage.getItem(k) || '[]');
+              const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && String(o.referenceId) === String(orderId)));
+              if (idx !== -1) {
+                list[idx] = res.order;
+                localStorage.setItem(k, JSON.stringify(list));
+              }
+            } catch (e) {}
+          });
+          window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+          window.dispatchEvent(new Event('storage'));
+        }
+        return { success: true, order: res.order };
+      } else {
+        showToast(res?.message || 'Failed to revise quotation');
+        return { success: false, message: res?.message };
+      }
+    } catch (e) {
+      showToast(e.message || 'Error revising quotation');
+      return { success: false, message: e.message };
+    }
+  };
+
+  const updateSchoolOrderStatus = async (id, { status, deliveryDetails = {} }) => {
+    checkPermission();
+    const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
+
+    setSchoolOrders(prev => {
+      const updatedList = prev.map(s => {
+        if (String(s.id || s._id) === String(id) || String(s.referenceId) === String(id)) {
+          const existingDetails = s.deliveryDetails || {};
+          const isOutForDelivery = status === 'out for delivery' || status === 'out_for_delivery';
+          const isReceived = status === 'received' || status === 'delivered';
+
+          const mergedDetails = {
+            ...existingDetails,
+            ...deliveryDetails,
+            deliveryBoyName: deliveryDetails.deliveryBoyName || existingDetails.deliveryBoyName || '',
+            deliveryBoyPhone: deliveryDetails.deliveryBoyPhone || existingDetails.deliveryBoyPhone || '',
+            vehicleNumber: deliveryDetails.vehicleNumber || existingDetails.vehicleNumber || '',
+            trackingId: deliveryDetails.trackingId || existingDetails.trackingId || `BV-SLF-${s.referenceId || id}`,
+            trackingUrl: deliveryDetails.trackingUrl || existingDetails.trackingUrl || `/#delivery-partner?token=BV-SLF-${s.referenceId || id}`,
+            deliveryPartnerToken: deliveryDetails.deliveryPartnerToken || existingDetails.deliveryPartnerToken || `BV-SLF-${s.referenceId || id}`,
+            dispatchedAt: isOutForDelivery ? (existingDetails.dispatchedAt || new Date().toISOString()) : existingDetails.dispatchedAt,
+            deliveredAt: isReceived ? new Date().toISOString() : existingDetails.deliveredAt,
+            deliveryMode: 'self_delivery'
+          };
+
+          return {
+            ...s,
+            status,
+            deliveryMode: 'self_delivery',
+            deliveryDetails: mergedDetails,
+            sellerId: s.sellerId || currentSellerId
+          };
+        }
+        return s;
+      });
+
+      try {
+        localStorage.setItem('bv_sync_school_orders', JSON.stringify(updatedList));
+        localStorage.setItem('admin_school_orders', JSON.stringify(updatedList));
+
+        const custRaw = localStorage.getItem('bv_customer_bulk_orders');
+        if (custRaw) {
+          const custOrders = JSON.parse(custRaw);
+          const updatedCust = custOrders.map(c => {
+            if (String(c.id || c._id || c.referenceId) === String(id)) {
+              const matched = updatedList.find(u => String(u.id || u._id || u.referenceId) === String(id));
+              return matched ? { ...c, ...matched } : c;
+            }
+            return c;
+          });
+          localStorage.setItem('bv_customer_bulk_orders', JSON.stringify(updatedCust));
+        }
+      } catch (e) {}
+
+      window.dispatchEvent(new CustomEvent('bv_school_orders_updated', {
+        detail: { orderId: id, status, deliveryDetails }
+      }));
+      window.dispatchEvent(new Event('storage'));
+
+      return updatedList;
+    });
+
+    try {
+      const res = await updateSchoolOrderStatusApi(id, status, deliveryDetails);
+      if (res?.success) {
+        showToast(`School bulk order status updated to ${status.replace(/_/g, ' ')}!`);
+      } else {
+        await updateSchoolOrderApi(id, { status, deliveryMode: 'self_delivery', deliveryDetails });
+        showToast(`School bulk order status updated to ${status.replace(/_/g, ' ')}!`);
+      }
+    } catch (e) {
+      console.warn('Backend update bulk order status fallback:', e);
     }
   };
 
@@ -1776,9 +2199,11 @@ export const SellerDataProvider = ({ children }) => {
         clearAllSellerData,
         // Loading state
         isLoadingProducts,
+        isLoadingKits,
         isLoadingSellerData,
         // State
         products,
+        kits,
         orders,
         promotions,
         schoolOrders,
@@ -1796,6 +2221,12 @@ export const SellerDataProvider = ({ children }) => {
         bulkAddOrUpdateProducts,
         updateProductStock,
         updateVariantStock,
+        // Kit actions
+        addKit,
+        editKit,
+        deleteKit,
+        toggleKitStatus,
+        refreshKits,
         // Order actions
         addOrder,
         editOrder,
@@ -1814,6 +2245,9 @@ export const SellerDataProvider = ({ children }) => {
         deleteSchoolOrder,
         acceptSchoolOrder,
         submitSchoolQuote,
+        acceptBuyerCounterDemand,
+        reviseSchoolQuote,
+        updateSchoolOrderStatus,
         // Customer actions
         addCustomer,
         editCustomer,

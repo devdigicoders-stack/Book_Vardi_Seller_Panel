@@ -8,7 +8,9 @@ import {
   Lock,
   Building,
   Store,
-  DollarSign
+  DollarSign,
+  Truck,
+  ExternalLink
 } from 'lucide-react';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
@@ -25,7 +27,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
 
   const orderStatus = String(order.status || order.overallStatus || '').toLowerCase();
-  const confirmed = orderStatus === 'confirmed' || orderStatus === 'shipped' || orderStatus === 'delivered' || orderStatus === 'processing' || order.paymentStatus === 'paid' || order.paymentStatus === 'Paid';
+  const confirmed = orderStatus === 'confirmed' || orderStatus === 'shipped' || orderStatus === 'out for delivery' || orderStatus === 'out_for_delivery' || orderStatus === 'delivered' || orderStatus === 'processing' || order.paymentStatus === 'paid' || order.paymentStatus === 'Paid';
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
@@ -231,12 +233,28 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       }
     } catch (e) {}
 
-    return 8;
+    return 5;
   };
 
   const marketplaceCommissionRate = getSellerCommissionRate();
   const marketplaceCommission = Math.round((grandTotal * (marketplaceCommissionRate / 100)) * 100) / 100;
   const sellerPayout = Math.round((grandTotal - marketplaceCommission) * 100) / 100;
+
+  // Logistics tracking resolution: strictly visible when product is Out for Delivery & partner decided
+  const normStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
+  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
+  const isSelf = String(order.deliveryMode || order.deliveryType || '').toLowerCase().includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPersonName);
+  const isThirdParty = String(order.deliveryMode || order.deliveryType || '').toLowerCase().includes('third') || Boolean(order.courierName || order.thirdPartyDetails?.courierName);
+  const hasPartner = isSelf || isThirdParty || Boolean(order.courierName || order.selfDeliveryDetails?.deliveryPersonName);
+  const hasTracking = isOut && hasPartner && Boolean(order.trackingNumber || order.selfDeliveryDetails?.deliveryPartnerToken || order.thirdPartyDetails?.trackingNumber);
+
+  const deliveryPartnerDisplay = isSelf 
+    ? (order.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
+    : (order.courierName || order.thirdPartyDetails?.courierName || '3rd-Party Logistics Carrier');
+
+  const trackingNumberDisplay = order.trackingNumber || (isSelf ? order.selfDeliveryDetails?.deliveryPartnerToken : order.thirdPartyDetails?.trackingNumber) || '';
+
+  const trackingLinkDisplay = order.trackingUrl || order.selfDeliveryDetails?.trackingUrl || order.thirdPartyDetails?.trackingUrl || '';
 
   const handlePrint = () => {
     if (!confirmed) {
@@ -342,6 +360,46 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
               <p className="text-gray-700">School/Institution: <strong>{order.school || 'General Retail'}</strong></p>
             </div>
           </div>
+
+          {/* Dispatch & Live Delivery Tracking Details */}
+          {hasTracking ? (
+            <div className="p-3.5 bg-teal-50/80 rounded-xl border border-teal-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-black text-teal-800 flex items-center gap-1.5">
+                  <Truck size={14} className="text-teal-700" /> Dispatch & Delivery Tracking Details
+                </span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-700">
+                  <div>
+                    Delivery Mode: <strong className="text-gray-900">{deliveryPartnerDisplay}</strong>
+                  </div>
+                  <div>
+                    Tracking ID / AWB: <strong className="font-mono text-teal-950 font-bold bg-white px-2 py-0.5 rounded border border-teal-200">{trackingNumberDisplay}</strong>
+                  </div>
+                </div>
+                {trackingLinkDisplay && (
+                  <div className="text-[10px] text-gray-500 font-mono break-all pt-0.5">
+                    Live Tracking URL: <a href={trackingLinkDisplay} target="_blank" rel="noreferrer" className="text-teal-700 hover:underline">{trackingLinkDisplay}</a>
+                  </div>
+                )}
+              </div>
+              {trackingLinkDisplay && (
+                <a
+                  href={trackingLinkDisplay}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-800 hover:bg-teal-900 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 print:hidden"
+                >
+                  <span>Track Shipment</span>
+                  <ExternalLink size={12} />
+                </a>
+              )}
+            </div>
+          ) : (
+            <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 text-[11px] text-gray-500 flex items-center justify-between">
+              <span>Logistics Status: <strong className="text-gray-700">{isOut ? 'Out for Delivery (Awaiting Partner Assignment)' : 'Awaiting Out for Delivery Dispatch'}</strong></span>
+              <span className="text-[10px] text-gray-400 italic">Official Tracking ID & Link generated upon Out for Delivery</span>
+            </div>
+          )}
 
           {/* Itemized Table */}
           <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">

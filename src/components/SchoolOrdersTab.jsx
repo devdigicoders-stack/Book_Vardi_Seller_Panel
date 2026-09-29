@@ -19,20 +19,43 @@ import {
   ShieldCheck,
   Sparkles,
   DollarSign,
-  Eye
+  Eye,
+  Percent,
+  Truck,
+  Package,
+  Check
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
+import PartialAdvanceReceiptModal from './PartialAdvanceReceiptModal';
 
 export default function SchoolOrdersTab() {
-  const { schoolOrders, addSchoolOrder, acceptSchoolOrder, submitSchoolQuote, deleteSchoolOrder, sellerUser } = useSellerData();
+  const {
+    schoolOrders,
+    addSchoolOrder,
+    acceptSchoolOrder,
+    submitSchoolQuote,
+    acceptBuyerCounterDemand,
+    reviseSchoolQuote,
+    updateSchoolOrderStatus,
+    deleteSchoolOrder,
+    sellerUser
+  } = useSellerData();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [channelFilter, setChannelFilter] = useState('All'); // 'All', 'Direct', 'Invited', 'Broadcast'
+  const [channelFilter, setChannelFilter] = useState('All'); // 'All', 'Accepted', 'Direct', 'Invited', 'Broadcast'
 
   // Preview Expanded Detail Modal State
   const [previewOrder, setPreviewOrder] = useState(null);
   const [initialPreviewTab, setInitialPreviewTab] = useState('specs');
+  const [selectedReceiptOrder, setSelectedReceiptOrder] = useState(null);
+
+  // Self-Delivery Dispatch Modal State (Only Self Delivery allowed for bulk orders)
+  const [dispatchModalOrder, setDispatchModalOrder] = useState(null);
+  const [riderName, setRiderName] = useState('');
+  const [riderPhone, setRiderPhone] = useState('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [deliveryNotes, setDeliveryNotes] = useState('');
 
   // Quotation Submission Modal State
   const [quotationModalOrder, setQuotationModalOrder] = useState(null);
@@ -40,6 +63,10 @@ export default function SchoolOrdersTab() {
   const [unitPrice, setUnitPrice] = useState('');
   const [deliveryDays, setDeliveryDays] = useState('7');
   const [quoteNotes, setQuoteNotes] = useState('');
+  const [prepaymentType, setPrepaymentType] = useState('percentage'); // 'percentage' | 'amount'
+  const [prepaymentPercentage, setPrepaymentPercentage] = useState(25);
+  const [prepaymentAmount, setPrepaymentAmount] = useState('');
+  const [prepaymentTerms, setPrepaymentTerms] = useState('');
 
   // Add Custom Requirement Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -61,20 +88,29 @@ export default function SchoolOrdersTab() {
     const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
 
     return schoolOrders.filter((req) => {
-      // Access Control: Unassigned / pending orders are ONLY visible to Admin, NOT sellers!
-      const isAssigned = String(req.sellerId?._id || req.sellerId?.id || req.sellerId) === currentSellerId;
+      const assignedSellerId = req.sellerId ? String(typeof req.sellerId === 'object' ? (req.sellerId._id || req.sellerId.id) : req.sellerId) : '';
+      const isAssigned = Boolean(assignedSellerId && assignedSellerId === currentSellerId);
       const isInvited = Array.isArray(req.invitedSellerIds) && req.invitedSellerIds.some(
         s => String(typeof s === 'object' ? (s._id || s.id) : s) === currentSellerId
       );
       const isBroadcast = req.assignmentMode === 'broadcast';
+      const hasSellerQuote = Array.isArray(req.quotations) && req.quotations.some(
+        q => String(q.sellerId) === currentSellerId
+      );
+      const isWinningSeller = Boolean(req.acceptedQuoteId && req.quotations?.some(
+        q => String(q._id) === String(req.acceptedQuoteId) && String(q.sellerId) === currentSellerId
+      ));
+      const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status);
 
-      // Hide unassigned orders from seller unless seller has explicit access or broadcast mode
-      const hasAccess = isBroadcast || isAssigned || isInvited || (req.assignmentMode && req.assignmentMode !== 'unassigned');
+      // Access Control: Seller sees orders assigned to them, won by them, quoted by them, invited to, or broadcast
+      const hasAccess = isAssigned || isWinningSeller || hasSellerQuote || isInvited || isBroadcast || (req.assignmentMode && req.assignmentMode !== 'unassigned');
       if (!hasAccess) return false;
 
       // Channel Filter
       let channelMatch = true;
-      if (channelFilter === 'Direct') {
+      if (channelFilter === 'Accepted') {
+        channelMatch = isAssigned || isWinningSeller || isAcceptedStatus;
+      } else if (channelFilter === 'Direct') {
         channelMatch = req.assignmentMode === 'direct';
       } else if (channelFilter === 'Invited') {
         channelMatch = req.assignmentMode === 'selected';
@@ -88,6 +124,7 @@ export default function SchoolOrdersTab() {
         (req.institutionName || req.schoolName || '').toLowerCase().includes(query) ||
         (req.contactName || req.contactPerson || '').toLowerCase().includes(query) ||
         (req.requirementSummary || '').toLowerCase().includes(query) ||
+        (req.referenceId || '').toLowerCase().includes(query) ||
         (req.city || '').toLowerCase().includes(query);
 
       return channelMatch && searchMatch;
@@ -100,10 +137,18 @@ export default function SchoolOrdersTab() {
     const targetBudget = Number(order.targetBudgetPerKit || order.estimatedBudget || 0);
     const qty = Number(order.totalQuantity || order.quantity || 100);
 
-    setQuoteAmount(targetBudget ? String(targetBudget) : '');
-    setUnitPrice(targetBudget && qty ? String(Math.round(targetBudget / qty)) : '');
-    setDeliveryDays('7');
-    setQuoteNotes('');
+    const existingQuote = Array.isArray(order.quotations)
+      ? order.quotations.find(q => String(q.sellerId) === String(sellerUser?.id || sellerUser?._id))
+      : null;
+
+    setQuoteAmount(existingQuote ? String(existingQuote.quoteAmount) : (targetBudget ? String(targetBudget) : ''));
+    setUnitPrice(existingQuote ? String(existingQuote.unitPrice || 0) : (targetBudget && qty ? String(Math.round(targetBudget / qty)) : ''));
+    setDeliveryDays(existingQuote ? String(existingQuote.estimatedDeliveryDays || 7) : '7');
+    setQuoteNotes(existingQuote ? String(existingQuote.notes || '') : '');
+    setPrepaymentType(existingQuote?.prepaymentType || existingQuote?.sellerAdvanceType || 'percentage');
+    setPrepaymentPercentage(Number(existingQuote?.prepaymentPercentage ?? existingQuote?.sellerAdvancePercentage ?? 25));
+    setPrepaymentAmount(existingQuote?.prepaymentAmount || existingQuote?.sellerAdvanceAmount ? String(existingQuote.prepaymentAmount || existingQuote.sellerAdvanceAmount) : '');
+    setPrepaymentTerms(existingQuote?.prepaymentTerms || existingQuote?.sellerAdvanceTerms || '');
   };
 
   // Submit Quotation Proposal
@@ -111,11 +156,24 @@ export default function SchoolOrdersTab() {
     e.preventDefault();
     if (!quotationModalOrder || !quoteAmount) return;
 
+    const finalAmount = Number(quoteAmount);
+    const advAmt = prepaymentType === 'percentage'
+      ? Math.round((finalAmount * Number(prepaymentPercentage || 0)) / 100)
+      : (Number(prepaymentAmount) || Math.round((finalAmount * Number(prepaymentPercentage || 0)) / 100));
+
     submitSchoolQuote(quotationModalOrder.id || quotationModalOrder._id, {
-      quoteAmount: Number(quoteAmount),
+      quoteAmount: finalAmount,
       unitPrice: Number(unitPrice) || 0,
       estimatedDeliveryDays: Number(deliveryDays) || 7,
-      notes: quoteNotes
+      notes: quoteNotes,
+      prepaymentType,
+      prepaymentPercentage: Number(prepaymentPercentage) || 0,
+      prepaymentAmount: advAmt,
+      prepaymentTerms,
+      sellerAdvanceType: prepaymentType,
+      sellerAdvancePercentage: Number(prepaymentPercentage) || 0,
+      sellerAdvanceAmount: advAmt,
+      sellerAdvanceTerms: prepaymentTerms
     });
 
     setQuotationModalOrder(null);
@@ -176,9 +234,9 @@ export default function SchoolOrdersTab() {
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Accepted / Won RFQs</div>
           <div className="text-2xl font-extrabold text-emerald-700 mt-1">
-            {schoolOrders.filter(s => s.status === 'assigned' || s.status === 'quote_accepted' || s.status === 'Accepted').length}
+            {schoolOrders.filter(s => ['assigned', 'quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(s.status)).length}
           </div>
-          <div className="text-[10px] text-emerald-600 mt-0.5">Assigned to your store</div>
+          <div className="text-[10px] text-emerald-600 mt-0.5">Assigned & active fulfillment</div>
         </div>
       </div>
 
@@ -188,7 +246,7 @@ export default function SchoolOrdersTab() {
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search school name, contact person, city..."
+            placeholder="Search school name, contact person, city, ref ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600"
@@ -198,6 +256,7 @@ export default function SchoolOrdersTab() {
         <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
           {[
             { id: 'All', label: 'All RFQs', icon: <Building2 size={13} /> },
+            { id: 'Accepted', label: 'Accepted Orders', icon: <CheckCircle2 size={13} /> },
             { id: 'Direct', label: 'Directly Assigned', icon: <UserCheck size={13} /> },
             { id: 'Invited', label: 'Invited Sellers', icon: <Users size={13} /> },
             { id: 'Broadcast', label: 'Global Broadcast', icon: <Globe size={13} /> }
@@ -239,15 +298,24 @@ export default function SchoolOrdersTab() {
             const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
             const assignedSellerId = req.sellerId ? (typeof req.sellerId === 'object' ? (req.sellerId._id || req.sellerId.id) : req.sellerId) : '';
 
-            const isAssignedToMe = (req.status === 'assigned' || req.status === 'quote_accepted' || req.status === 'Accepted') && assignedSellerId && String(assignedSellerId) === currentSellerId;
-            const isAcceptedOther = (req.status === 'quote_accepted' || req.acceptedQuoteId) && assignedSellerId && String(assignedSellerId) !== currentSellerId;
-
             const hasSellerQuote = Array.isArray(req.quotations) && req.quotations.some(
               q => String(q.sellerId) === currentSellerId
             );
             const myQuote = hasSellerQuote ? req.quotations.find(
               q => String(q.sellerId) === currentSellerId
             ) : null;
+
+            const isWinningSeller = Boolean(req.acceptedQuoteId && req.quotations?.some(
+              q => String(q._id) === String(req.acceptedQuoteId) && String(q.sellerId) === currentSellerId
+            ));
+
+            const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status);
+            const isAssignedToMe = (assignedSellerId && String(assignedSellerId) === currentSellerId) || isWinningSeller || (isAcceptedStatus && hasSellerQuote);
+            const isAcceptedOther = (req.status === 'quote_accepted' || req.acceptedQuoteId) && assignedSellerId && String(assignedSellerId) !== currentSellerId && !isAssignedToMe;
+
+            const isPacked = req.status === 'packed';
+            const isOutForDelivery = req.status === 'out for delivery' || req.status === 'out_for_delivery';
+            const isReceived = req.status === 'received' || req.status === 'delivered';
 
             return (
               <div key={req.id || req._id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs hover:border-teal-200 transition-all space-y-4">
@@ -280,15 +348,45 @@ export default function SchoolOrdersTab() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 mt-1">
-                      <span className="flex items-center gap-1"><Phone size={13} /> {req.contactName || req.contactPerson} ({req.contactPhone})</span>
-                      <span className="flex items-center gap-1"><Mail size={13} /> {req.contactEmail}</span>
-                      <span className="flex items-center gap-1 text-teal-700 font-medium"><Calendar size={13} /> Deadline: {req.targetDeliveryDate || req.deadline || 'ASAP'}</span>
+                      <span className="flex items-center gap-1 font-semibold text-gray-700">
+                        <UserCheck size={13} className="text-teal-700" /> Buyer: {req.contactName || req.contactPerson || 'School Representative'}
+                      </span>
+                      <span className="flex items-center gap-1 text-teal-700 font-medium"><Calendar size={13} /> Delivery: {req.targetDeliveryDate || req.deadline || 'ASAP'}</span>
+                      {req.expectedQuotationDate && (() => {
+                        const target = new Date(req.expectedQuotationDate);
+                        if (isNaN(target.getTime())) return null;
+                        const now = new Date();
+                        const targetMid = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+                        const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                        const diffDays = Math.round((targetMid - nowMid) / (1000 * 60 * 60 * 24));
+                        const isExpired = diffDays < 0;
+                        const isUrgent = diffDays >= 0 && diffDays <= 2;
+                        const text = diffDays > 1 ? `${diffDays} days left` : diffDays === 1 ? '1 day left' : diffDays === 0 ? 'Deadline today' : `Expired (${Math.abs(diffDays)}d ago)`;
+
+                        return (
+                          <span className={`flex items-center gap-1 font-bold px-2 py-0.5 rounded-md text-[11px] border ${
+                            isExpired
+                              ? 'bg-red-50 text-red-700 border-red-200'
+                              : isUrgent
+                              ? 'bg-amber-50 text-amber-800 border-amber-300'
+                              : 'bg-blue-50 text-blue-800 border-blue-200'
+                          }`}>
+                            <Clock size={12} /> Quote By: {target.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} ({text})
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                      isAssignedToMe
+                      isReceived
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                        : isOutForDelivery
+                        ? 'bg-amber-100 text-amber-950 border-amber-300'
+                        : isPacked
+                        ? 'bg-cyan-50 text-cyan-900 border-cyan-200'
+                        : isAssignedToMe
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                         : isAcceptedOther
                         ? 'bg-amber-50 text-amber-900 border-amber-300'
@@ -296,12 +394,87 @@ export default function SchoolOrdersTab() {
                         ? 'bg-purple-50 text-purple-800 border-purple-200'
                         : 'bg-teal-50 text-teal-800 border-teal-200'
                     }`}>
-                      {isAssignedToMe ? '🎉 Order Received (Quotation Accepted by Customer)' :
-                       isAcceptedOther ? 'ℹ️ User accepted quotation from another seller' :
+                      {isReceived ? '✅ Consignment Delivered & Received' :
+                       isOutForDelivery ? '🚚 Out for Delivery (Store Fleet)' :
+                       isPacked ? '📦 Consignment Packed & Ready' :
+                       isAssignedToMe ? '🎉 Order Accepted by Buyer' :
+                       isAcceptedOther ? 'ℹ️ Buyer accepted quotation from another seller' :
                        hasSellerQuote ? 'Your Pitch Submitted' : 'RFQ Open for Quotations'}
                     </span>
                   </div>
                 </div>
+
+                {/* Status Stepper for Accepted / Processing Orders */}
+                {isAssignedToMe && isAcceptedStatus && (
+                  <div className="bg-teal-50/60 border border-teal-200/80 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-extrabold text-teal-950 flex items-center gap-1.5">
+                        <Truck size={15} className="text-teal-700" />
+                        <span>Order Processing Stepper (Store Self-Delivery Only)</span>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-teal-900 bg-white px-2.5 py-0.5 rounded-full border border-teal-200 shadow-2xs uppercase tracking-wider">
+                        Status: {req.status?.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2 pt-1">
+                      {[
+                        { step: 1, key: 'accepted', label: '1. Accepted', done: true },
+                        { step: 2, key: 'packed', label: '2. Packed', done: ['packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status) },
+                        { step: 3, key: 'out for delivery', label: '3. Out for Delivery', done: ['out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status) },
+                        { step: 4, key: 'received', label: '4. Received', done: ['received', 'delivered'].includes(req.status) }
+                      ].map((st) => (
+                        <div key={st.step} className="flex flex-col items-center text-center">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-2xs ${
+                            st.done ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-500'
+                          }`}>
+                            {st.done ? '✓' : st.step}
+                          </div>
+                          <span className={`text-[10px] mt-1 font-bold ${st.done ? 'text-teal-950' : 'text-gray-400'}`}>
+                            {st.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Self-Delivery Rider Card when Out for Delivery or Received */}
+                    {(isOutForDelivery || isReceived) && req.deliveryDetails && (
+                      <div className="bg-white border border-teal-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs mt-2 shadow-2xs">
+                        <div className="space-y-0.5">
+                          <div className="font-extrabold text-gray-900 flex items-center gap-1.5">
+                            <Truck size={14} className="text-teal-700" />
+                            <span>Rider: {req.deliveryDetails.deliveryBoyName || 'Store Fleet Rider'}</span>
+                            {req.deliveryDetails.deliveryBoyPhone && (
+                              <a
+                                href={`tel:${req.deliveryDetails.deliveryBoyPhone}`}
+                                className="text-teal-700 hover:underline font-bold inline-flex items-center gap-0.5 ml-1"
+                              >
+                                <Phone size={11} /> {req.deliveryDetails.deliveryBoyPhone}
+                              </a>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-gray-500">
+                            Vehicle: <strong>{req.deliveryDetails.vehicleNumber || 'Store Van/Fleet'}</strong> • Mode: <strong className="text-teal-800">Store Self Delivery</strong>
+                          </div>
+                          {req.deliveryDetails.notes && (
+                            <div className="text-[10px] text-gray-400 italic">"{req.deliveryDetails.notes}"</div>
+                          )}
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className="font-mono font-bold text-[11px] text-teal-900 bg-teal-50 px-2.5 py-0.5 rounded border border-teal-200">
+                            Token: {req.deliveryDetails.trackingId || req.deliveryDetails.deliveryPartnerToken || `BV-SLF-${req.referenceId}`}
+                          </div>
+                          {req.deliveryDetails.dispatchedAt && (
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                              Dispatched: {new Date(req.deliveryDetails.dispatchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Requirement details */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50/70 p-3.5 rounded-xl text-xs">
@@ -359,16 +532,46 @@ export default function SchoolOrdersTab() {
                   </div>
                 )}
 
-                {/* Actions Footer */}
-                <div className="flex items-center justify-between pt-1">
+                {/* Advance Payment Indicator Strip */}
+                {(req.buyerAdvancePercentage || req.buyerAdvanceAmount || req.sellerAdvancePercentage || req.sellerAdvanceAmount || req.advancePaymentStatus === 'paid_partially') && (
+                  <div className="bg-emerald-50/70 border border-emerald-200/80 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <DollarSign size={14} className="text-emerald-700 shrink-0" />
+                      <span className="font-extrabold text-emerald-950">
+                        {req.advancePaymentStatus === 'paid_partially' ? (
+                          <span className="text-emerald-800">✅ Advance Mobilization Paid: ₹{Number(req.advancePaidAmount || req.buyerAdvanceAmount || 0).toLocaleString()}</span>
+                        ) : req.buyerAdvancePercentage ? (
+                          <span>Buyer Offered Advance: <strong className="text-emerald-900">{req.buyerAdvancePercentage}%</strong>{req.buyerAdvanceAmount ? ` (₹${Number(req.buyerAdvanceAmount).toLocaleString()})` : ''}</span>
+                        ) : (
+                          <span>Advance Terms Specified</span>
+                        )}
+                      </span>
+                      {req.buyerAdvanceNote && (
+                        <span className="text-gray-500 text-[11px] hidden sm:inline">"{req.buyerAdvanceNote}"</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReceiptOrder(req)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-emerald-300 hover:bg-emerald-100/60 text-emerald-900 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <FileText size={12} className="text-emerald-700" />
+                      <span>Partial Receipt</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Actions Footer with Order Processing Workflow */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-gray-100">
                   <button
                     onClick={() => deleteSchoolOrder(req.id || req._id)}
-                    className="text-gray-400 hover:text-red-600 text-xs flex items-center gap-1 transition-colors"
+                    className="text-gray-400 hover:text-red-600 text-xs flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <Trash2 size={13} /> Remove RFQ
                   </button>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => {
                         setPreviewOrder(req);
@@ -380,27 +583,80 @@ export default function SchoolOrdersTab() {
                       <span>View Expanded Details</span>
                     </button>
 
-                    {/* Direct Accept Button */}
-                    {!isAssignedToMe && (
-                      <button
-                        onClick={() => acceptSchoolOrder(req.id || req._id)}
-                        className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                      >
-                        <CheckCircle2 size={14} /> Accept at Target Budget
-                      </button>
+                    {/* Order Processing Buttons for Seller on Accepted Orders */}
+                    {isAssignedToMe && (
+                      <>
+                        {/* 1. If Accepted -> Advance to Packed */}
+                        {(!req.status || req.status === 'quote_accepted' || req.status === 'accepted' || req.status === 'assigned') && (
+                          <button
+                            onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'packed' })}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
+                          >
+                            <Package size={14} />
+                            <span>Mark as Packed</span>
+                          </button>
+                        )}
+
+                        {/* 2. If Packed -> Open Self-Delivery Dispatch Modal */}
+                        {isPacked && (
+                          <button
+                            onClick={() => {
+                              setDispatchModalOrder(req);
+                              setRiderName(req.deliveryDetails?.deliveryBoyName || '');
+                              setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
+                              setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
+                              setDeliveryNotes(req.deliveryDetails?.notes || '');
+                            }}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
+                          >
+                            <Truck size={14} />
+                            <span>Dispatch (Self Delivery)</span>
+                          </button>
+                        )}
+
+                        {/* 3. If Out for Delivery -> Mark as Received / Handover Completed */}
+                        {isOutForDelivery && (
+                          <button
+                            onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'received' })}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
+                          >
+                            <CheckCircle2 size={14} />
+                            <span>Confirm Received by School</span>
+                          </button>
+                        )}
+
+                        {/* 4. If Received */}
+                        {isReceived && (
+                          <span className="flex items-center gap-1 px-3.5 py-2 bg-emerald-100 text-emerald-900 text-xs font-extrabold rounded-xl border border-emerald-300">
+                            <CheckCircle2 size={14} className="text-emerald-700" />
+                            <span>Fulfilled & Received</span>
+                          </span>
+                        )}
+                      </>
                     )}
 
-                    {/* Submit / Negotiate Quote Button */}
-                    <button
-                      onClick={() => {
-                        setPreviewOrder(req);
-                        setInitialPreviewTab('submit_quote');
-                      }}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl transition-colors cursor-pointer border border-emerald-300 shadow-2xs"
-                    >
-                      <Send size={14} />
-                      <span>{hasSellerQuote ? 'Update Quotation Pitch' : 'Pitch Updated Quotation'}</span>
-                    </button>
+                    {/* Unassigned order action buttons */}
+                    {!isAssignedToMe && (
+                      <>
+                        <button
+                          onClick={() => acceptSchoolOrder(req.id || req._id)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                        >
+                          <CheckCircle2 size={14} /> Accept at Target Budget
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setPreviewOrder(req);
+                            setInitialPreviewTab('submit_quote');
+                          }}
+                          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl transition-colors cursor-pointer border border-emerald-300 shadow-2xs"
+                        >
+                          <Send size={14} />
+                          <span>{hasSellerQuote ? 'Update Quotation Pitch' : 'Pitch Updated Quotation'}</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -422,6 +678,24 @@ export default function SchoolOrdersTab() {
                 <p className="text-[11px] text-teal-800 font-bold mt-0.5">
                   {quotationModalOrder.institutionName || quotationModalOrder.schoolName}
                 </p>
+                {quotationModalOrder.expectedQuotationDate && (() => {
+                  const target = new Date(quotationModalOrder.expectedQuotationDate);
+                  if (isNaN(target.getTime())) return null;
+                  const now = new Date();
+                  const targetMid = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+                  const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                  const diffDays = Math.round((targetMid - nowMid) / (1000 * 60 * 60 * 24));
+                  const isExpired = diffDays < 0;
+                  const isUrgent = diffDays >= 0 && diffDays <= 2;
+                  const text = diffDays > 1 ? `${diffDays} days remaining` : diffDays === 1 ? '1 day left (Ends tomorrow)' : diffDays === 0 ? 'Deadline today' : `Deadline passed (${Math.abs(diffDays)}d ago)`;
+
+                  return (
+                    <div className="mt-1 flex items-center gap-1.5 text-[11px] font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+                      <Clock size={12} className={isExpired ? 'text-red-500' : isUrgent ? 'text-amber-600' : 'text-blue-600'} />
+                      <span>Quote Deadline: {target.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • {text}</span>
+                    </div>
+                  );
+                })()}
               </div>
               <button onClick={() => setQuotationModalOrder(null)} className="text-gray-400 hover:text-gray-600">
                 <X size={18} />
@@ -470,6 +744,116 @@ export default function SchoolOrdersTab() {
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Prepayment / Advance Payment Required by Seller */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-950 text-xs">
+                    <DollarSign size={14} className="text-emerald-700" />
+                    <span>Prepayment / Advance Required</span>
+                  </div>
+
+                  <div className="inline-flex p-0.5 bg-white border border-emerald-200 rounded-lg text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setPrepaymentType('percentage')}
+                      className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                        prepaymentType === 'percentage'
+                          ? 'bg-teal-700 text-white shadow-xs'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      % Percent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrepaymentType('amount')}
+                      className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                        prepaymentType === 'amount'
+                          ? 'bg-teal-700 text-white shadow-xs'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      ₹ Amount
+                    </button>
+                  </div>
+                </div>
+
+                {prepaymentType === 'percentage' ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={prepaymentPercentage}
+                          onChange={(e) => setPrepaymentPercentage(e.target.value)}
+                          placeholder="e.g. 25"
+                          className="w-full px-3 py-1.5 pr-7 bg-white rounded-lg border border-emerald-300 text-xs font-bold text-emerald-950 focus:outline-none focus:border-teal-700"
+                        />
+                        <span className="absolute right-2.5 top-1.5 text-gray-400 font-bold text-xs">%</span>
+                      </div>
+                      <div className="flex gap-1">
+                        {[15, 25, 30, 50].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setPrepaymentPercentage(pct)}
+                            className={`px-2 py-1 rounded text-[10px] font-bold border cursor-pointer ${
+                              Number(prepaymentPercentage) === pct
+                                ? 'bg-emerald-700 text-white border-emerald-700'
+                                : 'bg-white text-gray-700 border-emerald-200 hover:bg-emerald-100/50'
+                            }`}
+                          >
+                            {pct}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1.5 text-gray-400 font-bold text-xs">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={prepaymentAmount}
+                      onChange={(e) => setPrepaymentAmount(e.target.value)}
+                      placeholder="e.g. 50000"
+                      className="w-full pl-6 pr-3 py-1.5 bg-white rounded-lg border border-emerald-300 text-xs font-bold text-emerald-950 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+                )}
+
+                {/* Live Prepayment vs Balance Breakdown */}
+                {(() => {
+                  const total = Number(quoteAmount) || 0;
+                  const advAmt = prepaymentType === 'percentage'
+                    ? Math.round((total * Number(prepaymentPercentage || 0)) / 100)
+                    : (Number(prepaymentAmount) || 0);
+                  const balAmt = Math.max(0, total - advAmt);
+
+                  return (
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-emerald-200/60 text-emerald-950">
+                      <div>
+                        Prepayment: <strong className="font-mono text-emerald-800">₹{advAmt.toLocaleString()}</strong>
+                      </div>
+                      <div>
+                        Balance on Delivery: <strong className="font-mono text-gray-800">₹{balAmt.toLocaleString()}</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <input
+                  type="text"
+                  placeholder="Prepayment Terms (e.g. 25% advance on sample approval, balance on delivery)"
+                  value={prepaymentTerms}
+                  onChange={(e) => setPrepaymentTerms(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-emerald-200 text-[11px] focus:outline-none focus:border-teal-700 text-gray-800"
+                />
               </div>
 
               <div className="space-y-1">
@@ -612,6 +996,161 @@ export default function SchoolOrdersTab() {
         </div>
       )}
 
+      {/* Self-Delivery Dispatch Modal (Only self-delivery allowed for bulk orders) */}
+      {dispatchModalOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 text-xs space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800">
+                  <Truck size={20} />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-gray-900 text-base">
+                    Dispatch Order (Self-Delivery Store Fleet)
+                  </h4>
+                  <p className="text-[11px] text-teal-800 font-bold mt-0.5">
+                    {dispatchModalOrder.institutionName || dispatchModalOrder.schoolName} ({dispatchModalOrder.referenceId})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDispatchModalOrder(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Exclusive Self Delivery Notice */}
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-amber-950">
+              <ShieldCheck size={18} className="text-amber-700 shrink-0 mt-0.5" />
+              <div className="text-[11px] leading-relaxed">
+                <strong className="block text-amber-900 font-extrabold mb-0.5">
+                  Exclusive Store Self-Delivery
+                </strong>
+                Bulk institutional orders are delivered directly by your store fleet/rider. Third-party courier delivery is disabled for B2B consignments.
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!riderName.trim() || !riderPhone.trim()) return;
+
+                const token = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
+                updateSchoolOrderStatus(dispatchModalOrder.id || dispatchModalOrder._id, {
+                  status: 'out for delivery',
+                  deliveryDetails: {
+                    deliveryBoyName: riderName.trim(),
+                    deliveryBoyPhone: riderPhone.trim(),
+                    vehicleNumber: vehicleNumber.trim() || 'Store Fleet',
+                    deliveryPartnerToken: token,
+                    trackingId: token,
+                    trackingUrl: `/#delivery-partner?token=${token}`,
+                    notes: deliveryNotes.trim()
+                  }
+                });
+
+                setDispatchModalOrder(null);
+                setRiderName('');
+                setRiderPhone('');
+                setVehicleNumber('');
+                setDeliveryNotes('');
+              }}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Delivery Partner Mode
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    value="Self Delivery (Store Fleet / Rider)"
+                    className="w-full px-3 py-2 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 font-bold cursor-not-allowed text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Vehicle / Reg. Number
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. DL 01 AB 1234 / Store Van"
+                    value={vehicleNumber}
+                    onChange={(e) => setVehicleNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 font-medium text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Delivery Personnel / Rider Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ramesh Kumar"
+                    value={riderName}
+                    onChange={(e) => setRiderName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 font-semibold text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Rider Mobile Phone Number *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="e.g. 9876543210"
+                    value={riderPhone}
+                    onChange={(e) => setRiderPhone(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 font-semibold text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                  Special Dispatch Notes / Gate Instructions
+                </label>
+                <textarea
+                  rows="2"
+                  placeholder="e.g. Deliver to Admin Block Gate 2; cartons marked 1-10..."
+                  value={deliveryNotes}
+                  onChange={(e) => setDeliveryNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDispatchModalOrder(null)}
+                  className="flex-1 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 font-bold text-white bg-teal-800 hover:bg-teal-900 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Truck size={15} />
+                  <span>Confirm Dispatch & Out for Delivery</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Expanded Bulk Order Details Preview Modal */}
       <BulkOrderPreviewModal
         order={previewOrder}
@@ -623,11 +1162,28 @@ export default function SchoolOrdersTab() {
           submitSchoolQuote(orderId, payload);
           setPreviewOrder(null);
         }}
+        onAcceptCounterDemand={(orderId, quoteId, payload) => {
+          if (acceptBuyerCounterDemand) acceptBuyerCounterDemand(orderId, quoteId, payload);
+          setPreviewOrder(null);
+        }}
+        onReviseQuote={(orderId, quoteId, payload) => {
+          if (reviseSchoolQuote) reviseSchoolQuote(orderId, quoteId, payload);
+          setPreviewOrder(null);
+        }}
         onAcceptDirect={(orderId) => {
           acceptSchoolOrder(orderId);
           setPreviewOrder(null);
         }}
       />
+
+      {/* Partial Advance Payment Receipt Modal */}
+      {selectedReceiptOrder && (
+        <PartialAdvanceReceiptModal
+          isOpen={Boolean(selectedReceiptOrder)}
+          onClose={() => setSelectedReceiptOrder(null)}
+          order={selectedReceiptOrder}
+        />
+      )}
 
     </div>
   );
