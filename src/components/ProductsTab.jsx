@@ -7,6 +7,7 @@ import {
   Trash2, 
   UploadCloud, 
   Package, 
+  Boxes,
   CheckCircle, 
   AlertCircle, 
   X, 
@@ -29,6 +30,7 @@ import { useSellerData } from '../context/SellerDataContext';
 import BulkUpdateModal from './BulkUpdateModal';
 import ImageUploadDropzone from './ImageUploadDropzone';
 import SellerProductFormPage from './SellerProductFormPage';
+import SellerKitFormPage from './SellerKitFormPage';
 import VariantStockModal from './VariantStockModal';
 import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
 
@@ -45,19 +47,32 @@ const CATEGORIES = [
 ];
 
 export default function ProductsTab() {
-  const { isLoadingProducts, products, addProduct, editProduct, toggleProductStatus, deleteProduct, updateVariantStock, isApproved } = useSellerData();
+  const {
+    isLoadingProducts,
+    products,
+    addProduct,
+    editProduct,
+    toggleProductStatus,
+    deleteProduct,
+    updateVariantStock,
+    isApproved,
+    kits = [],
+    addKit,
+    editKit
+  } = useSellerData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all'); // all | in_stock | low_stock | out_of_stock
   const [approvalFilter, setApprovalFilter] = useState('all'); // all | Approved | Pending | Rejected
   const [sortBy, setSortBy] = useState('newest');
 
-  // Page view mode: 'catalog' | 'form'
+  // Page view mode: 'catalog' | 'form' | 'kit-form'
   const [viewMode, setViewMode] = useState('catalog');
 
   // Modals state
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [editingKit, setEditingKit] = useState(null);
   const [deletingProductId, setDeletingProductId] = useState(null);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
   const [variantStockModalProduct, setVariantStockModalProduct] = useState(null);
@@ -73,13 +88,24 @@ export default function ProductsTab() {
     setViewMode('form');
   };
 
+  const openAddKit = () => {
+    setErrorMsg('');
+    setEditingKit(null);
+    setViewMode('kit-form');
+  };
+
   React.useEffect(() => {
     const handleOpen = () => openAddModal();
+    const handleOpenKit = () => openAddKit();
     window.addEventListener('openAddProductModal', handleOpen);
     window.addEventListener('openAddProductModalInternal', handleOpen);
+    window.addEventListener('openAddKitModal', handleOpenKit);
+    window.addEventListener('openAddKitModalInternal', handleOpenKit);
     return () => {
       window.removeEventListener('openAddProductModal', handleOpen);
       window.removeEventListener('openAddProductModalInternal', handleOpen);
+      window.removeEventListener('openAddKitModal', handleOpenKit);
+      window.removeEventListener('openAddKitModalInternal', handleOpenKit);
     };
   }, []);
 
@@ -91,15 +117,23 @@ export default function ProductsTab() {
 
   const handleSaveProduct = async (payload) => {
     try {
-      if (editingProduct) {
-        await editProduct(editingProduct.id || editingProduct._id, payload);
+      if (payload.bundleType === 'kit' || payload.category === 'kits') {
+        if (editingProduct) {
+          await editKit(editingProduct.id || editingProduct._id, payload);
+        } else {
+          await addKit(payload);
+        }
       } else {
-        await addProduct(payload);
+        if (editingProduct) {
+          await editProduct(editingProduct.id || editingProduct._id, payload);
+        } else {
+          await addProduct(payload);
+        }
       }
       setViewMode('catalog');
       setEditingProduct(null);
     } catch (err) {
-      console.error('Failed to save product:', err);
+      console.error('Failed to save product/kit:', err);
       throw err;
     }
   };
@@ -167,10 +201,34 @@ export default function ProductsTab() {
     return (
       <SellerProductFormPage
         product={editingProduct}
+        existingProducts={products}
+        onSwitchToKit={() => openAddKit()}
         onSave={handleSaveProduct}
         onBack={() => {
           setViewMode('catalog');
           setEditingProduct(null);
+        }}
+      />
+    );
+  }
+
+  if (viewMode === 'kit-form') {
+    return (
+      <SellerKitFormPage
+        kit={editingKit}
+        existingProducts={products}
+        onSave={async (payload) => {
+          if (editingKit) {
+            await editKit(editingKit.id || editingKit._id, payload);
+          } else {
+            await addKit(payload);
+          }
+          setViewMode('catalog');
+          setEditingKit(null);
+        }}
+        onBack={() => {
+          setViewMode('catalog');
+          setEditingKit(null);
         }}
       />
     );
@@ -196,6 +254,14 @@ export default function ProductsTab() {
             className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-teal-600 text-teal-800 hover:bg-teal-50 text-xs font-bold rounded-xl shadow-xs transition-colors"
           >
             <UploadCloud size={16} /> Bulk Update (Excel/CSV)
+          </button>
+          <button
+            type="button"
+            onClick={openAddKit}
+            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-teal-50 border border-teal-200 text-brand-teal hover:bg-teal-100 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            title="Create new multi-product kit package"
+          >
+            <Boxes size={16} /> + Kit Bundle
           </button>
           <button
             onClick={openAddModal}

@@ -237,7 +237,7 @@ export function parseBool(val, defaultVal = true) {
   return Boolean(val);
 }
 
-export default function SellerProductFormPage({ product, existingProducts = [], onSave, onBack }) {
+export default function SellerProductFormPage({ product, existingProducts = [], onSwitchToKit, onSave, onBack }) {
   const isEdit = Boolean(product);
 
   // Entry Type: 'single' (Standard product) or 'kit' (Kit / Bundle)
@@ -990,8 +990,12 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           <button
             type="button"
             onClick={() => {
-              setEntryType('kit');
-              setActiveTab('kit');
+              if (typeof onSwitchToKit === 'function') {
+                onSwitchToKit();
+              } else {
+                setEntryType('kit');
+                setActiveTab('kit');
+              }
             }}
             className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
               entryType === 'kit' ? 'bg-brand-teal text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'

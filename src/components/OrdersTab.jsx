@@ -512,7 +512,7 @@ export default function OrdersTab() {
                             <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800">
                               🛵 Self-Delivery
                             </span>
-                          ) : o.courierName ? (
+                          ) : (o.courierName && o.courierName !== 'N/A') ? (
                             <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
                               🚚 {o.courierName}
                             </span>

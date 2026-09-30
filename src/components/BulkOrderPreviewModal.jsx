@@ -21,8 +21,18 @@ import {
   Camera,
   Check,
   Store,
-  AlertCircle
+  AlertCircle,
+  Truck,
+  ExternalLink,
+  Lock,
+  Printer,
+  Percent,
+  SlidersHorizontal
 } from 'lucide-react';
+import TaxInvoiceModal from './TaxInvoiceModal';
+import PartialAdvanceReceiptModal from './PartialAdvanceReceiptModal';
+import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
+import NegotiationTimelineDiv from './NegotiationTimelineDiv';
 
 export default function BulkOrderPreviewModal({
   order,
@@ -33,6 +43,8 @@ export default function BulkOrderPreviewModal({
   onDistribute, // (orderId, { assignmentMode, sellerId, invitedSellerIds }) => void
   onApproveQuote, // (orderId, quoteId) => void
   onSubmitQuote, // (orderId, { quoteAmount, unitPrice, itemPrices, volumeDiscountNote, estimatedDeliveryDays, notes }) => void
+  onAcceptCounterDemand, // (orderId, quoteId, payload) => void
+  onReviseQuote, // (orderId, quoteId, payload) => void
   onAcceptDirect, // (orderId) => void
   sellerUser = null // Current seller info when userRole === 'seller'
 }) {
@@ -48,6 +60,29 @@ export default function BulkOrderPreviewModal({
   // Active Tab inside modal
   const [modalSubTab, setModalSubTab] = useState(initialTab || 'specs'); // 'specs', 'distribution', 'quotes', 'submit_quote'
 
+  // Version Comparison Modal State
+  const [comparingQuote, setComparingQuote] = useState(null);
+  const [isComparisonOpen, setIsComparisonOpen] = useState(false);
+
+  // Extended Interactive Timeline Div State
+  const [expandedTimelineQuoteId, setExpandedTimelineQuoteId] = useState(null);
+  const [selectedTimelineVersion, setSelectedTimelineVersion] = useState(null);
+
+  const toggleTimelineForQuote = (qId, ver = null) => {
+    if (expandedTimelineQuoteId === qId && (ver === null || ver === selectedTimelineVersion)) {
+      setExpandedTimelineQuoteId(null);
+      setSelectedTimelineVersion(null);
+    } else {
+      setExpandedTimelineQuoteId(qId);
+      setSelectedTimelineVersion(ver);
+    }
+  };
+
+  const handleOpenVersionComparison = (q) => {
+    setComparingQuote(q);
+    setIsComparisonOpen(true);
+  };
+
   // Admin Distribution State
   const [distributeMode, setDistributeMode] = useState(order.assignmentMode || 'direct');
   const [selectedSingleSeller, setSelectedSingleSeller] = useState(
@@ -58,11 +93,56 @@ export default function BulkOrderPreviewModal({
   );
   const [sellerSearchQuery, setSellerSearchQuery] = useState('');
 
-  // Seller Quotation State
-  const currentSellerId = sellerUser?.id || sellerUser?._id || '';
-  const existingSellerQuote = Array.isArray(order.quotations)
-    ? order.quotations.find(q => String(q.sellerId) === String(currentSellerId))
-    : null;
+  // Seller Quotation State & Robust Candidate Matching
+  const sellerCandidateIds = useMemo(() => {
+    return [
+      sellerUser?.id,
+      sellerUser?._id,
+      sellerUser?.merchantId,
+      typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+    ].filter(Boolean).map(String);
+  }, [sellerUser]);
+
+  const cleanSellerPhone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
+  const cleanSellerStore = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
+
+  const existingSellerQuote = useMemo(() => {
+    if (!Array.isArray(order?.quotations) || order.quotations.length === 0) return null;
+
+    // 1. Check direct candidate ID match
+    const matchById = order.quotations.find(q => {
+      const qId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
+      return qId && sellerCandidateIds.includes(qId);
+    });
+    if (matchById) return matchById;
+
+    // 2. Check phone match
+    if (cleanSellerPhone) {
+      const matchByPhone = order.quotations.find(q => {
+        const qPhone = String(q.sellerPhone || '').replace(/\D/g, '').slice(-10);
+        return qPhone && qPhone === cleanSellerPhone;
+      });
+      if (matchByPhone) return matchByPhone;
+    }
+
+    // 3. Check store name match
+    if (cleanSellerStore) {
+      const matchByStore = order.quotations.find(q => {
+        const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
+        return qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore));
+      });
+      if (matchByStore) return matchByStore;
+    }
+
+    // 4. In seller panel with sanitized array of length 1: it belongs to this seller!
+    if (userRole === 'seller' && order.quotations.length === 1) {
+      return order.quotations[0];
+    }
+
+    return null;
+  }, [order?.quotations, sellerCandidateIds, cleanSellerPhone, cleanSellerStore, userRole]);
 
   const targetBudgetNum = Number(order.targetBudgetPerKit || order.estimatedBudget || 0);
   const totalQtyNum = Number(
@@ -83,6 +163,22 @@ export default function BulkOrderPreviewModal({
     existingSellerQuote ? String(existingSellerQuote.estimatedDeliveryDays || 7) : '7'
   );
   const [quoteNotes, setQuoteNotes] = useState(existingSellerQuote ? (existingSellerQuote.notes || '') : '');
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+
+  // Advance Payment Counter-Demand State
+  const [sellerAdvanceType, setSellerAdvanceType] = useState(
+    existingSellerQuote?.sellerAdvanceType || order.buyerAdvanceType || 'percentage'
+  );
+  const [sellerAdvancePercentage, setSellerAdvancePercentage] = useState(
+    existingSellerQuote?.sellerAdvancePercentage ?? (order.buyerAdvancePercentage || 30)
+  );
+  const [sellerAdvanceAmount, setSellerAdvanceAmount] = useState(
+    existingSellerQuote?.sellerAdvanceAmount ? String(existingSellerQuote.sellerAdvanceAmount) : (order.buyerAdvanceAmount ? String(order.buyerAdvanceAmount) : '')
+  );
+  const [sellerAdvanceTerms, setSellerAdvanceTerms] = useState(
+    existingSellerQuote?.sellerAdvanceTerms || (order.buyerAdvanceNote ? `Agreed to buyer advance: ${order.buyerAdvanceNote}` : '30% advance on sample approval before bulk procurement, 70% upon delivery.')
+  );
 
   // Keep state updated when order changes
   useEffect(() => {
@@ -95,6 +191,18 @@ export default function BulkOrderPreviewModal({
       setSelectedMultipleSellers(
         (order.invitedSellerIds || []).map(s => (typeof s === 'object' ? (s._id || s.id) : s))
       );
+
+      if (existingSellerQuote) {
+        setSellerAdvanceType(existingSellerQuote.sellerAdvanceType || 'percentage');
+        setSellerAdvancePercentage(existingSellerQuote.sellerAdvancePercentage || 30);
+        setSellerAdvanceAmount(existingSellerQuote.sellerAdvanceAmount ? String(existingSellerQuote.sellerAdvanceAmount) : '');
+        setSellerAdvanceTerms(existingSellerQuote.sellerAdvanceTerms || '');
+      } else {
+        setSellerAdvanceType(order.buyerAdvanceType || 'percentage');
+        setSellerAdvancePercentage(order.buyerAdvancePercentage || 30);
+        setSellerAdvanceAmount(order.buyerAdvanceAmount ? String(order.buyerAdvanceAmount) : '');
+        setSellerAdvanceTerms(order.buyerAdvanceNote ? `Agreed to buyer advance: ${order.buyerAdvanceNote}` : '30% advance on sample approval before bulk procurement, 70% upon delivery.');
+      }
     }
   }, [order, initialTab]);
 
@@ -143,9 +251,11 @@ export default function BulkOrderPreviewModal({
           ip => String(ip.itemId) === String(item._id || item.id || idx) || String(ip.itemName) === String(item.itemName)
         );
         const custBudget = Number(item.budgetPerUnit || item.budgetUnit || 0);
+        // STRICT PRIVACY: NEVER autofill another seller's pitch price!
+        // Only use existingItemPrice if THIS seller has previously quoted it; otherwise default to customer target budget or 0.
         const currentSellerPrice = existingItemPrice
           ? Number(existingItemPrice.pricePerUnit || 0)
-          : (Number(item.sellerPricePerUnit || item.sellerPrice || 0) || custBudget || 0);
+          : (custBudget > 0 ? custBudget : 0);
         const qty = Number(item.quantity || 1);
 
         return {
@@ -203,6 +313,81 @@ export default function BulkOrderPreviewModal({
     ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId))
     : null;
 
+  // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
+  const normStatus = String(order.deliveryStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
+  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
+  const isSelf = String(order.deliveryMode || '').toLowerCase().includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPersonName);
+  const isThirdParty = String(order.deliveryMode || '').toLowerCase().includes('third') || Boolean(order.courierName && order.courierName !== 'N/A');
+  const hasPartner = isSelf || isThirdParty || Boolean((order.courierName && order.courierName !== 'N/A') || order.selfDeliveryDetails?.deliveryPersonName);
+  const canViewTracking = isOut && hasPartner && Boolean(order.trackingNumber || order.selfDeliveryDetails?.deliveryPartnerToken);
+
+  const deliveryPartnerDisplay = isSelf 
+    ? (order.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
+    : (order.courierName || 'N/A');
+
+  const trackingNumberDisplay = order.trackingNumber || (isSelf ? order.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
+  const trackingLinkDisplay = order.trackingUrl || order.selfDeliveryDetails?.trackingUrl || '';
+
+  // Transform bulk order into TaxInvoice-compatible object
+  const taxInvoiceOrder = useMemo(() => {
+    if (!order) return null;
+    const totalQty = Number(order.totalQuantity || order.quantity || (Array.isArray(order.requirements) ? order.requirements.reduce((s, r) => s + Number(r.quantity || 0), 0) : 100));
+    const quoteVal = Number(winningQuote?.quoteAmount || order.targetBudgetPerKit || order.estimatedBudget || order.overallBudget || 0);
+    const avgPrice = totalQty > 0 ? Math.round(quoteVal / totalQty) : 0;
+
+    const reqItems = Array.isArray(order.requirements) && order.requirements.length > 0
+      ? order.requirements.map((r, idx) => ({
+          id: r._id || idx + 1,
+          name: r.itemName || 'School Supply Item',
+          category: r.category || 'School Uniform',
+          quantity: Number(r.quantity || 1),
+          price: Number(r.sellerPricePerUnit || (winningQuote?.itemPrices?.find(ip => String(ip.itemId || ip.itemName) === String(r._id || r.itemName))?.pricePerUnit) || avgPrice || 100),
+          sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
+          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller'
+        }))
+      : [{
+          id: 1,
+          name: order.requirementSummary || 'Institutional Bulk Supply Order',
+          category: 'School Uniform',
+          quantity: totalQty,
+          price: avgPrice,
+          sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
+          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller'
+        }];
+
+    return {
+      id: order.referenceId || order.id || order._id || 'BULK-PO',
+      orderId: order.referenceId || order.id || order._id || 'BULK-PO',
+      date: new Date(order.createdAt || Date.now()).toLocaleDateString('en-GB'),
+      customerName: order.institutionName || order.contactName || 'School Administrator',
+      customerPhone: userRole === 'admin' ? (order.contactPhone || 'N/A') : 'Protected (Admin Only)',
+      address: userRole === 'admin'
+        ? `${order.address || ''}, ${order.city || ''}, ${order.state || ''} ${order.pincode ? '- ' + order.pincode : ''}`.trim() || 'Campus Delivery Address'
+        : `${order.city || ''}, ${order.state || ''}`.trim() || 'Campus Destination',
+      shippingAddress: {
+        street: userRole === 'admin' ? (order.address || 'Campus Delivery Address') : 'Campus Destination',
+        city: order.city || 'Lucknow',
+        state: order.state || 'Uttar Pradesh',
+        pincode: userRole === 'admin' ? (order.pincode || '226001') : '******'
+      },
+      school: order.institutionName || 'Institutional Order',
+      paymentMethod: 'School PO / Bank Transfer',
+      paymentStatus: 'paid',
+      status: order.deliveryStatus || order.status || 'confirmed',
+      overallStatus: order.deliveryStatus || order.status || 'confirmed',
+      deliveryMode: order.deliveryMode || '',
+      courierName: order.courierName || '',
+      trackingNumber: order.trackingNumber || '',
+      trackingUrl: order.trackingUrl || '',
+      selfDeliveryDetails: order.selfDeliveryDetails || null,
+      sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'BookVardi Verified Seller',
+      sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'BookVardi Verified Seller',
+      sellerPhone: winningQuote?.sellerPhone || 'Helpline',
+      items: reqItems,
+      total: quoteVal
+    };
+  }, [order, winningQuote]);
+
   // Filtered sellers for Admin Distribution
   const verifiedSellers = useMemo(() => {
     return (sellers || []).filter(s =>
@@ -248,9 +433,49 @@ export default function BulkOrderPreviewModal({
     setModalSubTab('specs');
   };
 
+  const handleSellerAdvanceTypeChange = (type) => {
+    setSellerAdvanceType(type);
+    const finalAmount = calculatedGrandTotal > 0 ? calculatedGrandTotal : Number(quoteAmount) || 0;
+    if (type === 'amount') {
+      if (finalAmount > 0 && sellerAdvancePercentage) {
+        setSellerAdvanceAmount(String(Math.round((finalAmount * Number(sellerAdvancePercentage)) / 100)));
+      }
+    } else {
+      if (finalAmount > 0 && sellerAdvanceAmount) {
+        setSellerAdvancePercentage(Math.min(100, Math.max(1, Math.round((Number(sellerAdvanceAmount) / finalAmount) * 100))));
+      }
+    }
+  };
+
+  const handleSellerAdvancePercentageChange = (pct) => {
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    setSellerAdvancePercentage(p);
+    const finalAmount = calculatedGrandTotal > 0 ? calculatedGrandTotal : Number(quoteAmount) || 0;
+    if (finalAmount > 0) {
+      setSellerAdvanceAmount(String(Math.round((finalAmount * p) / 100)));
+    }
+  };
+
+  const handleSellerAdvanceAmountChange = (amt) => {
+    setSellerAdvanceAmount(amt);
+    const finalAmount = calculatedGrandTotal > 0 ? calculatedGrandTotal : Number(quoteAmount) || 0;
+    const numAmt = Number(amt) || 0;
+    if (finalAmount > 0 && numAmt > 0) {
+      const calcPct = Math.min(100, Math.max(1, Math.round((numAmt / finalAmount) * 100)));
+      setSellerAdvancePercentage(calcPct);
+    }
+  };
+
+  const [expandedHistoryQuotes, setExpandedHistoryQuotes] = useState({});
+  const toggleHistory = (quoteId) => {
+    setExpandedHistoryQuotes(prev => ({
+      ...prev,
+      [quoteId]: !prev[quoteId]
+    }));
+  };
+
   const handleSellerQuoteSubmit = (e) => {
     e.preventDefault();
-    if (!onSubmitQuote) return;
 
     const finalAmount = calculatedGrandTotal > 0 ? calculatedGrandTotal : Number(quoteAmount);
     if (!finalAmount || finalAmount <= 0) {
@@ -258,14 +483,32 @@ export default function BulkOrderPreviewModal({
       return;
     }
 
-    onSubmitQuote(order.id || order._id, {
+    const calculatedAdvAmt = sellerAdvanceType === 'percentage'
+      ? Math.round((finalAmount * Number(sellerAdvancePercentage || 30)) / 100)
+      : (Number(sellerAdvanceAmount) || Math.round((finalAmount * Number(sellerAdvancePercentage || 30)) / 100));
+
+    const payload = {
       quoteAmount: finalAmount,
       unitPrice: calculatedAvgUnitPrice,
       itemPrices: pitchItems,
       volumeDiscountNote: volumeDiscountNote || 'Prices can be decreased if order quantity increases.',
       estimatedDeliveryDays: Number(deliveryDays) || 7,
-      notes: quoteNotes
-    });
+      notes: quoteNotes,
+      sellerAdvanceType,
+      sellerAdvancePercentage: Number(sellerAdvancePercentage || 30),
+      sellerAdvanceAmount: calculatedAdvAmt,
+      sellerAdvanceTerms,
+      prepaymentType: sellerAdvanceType,
+      prepaymentPercentage: Number(sellerAdvancePercentage || 30),
+      prepaymentAmount: calculatedAdvAmt,
+      prepaymentTerms: sellerAdvanceTerms
+    };
+
+    if (existingSellerQuote && onReviseQuote) {
+      onReviseQuote(order.id || order._id, existingSellerQuote._id || existingSellerQuote.id, payload);
+    } else if (onSubmitQuote) {
+      onSubmitQuote(order.id || order._id, payload);
+    }
 
     setModalSubTab('specs');
   };
@@ -347,7 +590,7 @@ export default function BulkOrderPreviewModal({
               </button>
             )}
 
-            {/* Vendor Quotes Tab */}
+            {/* Vendor Quotes / My Quotation Tab */}
             <button
               onClick={() => setModalSubTab('quotes')}
               className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -357,7 +600,11 @@ export default function BulkOrderPreviewModal({
               }`}
             >
               <Sparkles size={14} />
-              <span>Vendor Quotations ({order.quotations?.length || 0})</span>
+              <span>
+                {userRole === 'admin'
+                  ? `Vendor Quotations (${order.quotations?.length || 0})`
+                  : (existingSellerQuote ? 'My Quotation / Pitch' : 'My Pitch Status')}
+              </span>
             </button>
 
             {/* Seller Proposal Form Tab */}
@@ -384,7 +631,55 @@ export default function BulkOrderPreviewModal({
         {/* Modal Scrollable Body */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs text-gray-800 flex-1">
           
-          {/* TAB 1: FULL EXPANDED SPECIFICATIONS */}
+          {/* Top Sticky Alert if Counter Demand is Received from Buyer */}
+          {userRole === 'seller' && existingSellerQuote?.negotiationStage === 'buyer_countered' && existingSellerQuote.latestBuyerCounter && (
+            <div className="p-4 bg-gradient-to-r from-amber-500/10 via-orange-500/15 to-amber-500/10 border-2 border-amber-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs animate-pulse">
+                  <Clock size={19} />
+                </div>
+                <div>
+                  <div className="font-black text-xs text-amber-950 flex items-center gap-2">
+                    <span>🔔 Buyer Sent 2nd Version Counter-Demand</span>
+                    <span className="bg-amber-500 text-white text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full">Action Required</span>
+                  </div>
+                  <div className="text-[11px] text-amber-900 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>Target Budget: <strong className="font-mono font-extrabold text-amber-950">₹{Number(existingSellerQuote.latestBuyerCounter.targetBudget).toLocaleString()}</strong></span>
+                    <span>Quantity: <strong className="font-mono font-extrabold text-amber-950">{existingSellerQuote.latestBuyerCounter.totalQuantity || totalQtyNum} Units</strong></span>
+                    {(existingSellerQuote.latestBuyerCounter.unitPrice || existingSellerQuote.latestBuyerCounter.targetBudget) && (
+                      <span>Unit Rate: <strong className="font-mono font-extrabold text-amber-950">₹{Number(existingSellerQuote.latestBuyerCounter.unitPrice || Math.round(Number(existingSellerQuote.latestBuyerCounter.targetBudget) / (Number(existingSellerQuote.latestBuyerCounter.totalQuantity) || totalQtyNum || 1))).toLocaleString()} / unit</strong></span>
+                    )}
+                    {existingSellerQuote.latestBuyerCounter.requestedDeliveryDays && (
+                      <span>Lead Time: <strong className="text-amber-950">{existingSellerQuote.latestBuyerCounter.requestedDeliveryDays} Days</strong></span>
+                    )}
+                    {existingSellerQuote.latestBuyerCounter.proposedAdvancePercentage && (
+                      <span>Advance: <strong className="text-amber-950">{existingSellerQuote.latestBuyerCounter.proposedAdvancePercentage}%</strong></span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalSubTab('quotes');
+                    toggleTimelineForQuote(existingSellerQuote._id || existingSellerQuote.id, existingSellerQuote.currentVersion || 2);
+                  }}
+                  className="px-3 py-1.5 bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-2xs"
+                >
+                  View Timeline & Versions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalSubTab('submit_quote')}
+                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
+                >
+                  <Sparkles size={13} />
+                  <span>Review & Revise Pitch</span>
+                </button>
+              </div>
+            </div>
+          )}
           {modalSubTab === 'specs' && (
             <div className="space-y-6">
               
@@ -403,23 +698,33 @@ export default function BulkOrderPreviewModal({
                   <h3 className="font-extrabold text-xs text-teal-800 uppercase tracking-wider flex items-center gap-1.5">
                     <UserCheck size={15} /> Authorized Administrator Contact
                   </h3>
-                  <div className="text-sm font-bold text-gray-900">{contactName} ({designation})</div>
-                  <div className="flex items-center gap-3 text-gray-700">
-                    <span className="flex items-center gap-1 font-semibold"><Phone size={13} className="text-gray-400" /> {contactPhone}</span>
-                    <span className="flex items-center gap-1"><Mail size={13} className="text-gray-400" /> {contactEmail}</span>
-                  </div>
+                  <div className="text-sm font-bold text-gray-900">{contactName}</div>
+                  {userRole === 'admin' && (
+                    <div className="flex items-center gap-3 text-gray-700">
+                      <span className="flex items-center gap-1 font-semibold"><Phone size={13} className="text-gray-400" /> {contactPhone}</span>
+                      <span className="flex items-center gap-1"><Mail size={13} className="text-gray-400" /> {contactEmail}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Delivery School Address Card */}
               <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-200 space-y-1">
                 <h3 className="font-extrabold text-xs text-purple-900 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                  <MapPin size={15} /> Campus Delivery Address & Location
+                  <MapPin size={15} /> Campus Delivery Destination
                 </h3>
-                <div className="font-bold text-gray-900 text-xs">{address}</div>
-                <div className="text-gray-700">
-                  {city}, {state} - <strong className="font-mono text-gray-900">{pincode || '226001'}</strong>
-                </div>
+                {userRole === 'admin' ? (
+                  <>
+                    <div className="font-bold text-gray-900 text-xs">{address}</div>
+                    <div className="text-gray-700">
+                      {city}, {state} - <strong className="font-mono text-gray-900">{pincode || '226001'}</strong>
+                    </div>
+                  </>
+                ) : (
+                  <div className="font-bold text-gray-900 text-xs">
+                    {city}, {state}
+                  </div>
+                )}
               </div>
 
               {/* Approved Winning Quotation / Status Banners */}
@@ -430,13 +735,50 @@ export default function BulkOrderPreviewModal({
 
                 if (isAcceptedToMe && userRole === 'seller') {
                   return (
-                    <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-1.5 border border-emerald-500">
+                    <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-3 border border-emerald-500">
                       <div className="font-black text-sm flex items-center gap-2">
                         <Sparkles size={18} className="text-amber-300" /> 🎉 Order Received! Your Quotation Was Accepted by Customer
                       </div>
                       <p className="text-xs text-emerald-100 font-medium">
                         Congratulations! The customer accepted your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount).toLocaleString()}</strong>. Admin and Customer have received your fulfillment commitment.
                       </p>
+
+                      {/* Action Row: View Tax Invoice Button & Tracking Status */}
+                      <div className="pt-2 border-t border-emerald-500/80 flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsInvoiceOpen(true)}
+                          className="px-3.5 py-1.5 bg-white hover:bg-gray-100 text-emerald-950 font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <FileText size={14} />
+                          <span>View Official Tax Invoice & PO Certificate</span>
+                        </button>
+
+                        {canViewTracking ? (
+                          <div className="flex items-center gap-2 bg-emerald-700/80 text-white px-3 py-1.5 rounded-xl border border-emerald-400 text-xs">
+                            <Truck size={14} className="text-amber-300" />
+                            <span>{isSelf ? '🛵 Self-Delivery' : `🚚 ${order.courierName || 'Courier'}`}:</span>
+                            <span className="font-mono font-bold bg-white/20 px-1.5 py-0.5 rounded border border-white/20">{trackingNumberDisplay}</span>
+                            {trackingLinkDisplay && (
+                              <a
+                                href={trackingLinkDisplay}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-amber-300 hover:text-white font-bold underline flex items-center gap-0.5 ml-1"
+                              >
+                                Track <ExternalLink size={11} />
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-emerald-100 bg-emerald-700/50 px-2.5 py-1 rounded-lg border border-emerald-500 flex items-center gap-1.5">
+                            <Lock size={12} className="text-emerald-200" />
+                            <span>
+                              {isOut ? 'Out for Delivery (Delivery partner pending)' : 'Tracking available once Out for Delivery & partner decided'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 }
@@ -445,16 +787,16 @@ export default function BulkOrderPreviewModal({
                   return (
                     <div className="bg-amber-50 border border-amber-300 text-amber-950 p-4.5 rounded-2xl shadow-xs space-y-1.5">
                       <div className="font-extrabold text-xs uppercase tracking-wider text-amber-900 flex items-center gap-2">
-                        <AlertCircle size={16} className="text-amber-700" /> ℹ️ User Accepted Quotation from Another Seller
+                        <AlertCircle size={16} className="text-amber-700" /> Requisition Awarded to Another Vendor
                       </div>
-                      <p className="text-xs text-amber-900 font-medium">
-                        The customer has selected and accepted another vendor's quotation pitch ({winningQuote ? (winningQuote.sellerStoreName || winningQuote.sellerName) : 'Other Vendor'}). Thank you for submitting your proposal!
+                      <p className="text-xs text-amber-900 font-medium leading-relaxed">
+                        The customer has selected and accepted another proposal for this bulk requisition. All vendor proposals remain strictly private. Thank you for submitting your quotation!
                       </p>
                     </div>
                   );
                 }
 
-                if (winningQuote) {
+                if (winningQuote && (userRole === 'admin' || isAcceptedToMe)) {
                   return (
                     <div className="bg-emerald-50 border border-emerald-300 p-4 rounded-2xl space-y-2">
                       <div className="flex items-center justify-between">
@@ -482,6 +824,43 @@ export default function BulkOrderPreviewModal({
                         {winningQuote.notes && (
                           <div className="col-span-2 sm:col-span-3 text-gray-700 italic border-t border-gray-100 pt-1 mt-1">
                             "{winningQuote.notes}"
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Row: View Tax Invoice Button & Tracking Status */}
+                      <div className="pt-2 border-t border-emerald-200/80 flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsInvoiceOpen(true)}
+                          className="px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <FileText size={14} />
+                          <span>View Official Tax Invoice & PO Certificate</span>
+                        </button>
+
+                        {canViewTracking ? (
+                          <div className="flex items-center gap-2 bg-emerald-100/90 text-emerald-950 px-3 py-1.5 rounded-xl border border-emerald-300 text-xs">
+                            <Truck size={14} className="text-emerald-700" />
+                            <span>{isSelf ? '🛵 Self-Delivery' : `🚚 ${order.courierName || 'Courier'}`}:</span>
+                            <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-200">{trackingNumberDisplay}</span>
+                            {trackingLinkDisplay && (
+                              <a
+                                href={trackingLinkDisplay}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-emerald-700 hover:text-emerald-900 font-bold underline flex items-center gap-0.5 ml-1"
+                              >
+                                Track <ExternalLink size={11} />
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200 flex items-center gap-1.5">
+                            <Lock size={12} className="text-gray-400" />
+                            <span>
+                              {isOut ? 'Out for Delivery (Delivery partner pending)' : 'Tracking available once Out for Delivery & partner decided'}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -520,7 +899,9 @@ export default function BulkOrderPreviewModal({
                         <th className="py-2.5 px-3 text-center">Quantity</th>
                         <th className="py-2.5 px-3 text-center">Sample Photo(s)</th>
                         <th className="py-2.5 px-3 text-right">Customer Budget / Unit</th>
-                        <th className="py-2.5 px-3 text-right bg-emerald-700 text-white">Seller Price / Unit</th>
+                        <th className="py-2.5 px-3 text-right bg-emerald-700 text-white">
+                          {userRole === 'seller' ? 'Your Quoted Price / Unit' : 'Seller Price / Unit'}
+                        </th>
                         <th className="py-2.5 px-3 text-center">Detail View</th>
                       </tr>
                     </thead>
@@ -531,7 +912,12 @@ export default function BulkOrderPreviewModal({
                           : (item.sampleImage ? [item.sampleImage] : []);
 
                         const custBudget = Number(item.budgetPerUnit || item.budgetUnit || 0);
-                        const sellerPrice = Number(item.sellerPricePerUnit || item.sellerPrice || 0);
+                        const myQuotedPrice = existingSellerQuote?.itemPrices?.find(
+                          ip => String(ip.itemId) === String(item._id || item.id || idx) || String(ip.itemName) === String(item.itemName)
+                        )?.pricePerUnit;
+                        const sellerPrice = userRole === 'admin'
+                          ? Number(item.sellerPricePerUnit || item.sellerPrice || 0)
+                          : Number(myQuotedPrice || 0);
 
                         return (
                           <tr
@@ -591,7 +977,7 @@ export default function BulkOrderPreviewModal({
                                   ₹{sellerPrice.toLocaleString()}
                                 </span>
                               ) : (
-                                <span className="text-emerald-600/70 text-[11px] font-semibold italic">Set Quote</span>
+                                <span className="text-emerald-600/70 text-[11px] font-semibold italic">Not Quoted</span>
                               )}
                             </td>
 
@@ -613,7 +999,7 @@ export default function BulkOrderPreviewModal({
               </div>
 
               {/* Customization & Budget Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
                 <div>
                   <span className="text-gray-400 font-semibold text-[11px] uppercase block">Logo Embroidery / Monogram</span>
                   <div className="font-bold text-gray-900 mt-0.5">
@@ -629,6 +1015,32 @@ export default function BulkOrderPreviewModal({
                 </div>
 
                 <div>
+                  <span className="text-gray-400 font-semibold text-[11px] uppercase block">Quotations Expected By</span>
+                  <div className="font-bold text-gray-900 mt-0.5 flex flex-col gap-0.5">
+                    <span>{order.expectedQuotationDate ? new Date(order.expectedQuotationDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Flexible'}</span>
+                    {order.expectedQuotationDate && (() => {
+                      const target = new Date(order.expectedQuotationDate);
+                      if (isNaN(target.getTime())) return null;
+                      const now = new Date();
+                      const targetMid = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+                      const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                      const diffDays = Math.round((targetMid - nowMid) / (1000 * 60 * 60 * 24));
+                      const isExpired = diffDays < 0;
+                      const isUrgent = diffDays >= 0 && diffDays <= 2;
+                      const text = diffDays > 1 ? `${diffDays} days left` : diffDays === 1 ? '1 day left' : diffDays === 0 ? 'Ends today' : `Ended (${Math.abs(diffDays)}d ago)`;
+
+                      return (
+                        <span className={`w-fit text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                          isExpired ? 'bg-red-100 text-red-700 border-red-200' : isUrgent ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        }`}>
+                          {text}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div>
                   <span className="text-gray-400 font-semibold text-[11px] uppercase block">Overall Calculated Budget</span>
                   <div className="font-extrabold text-emerald-800 text-sm mt-0.5 font-mono">
                     {order.overallBudget > 0 ? `₹${Number(order.overallBudget).toLocaleString()}` : (targetBudgetNum > 0 ? `₹${targetBudgetNum.toLocaleString()}` : 'Not Specified')}
@@ -636,11 +1048,75 @@ export default function BulkOrderPreviewModal({
                 </div>
 
                 {order.additionalNotes && (
-                  <div className="sm:col-span-3 pt-2 border-t border-gray-200">
+                  <div className="sm:col-span-2 lg:col-span-4 pt-2 border-t border-gray-200">
                     <span className="text-gray-400 font-semibold text-[11px] uppercase block mb-1">Additional Tender Notes</span>
                     <p className="text-gray-800 bg-white p-3 rounded-xl border border-gray-200 leading-relaxed">{order.additionalNotes}</p>
                   </div>
                 )}
+              </div>
+
+              {/* Mobilization Advance Payment & Financial Guarantee Card */}
+              <div className="bg-linear-to-r from-emerald-50 via-teal-50/60 to-cyan-50/40 border border-emerald-200 p-4 sm:p-5 rounded-2xl space-y-3.5 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-bold">
+                      <DollarSign size={16} />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-xs text-emerald-950 uppercase tracking-wider">
+                        Prepayment & Financial Mobilization Terms
+                      </h4>
+                      <p className="text-[11px] text-emerald-800">
+                        Seller quotation specifies upfront advance percentage to mobilize procurement before delivery.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                      order.advancePaymentStatus === 'paid_partially'
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                        : 'bg-amber-100 text-amber-900 border-amber-300'
+                    }`}>
+                      {order.advancePaymentStatus === 'paid_partially'
+                        ? `Paid: ₹${Number(order.advancePaidAmount || 0).toLocaleString()}`
+                        : 'Advance Status: Awaiting Payment'}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsReceiptModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                    >
+                      <FileText size={13} />
+                      <span>Advance Receipt</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+
+                  {/* Seller Counter Demand / Prepayment */}
+                  <div className="bg-white/80 p-3 rounded-xl border border-emerald-100 space-y-1">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Seller Prepayment / Advance</span>
+                    <div className="font-extrabold text-sm text-emerald-800">
+                      {(order.prepaymentPercentage ?? order.sellerAdvancePercentage ?? existingSellerQuote?.prepaymentPercentage ?? existingSellerQuote?.sellerAdvancePercentage) ? `${order.prepaymentPercentage ?? order.sellerAdvancePercentage ?? existingSellerQuote?.prepaymentPercentage ?? existingSellerQuote?.sellerAdvancePercentage}%` : 'Same as Buyer'}
+                      {(order.prepaymentAmount || order.sellerAdvanceAmount || existingSellerQuote?.prepaymentAmount || existingSellerQuote?.sellerAdvanceAmount) ? ` (₹${Number(order.prepaymentAmount || order.sellerAdvanceAmount || existingSellerQuote?.prepaymentAmount || existingSellerQuote?.sellerAdvanceAmount).toLocaleString()})` : ''}
+                    </div>
+                    {(order.prepaymentTerms || order.sellerAdvanceTerms || existingSellerQuote?.prepaymentTerms || existingSellerQuote?.sellerAdvanceTerms) && (
+                      <p className="text-[11px] text-emerald-900 font-medium line-clamp-2 mt-0.5">"{order.prepaymentTerms || order.sellerAdvanceTerms || existingSellerQuote?.prepaymentTerms || existingSellerQuote?.sellerAdvanceTerms}"</p>
+                    )}
+                  </div>
+
+                  {/* Balance on Delivery */}
+                  <div className="bg-white/80 p-3 rounded-xl border border-emerald-100 space-y-1">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Est. Balance on Delivery</span>
+                    <div className="font-extrabold text-sm text-gray-900">
+                      ₹{Math.max(0, (order.overallBudget || targetBudgetNum || 0) - (Number(order.advancePaidAmount || order.sellerAdvanceAmount || order.buyerAdvanceAmount || 0))).toLocaleString()}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Payable upon school delivery & gate verification</p>
+                  </div>
+                </div>
               </div>
 
               {/* Current Distribution Mode Info Banner */}
@@ -821,35 +1297,69 @@ export default function BulkOrderPreviewModal({
           )}
 
           {/* TAB 3: SUBMITTED VENDOR QUOTATIONS */}
-          {modalSubTab === 'quotes' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-extrabold text-sm text-purple-950 flex items-center gap-1.5">
-                    <Sparkles size={16} className="text-purple-600" /> Submitted Seller Quotations & Counter Proposals
-                  </h3>
-                  <p className="text-[11px] text-gray-500 mt-0.5">
-                    Inspect descriptive item-by-item prices, customer budget comparison, and volume discount terms.
-                  </p>
-                </div>
-                <span className="text-xs text-gray-500 font-bold bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200">
-                  Target Budget: ₹{targetBudgetNum ? targetBudgetNum.toLocaleString() : 'N/A'}
-                </span>
-              </div>
+          {modalSubTab === 'quotes' && (() => {
+            const visibleQuotations = userRole === 'admin'
+              ? (order.quotations || [])
+              : (Array.isArray(order.quotations)
+                  ? order.quotations.filter(q => String(q.sellerId) === String(currentSellerId))
+                  : []);
 
-              {(!order.quotations || order.quotations.length === 0) ? (
-                <div className="p-10 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-300 text-gray-400">
-                  <FileText size={36} className="mx-auto mb-2 text-gray-300" />
-                  <div className="font-bold text-gray-700 text-sm">No Seller Quotations Submitted Yet</div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Once vendors submit proposals, counter prices, itemized rates, and delivery terms will appear here.
-                  </p>
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-purple-950 flex items-center gap-1.5">
+                      <Sparkles size={16} className="text-purple-600" />
+                      {userRole === 'seller' ? 'My Submitted Proposal Quotation' : 'Submitted Seller Quotations & Counter Proposals'}
+                    </h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {userRole === 'seller'
+                        ? 'Your confidential quotation and direct buyer negotiation terms. Competing vendor pitches are strictly secret.'
+                        : 'Inspect descriptive item-by-item prices, customer budget comparison, and volume discount terms.'}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-500 font-bold bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200">
+                    Target Budget: ₹{targetBudgetNum ? targetBudgetNum.toLocaleString() : 'N/A'}
+                  </span>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {order.quotations.map(quote => {
+
+                {userRole === 'seller' && (
+                  <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-teal-950 text-xs flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-teal-700 shrink-0" />
+                    <span>
+                      <strong>Strict Confidentiality:</strong> Your quotation pitch is private and secret. Competing sellers cannot see your prices or terms. Only you, the institution buyer, and BookVardi Admin can view your pitch.
+                    </span>
+                  </div>
+                )}
+
+                {(!visibleQuotations || visibleQuotations.length === 0) ? (
+                  <div className="p-10 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-300 text-gray-400 space-y-2">
+                    <Lock size={36} className="mx-auto mb-2 text-teal-600/70" />
+                    <div className="font-bold text-gray-800 text-sm">
+                      {userRole === 'seller' ? 'No Pitch Submitted by Your Store Yet' : 'No Seller Quotations Submitted Yet'}
+                    </div>
+                    <p className="text-xs text-gray-500 max-w-md mx-auto">
+                      {userRole === 'seller'
+                        ? 'All vendor pitches are confidential. Submit your proposal using the pitch quotation form.'
+                        : 'Once vendors submit proposals, counter prices, itemized rates, and delivery terms will appear here.'}
+                    </p>
+                    {userRole === 'seller' && (
+                      <button
+                        type="button"
+                        onClick={() => setModalSubTab('submit_quote')}
+                        className="mt-3 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <Send size={13} />
+                        <span>Submit Proposal Quotation</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {visibleQuotations.map(quote => {
                     const qId = quote._id || quote.id;
                     const isApproved = quote.status === 'approved' || String(order.acceptedQuoteId) === String(qId);
+                    const isCurrentSellerQuote = String(quote.sellerId) === String(currentSellerId);
                     const hasItemPrices = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0;
 
                     return (
@@ -875,6 +1385,44 @@ export default function BulkOrderPreviewModal({
                               {quote.sellerCity && <span>City: <strong className="text-gray-700">{quote.sellerCity}</strong></span>}
                               <span>Lead Time: <strong className="text-gray-700">{quote.estimatedDeliveryDays || 7} Days</strong></span>
                             </div>
+
+                            {/* Negotiation Version & Stage Pill */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
+                                className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 shadow-2xs ${
+                                  expandedTimelineQuoteId === qId
+                                    ? 'bg-teal-700 text-white ring-2 ring-teal-500'
+                                    : 'bg-slate-100 hover:bg-teal-50 text-slate-800 hover:text-teal-900 border border-slate-300'
+                                }`}
+                                title="Click to view full negotiation timeline and version history"
+                              >
+                                <Clock size={11} className={expandedTimelineQuoteId === qId ? 'text-white' : 'text-teal-700'} />
+                                <span>Version {quote.currentVersion || 1}</span>
+                                <span className="text-[9px] opacity-80">{expandedTimelineQuoteId === qId ? '▲ Hide' : '▼ Timeline'}</span>
+                              </button>
+                              {quote.negotiationStage === 'buyer_countered' && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 2)}
+                                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer transition-all"
+                                  title="Click to view buyer counter-demand timeline"
+                                >
+                                  <Clock size={10} /> 2nd Version Counter-Demand Sent
+                                </button>
+                              )}
+                              {quote.negotiationStage === 'seller_accepted_counter' && (
+                                <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <CheckCircle2 size={10} /> Vendor Accepted Counter-Demand
+                                </span>
+                              )}
+                              {quote.negotiationStage === 'revised_by_seller' && (
+                                <span className="bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Sparkles size={10} /> Revised Quotation Pitch
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="sm:text-right bg-teal-50 sm:bg-transparent p-2 sm:p-0 rounded-xl">
@@ -887,6 +1435,96 @@ export default function BulkOrderPreviewModal({
                             </div>
                           </div>
                         </div>
+
+                        {/* Active Buyer Counter-Demand Info Card */}
+                        {quote.latestBuyerCounter && (Number(quote.latestBuyerCounter.targetBudget) > 0 || quote.latestBuyerCounter.notes) && (
+                          <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 text-xs space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-extrabold text-purple-900">
+                              <span className="flex items-center gap-1.5">
+                                <Sparkles size={13} className="text-purple-600" /> Buyer's Counter-Demand Terms
+                              </span>
+                              {quote.latestBuyerCounter.counteredAt && (
+                                <span className="text-[10px] text-purple-600 font-medium">
+                                  Received {new Date(quote.latestBuyerCounter.counteredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+                              {Number(quote.latestBuyerCounter.targetBudget) > 0 && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Target Budget:</span>
+                                  <strong className="text-purple-900 font-extrabold">₹{Number(quote.latestBuyerCounter.targetBudget).toLocaleString()}</strong>
+                                </div>
+                              )}
+                              {(Number(quote.latestBuyerCounter.totalQuantity) > 0 || totalQtyNum > 0) && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Demanded Quantity:</span>
+                                  <strong className="text-purple-900 font-extrabold">{Number(quote.latestBuyerCounter.totalQuantity || totalQtyNum)} Units</strong>
+                                </div>
+                              )}
+                              {(Number(quote.latestBuyerCounter.unitPrice) > 0 || (Number(quote.latestBuyerCounter.targetBudget) > 0 && totalQtyNum > 0)) && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Demanded Unit Rate:</span>
+                                  <strong className="text-purple-900 font-extrabold">
+                                    ₹{Number(quote.latestBuyerCounter.unitPrice || Math.round(Number(quote.latestBuyerCounter.targetBudget) / (Number(quote.latestBuyerCounter.totalQuantity) || totalQtyNum || 1))).toLocaleString()} / unit
+                                  </strong>
+                                </div>
+                              )}
+                              {Number(quote.latestBuyerCounter.requestedDeliveryDays) > 0 && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Requested Lead Time:</span>
+                                  <strong className="text-purple-900 font-extrabold">{quote.latestBuyerCounter.requestedDeliveryDays} Days</strong>
+                                </div>
+                              )}
+                              {Number(quote.latestBuyerCounter.proposedAdvancePercentage) > 0 && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Proposed Advance:</span>
+                                  <strong className="text-purple-900 font-extrabold">{quote.latestBuyerCounter.proposedAdvancePercentage}% Advance</strong>
+                                </div>
+                              )}
+                            </div>
+                            {Array.isArray(quote.latestBuyerCounter.itemDemands) && quote.latestBuyerCounter.itemDemands.length > 0 && (
+                              <div className="pt-1.5 border-t border-purple-100">
+                                <span className="text-[10px] text-gray-500 font-semibold block mb-1">Buyer Demanded Line Items & Quantities:</span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {quote.latestBuyerCounter.itemDemands.map((dm, dmIdx) => (
+                                    <span key={dm.itemId || dmIdx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-purple-200 text-[10px] text-purple-900 font-bold">
+                                      <span>{dm.itemName}:</span>
+                                      <span className="text-purple-700">{dm.quantity} units</span>
+                                      {dm.targetUnitPrice > 0 && <span className="text-gray-400">@ ₹{dm.targetUnitPrice}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {quote.latestBuyerCounter.notes && (
+                              <p className="text-[11px] text-purple-950 italic pt-1 border-t border-purple-100">
+                                "{quote.latestBuyerCounter.notes}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Raised Prepayment & Extended Lead Time Warning Chips */}
+                        {(() => {
+                          const latestRound = Array.isArray(quote.negotiationHistory) && quote.negotiationHistory.length > 0 ? quote.negotiationHistory[quote.negotiationHistory.length - 1] : null;
+                          if (!latestRound || (!latestRound.prepaymentRaised && !latestRound.deliveryDaysRaised)) return null;
+
+                          return (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {latestRound.prepaymentRaised && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-300 text-[11px] font-bold">
+                                  ⚠️ Prepayment Raised by Vendor in Version {quote.currentVersion || 1}
+                                </span>
+                              )}
+                              {latestRound.deliveryDaysRaised && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 border border-blue-300 text-[11px] font-bold">
+                                  ⏳ Delivery Lead Time Extended by Vendor ({quote.estimatedDeliveryDays} Days)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Descriptive Item Breakdown Table */}
                         {hasItemPrices ? (
@@ -983,26 +1621,132 @@ export default function BulkOrderPreviewModal({
                           )}
                         </div>
 
-                        {/* Footer Status & Acceptance Button */}
-                        <div className="flex items-center justify-between pt-1">
+                        {/* Prepayment / Upfront Advance Demanded by Seller */}
+                        {(() => {
+                          const advPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
+                          const advAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (advPct > 0 ? Math.round((Number(quote.quoteAmount) * advPct) / 100) : 0);
+                          const advTerms = quote.prepaymentTerms || quote.sellerAdvanceTerms || '';
+                          const remainingBal = Math.max(0, Number(quote.quoteAmount) - advAmt);
+
+                          if (advPct <= 0 && advAmt <= 0 && !advTerms) return null;
+
+                          return (
+                            <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+                                  <DollarSign size={13} className="text-emerald-700" /> Prepayment Required by Seller
+                                </span>
+                                <div className="text-emerald-950 font-bold">
+                                  Upfront Prepayment: <strong className="font-extrabold text-emerald-900 font-mono text-sm">₹{advAmt.toLocaleString()}</strong>
+                                  {advPct > 0 ? ` (${advPct}% prepayment)` : ''}
+                                </div>
+                                {advTerms && (
+                                  <p className="text-[11px] text-emerald-800 italic">
+                                    Terms: "{advTerms}"
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="sm:text-right bg-white px-3 py-1.5 rounded-lg border border-emerald-100 shadow-2xs">
+                                <span className="text-[10px] text-gray-500 uppercase font-semibold block">Balance on Delivery</span>
+                                <span className="font-mono font-bold text-gray-800">₹{remainingBal.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Interactive Extended Negotiation Timeline Div */}
+                        {expandedTimelineQuoteId === qId ? (
+                          <div className="pt-2 animate-in fade-in duration-200">
+                            <NegotiationTimelineDiv
+                              quotation={quote}
+                              order={order}
+                              userRole={userRole}
+                              initialSelectedVersion={selectedTimelineVersion || quote.currentVersion || 1}
+                              onClose={() => toggleTimelineForQuote(qId)}
+                              onAcceptCounterDemand={onAcceptCounterDemand ? () => onAcceptCounterDemand(order.id || order._id, quote._id || quote.id) : null}
+                              onOpenPitchRevise={() => setModalSubTab('submit_quote')}
+                              onOpenComparisonModal={() => handleOpenVersionComparison(quote)}
+                            />
+                          </div>
+                        ) : (
+                          <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/50">
+                            <button
+                              type="button"
+                              onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
+                              className="w-full px-3.5 py-2 flex items-center justify-between text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Clock size={13} className="text-teal-700" />
+                                <span>Negotiation Timeline & Version History</span>
+                                {(quote.currentVersion > 1 || (quote.negotiationHistory && quote.negotiationHistory.length > 0)) && (
+                                  <span className="text-[10px] bg-teal-100 text-teal-800 font-extrabold px-2 py-0.5 rounded-full">
+                                    v{quote.currentVersion || 1} ({quote.negotiationHistory?.length || 1} rounds)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[11px] text-teal-700 font-extrabold">
+                                View Interactive Timeline ▼
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Footer Status & Actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-100">
                           {isApproved ? (
                             <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-200">
                               <CheckCircle2 size={14} /> Approved & Winning Seller Quote
                             </span>
                           ) : (
-                            <span className="text-[11px] text-gray-400">Status: {quote.status}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-gray-500 font-semibold">
+                                Stage: <strong className="text-gray-800 capitalize">{(quote.negotiationStage || quote.status || 'Active').replace(/_/g, ' ')}</strong>
+                              </span>
+                            </div>
                           )}
 
-                          {(userRole === 'admin' || userRole === 'consumer') && !isApproved && onApproveQuote && (
-                            <button
-                              type="button"
-                              onClick={() => onApproveQuote(order.id || order._id, qId)}
-                              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 font-display"
-                            >
-                              <CheckCircle2 size={15} />
-                              <span>Accept Quotation & Place Order</span>
-                            </button>
+                          {userRole === 'admin' && !isApproved && (
+                            <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">
+                              Awaiting Buyer Decision / Review Only
+                            </span>
                           )}
+
+                          <div className="flex items-center gap-2 ml-auto">
+                            {(quote.currentVersion > 1 || (quote.negotiationHistory && quote.negotiationHistory.length > 0)) && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenVersionComparison(quote)}
+                                className="px-3 py-1 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1"
+                              >
+                                <SlidersHorizontal size={12} />
+                                <span>Compare Versions</span>
+                              </button>
+                            )}
+
+                            {userRole === 'seller' && !isApproved && isCurrentSellerQuote && (
+                              <>
+                                {quote.negotiationStage === 'buyer_countered' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setModalSubTab('submit_quote')}
+                                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    <Sparkles size={13} />
+                                    <span>Review & Revise Pitch</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setModalSubTab('submit_quote')}
+                                    className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                                  >
+                                    Edit Quotation
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1010,7 +1754,8 @@ export default function BulkOrderPreviewModal({
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           {/* TAB 4: SELLER DESCRIPTIVE QUOTATION PITCH BUILDER */}
           {modalSubTab === 'submit_quote' && userRole === 'seller' && (
@@ -1019,10 +1764,10 @@ export default function BulkOrderPreviewModal({
                 <div>
                   <h3 className="font-extrabold text-base text-gray-900 flex items-center gap-2">
                     <Sparkles size={18} className="text-emerald-600" />
-                    {existingSellerQuote ? 'Update Descriptive Quotation Pitch' : 'Pitch Proposal Quotation'}
+                    {existingSellerQuote ? 'Update / Revise Quotation Pitch' : 'Pitch Proposal Quotation'}
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Set your offer price/piece on each demanded product, specify volume discount notes (e.g. decrease price if order increases), and review the live calculated total.
+                    Set your offer price/piece on each demanded product, specify volume discount notes, and adjust your upfront advance and delivery timeline.
                   </p>
                 </div>
                 <div className="text-right">
@@ -1030,6 +1775,125 @@ export default function BulkOrderPreviewModal({
                   <span className="text-sm font-extrabold text-teal-800 font-mono">{totalQtyNum} Units Demanded</span>
                 </div>
               </div>
+
+              {/* Amber Alert Banner for Buyer 2nd Version Counter-Demand */}
+              {existingSellerQuote?.negotiationStage === 'buyer_countered' && existingSellerQuote.latestBuyerCounter && (
+                <div className="p-4 bg-linear-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl space-y-3 shadow-xs animate-in fade-in">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/80 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                        <Clock size={18} />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-sm text-amber-950">
+                          ⚠️ Buyer Sent 2nd Version Counter-Demand (Version {existingSellerQuote.currentVersion || 2})
+                        </h4>
+                        <p className="text-[11px] text-amber-800">
+                          The school/buyer has reviewed your quotation and proposed updated terms below.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {onAcceptCounterDemand && (
+                        <button
+                          type="button"
+                          onClick={() => onAcceptCounterDemand(order.id || order._id, existingSellerQuote._id || existingSellerQuote.id)}
+                          className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 font-display"
+                        >
+                          <CheckCircle2 size={14} />
+                          <span>Accept Buyer Demand Directly</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Counter Metrics Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs font-mono">
+                    {Number(existingSellerQuote.latestBuyerCounter.targetBudget) > 0 && (
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                        <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Buyer Target Budget</span>
+                        <span className="text-base font-extrabold text-amber-950">
+                          ₹{Number(existingSellerQuote.latestBuyerCounter.targetBudget).toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-sans block mt-0.5">
+                          Pitch: ₹{Number(existingSellerQuote.quoteAmount).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                      <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Demanded Quantity</span>
+                      <span className="text-base font-extrabold text-amber-950">
+                        {existingSellerQuote.latestBuyerCounter.totalQuantity || totalQtyNum} Units
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-sans block mt-0.5">
+                        Order requirement
+                      </span>
+                    </div>
+
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                      <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Demanded Unit Rate</span>
+                      <span className="text-base font-extrabold text-amber-950">
+                        ₹{Number(existingSellerQuote.latestBuyerCounter.unitPrice || Math.round(Number(existingSellerQuote.latestBuyerCounter.targetBudget) / (Number(existingSellerQuote.latestBuyerCounter.totalQuantity) || totalQtyNum || 1))).toLocaleString()} / u
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-sans block mt-0.5">
+                        Target average
+                      </span>
+                    </div>
+
+                    {Number(existingSellerQuote.latestBuyerCounter.requestedDeliveryDays) > 0 && (
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                        <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Requested Lead Time</span>
+                        <span className="text-base font-extrabold text-amber-950">
+                          {existingSellerQuote.latestBuyerCounter.requestedDeliveryDays} Days
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-sans block mt-0.5">
+                          Pitch: {existingSellerQuote.estimatedDeliveryDays || 7} days
+                        </span>
+                      </div>
+                    )}
+
+                    {Number(existingSellerQuote.latestBuyerCounter.proposedAdvancePercentage) > 0 && (
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                        <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Proposed Prepayment</span>
+                        <span className="text-base font-extrabold text-amber-950">
+                          {existingSellerQuote.latestBuyerCounter.proposedAdvancePercentage}% Advance
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-sans block mt-0.5">
+                          ~₹{Math.round((Number(existingSellerQuote.latestBuyerCounter.targetBudget || existingSellerQuote.quoteAmount) * Number(existingSellerQuote.latestBuyerCounter.proposedAdvancePercentage)) / 100).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {Array.isArray(existingSellerQuote.latestBuyerCounter.itemDemands) && existingSellerQuote.latestBuyerCounter.itemDemands.length > 0 && (
+                    <div className="p-2.5 bg-white/80 rounded-xl border border-amber-200 space-y-1">
+                      <span className="text-[10px] text-amber-900 font-bold block uppercase tracking-wide">
+                        Buyer Requested Items & Quantities:
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {existingSellerQuote.latestBuyerCounter.itemDemands.map((dm, dmIdx) => (
+                          <span key={dm.itemId || dmIdx} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 font-mono">
+                            <span>{dm.itemName}:</span>
+                            <span className="text-amber-800">{dm.quantity} pcs</span>
+                            {dm.targetUnitPrice > 0 && <span className="text-gray-500 font-normal">@ ₹{dm.targetUnitPrice}</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {existingSellerQuote.latestBuyerCounter.notes && (
+                    <div className="p-2.5 bg-white/70 rounded-xl border border-amber-200/60 text-xs text-amber-950 italic">
+                      <strong>Buyer Message:</strong> "{existingSellerQuote.latestBuyerCounter.notes}"
+                    </div>
+                  )}
+
+                  <div className="text-[11px] text-amber-900 font-medium">
+                    💡 <strong>Not satisfied with buyer's budget?</strong> Adjust prices below, <strong>raise your prepayment requirement</strong> (e.g. to 40% or 50%), and <strong>raise delivery lead time</strong> (e.g. +5 days) to mitigate procurement risk, then click <strong>"Resend Revised Quotation"</strong>.
+                  </div>
+                </div>
+              )}
 
               <form onSubmit={handleSellerQuoteSubmit} className="space-y-5">
                 
@@ -1258,6 +2122,24 @@ export default function BulkOrderPreviewModal({
                         onChange={(e) => setDeliveryDays(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 text-xs"
                       />
+                      {/* Delivery Days Quick Chips */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[10px] text-gray-400 font-semibold">Quick Lead Days:</span>
+                        {[5, 7, 10, 12, 15, 21].map(daysOption => (
+                          <button
+                            key={daysOption}
+                            type="button"
+                            onClick={() => setDeliveryDays(String(daysOption))}
+                            className={`px-2 py-0.5 rounded-md border text-[10px] font-bold transition-colors cursor-pointer ${
+                              Number(deliveryDays) === daysOption
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-gray-100 hover:bg-blue-50 border-gray-200 text-gray-700 hover:text-blue-800'
+                            }`}
+                          >
+                            {daysOption} Days
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -1268,6 +2150,150 @@ export default function BulkOrderPreviewModal({
                         value={quoteNotes}
                         onChange={(e) => setQuoteNotes(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 text-xs"
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  {/* 4. Seller Demand for Upfront Advance Payment */}
+                  <div className="bg-linear-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-4 sm:p-5 rounded-2xl space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2">
+                      <div>
+                        <h4 className="font-extrabold text-xs text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                          <DollarSign size={15} className="text-emerald-700" />
+                          4. Seller Upfront Mobilization Advance Demand
+                        </h4>
+                        <p className="text-[11px] text-emerald-800">
+                          Specify required mobilization advance before commencing bulk manufacturing or fabric procurement.
+                        </p>
+                      </div>
+
+                      {/* Dual Percentage / Fixed Amount Toggle */}
+                      <div className="inline-flex p-1 bg-white border border-emerald-200 rounded-xl shadow-2xs self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => handleSellerAdvanceTypeChange('percentage')}
+                          className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                            sellerAdvanceType === 'percentage'
+                              ? 'bg-emerald-700 text-white shadow-xs'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          <Percent size={13} />
+                          <span>Percentage (%)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSellerAdvanceTypeChange('amount')}
+                          className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                            sellerAdvanceType === 'amount'
+                              ? 'bg-emerald-700 text-white shadow-xs'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          <DollarSign size={13} />
+                          <span>Fixed Amount (₹)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Buyer Reference Notice */}
+                    {order.buyerAdvancePercentage && (
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-100 flex items-center justify-between text-xs">
+                        <span className="text-gray-600">Buyer's Initial Upfront Offer:</span>
+                        <strong className="text-emerald-900">
+                          {order.buyerAdvancePercentage}% {order.buyerAdvanceAmount ? `(₹${Number(order.buyerAdvanceAmount).toLocaleString()})` : ''}
+                        </strong>
+                      </div>
+                    )}
+
+                    {/* Input Fields */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {sellerAdvanceType === 'percentage' ? (
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-gray-700">Demanded Advance Percentage (%)</label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={sellerAdvancePercentage}
+                              onChange={(e) => handleSellerAdvancePercentageChange(e.target.value)}
+                              placeholder="e.g. 30"
+                              className="w-full px-3 py-2 pr-8 rounded-xl border border-emerald-300 bg-white text-xs font-bold text-gray-900 focus:outline-none focus:border-emerald-600"
+                            />
+                            <span className="absolute right-3 top-2.5 text-gray-400 font-bold text-xs">%</span>
+                          </div>
+                          {/* Quick Presets */}
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            {[20, 30, 40, 50, 60].map((pct) => (
+                              <button
+                                key={pct}
+                                type="button"
+                                onClick={() => handleSellerAdvancePercentageChange(pct)}
+                                className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                                  Number(sellerAdvancePercentage) === pct
+                                    ? 'bg-emerald-700 text-white border-emerald-700'
+                                    : 'bg-white border-gray-200 text-gray-700 hover:border-emerald-300'
+                                }`}
+                              >
+                                {pct}% {pct >= 40 ? '(Raised)' : ''}
+                              </button>
+                            ))}
+                          </div>
+                          <span className="text-[10px] text-emerald-800 font-medium block pt-0.5">
+                            💡 Raise advance to 40% or 50% to mitigate fabric procurement risk at lower margins.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-gray-700">Demanded Advance Fixed Amount (₹)</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-gray-400 font-bold text-xs">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={sellerAdvanceAmount}
+                              onChange={(e) => handleSellerAdvanceAmountChange(e.target.value)}
+                              placeholder="e.g. 50000"
+                              className="w-full pl-7 pr-3 py-2 rounded-xl border border-emerald-300 bg-white text-xs font-bold text-gray-900 focus:outline-none focus:border-emerald-600"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Calculated Demanded Advance Amount Card */}
+                      <div className="bg-white/90 p-3 rounded-xl border border-emerald-200/80 flex flex-col justify-center space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500">Demanded Mobilization:</span>
+                          <strong className="text-emerald-800 text-sm font-extrabold font-mono">
+                            ₹{(sellerAdvanceType === 'percentage'
+                              ? Math.round(((calculatedGrandTotal > 0 ? calculatedGrandTotal : Number(quoteAmount) || 0) * Number(sellerAdvancePercentage || 30)) / 100)
+                              : (Number(sellerAdvanceAmount) || 0)
+                            ).toLocaleString()}
+                          </strong>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-gray-500">
+                          <span>Balance on Delivery:</span>
+                          <span className="font-bold text-gray-800 font-mono">
+                            ₹{Math.max(0, (calculatedGrandTotal > 0 ? calculatedGrandTotal : Number(quoteAmount) || 0) - (sellerAdvanceType === 'percentage'
+                              ? Math.round(((calculatedGrandTotal > 0 ? calculatedGrandTotal : Number(quoteAmount) || 0) * Number(sellerAdvancePercentage || 30)) / 100)
+                              : (Number(sellerAdvanceAmount) || 0)
+                            )).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Advance Terms / Mobilization Milestones */}
+                    <div className="space-y-1">
+                      <label className="font-bold text-[11px] text-gray-700">Seller Advance Terms & Payment Milestones</label>
+                      <textarea
+                        rows="2"
+                        placeholder="e.g. 30% advance on sample kit approval before fabric cutting, 70% balance upon school campus delivery."
+                        value={sellerAdvanceTerms}
+                        onChange={(e) => setSellerAdvanceTerms(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-teal-600 text-xs"
                       ></textarea>
                     </div>
                   </div>
@@ -1287,7 +2313,12 @@ export default function BulkOrderPreviewModal({
                     className="flex-2 py-3 font-black text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-2 text-xs font-display transition-all"
                   >
                     <Send size={16} />
-                    <span>Pitch Calculated Quotation (₹{calculatedGrandTotal.toLocaleString()})</span>
+                    <span>
+                      {existingSellerQuote
+                        ? `Resend Revised Quotation (Version ${(existingSellerQuote.currentVersion || 1) + 1}) • ₹${calculatedGrandTotal.toLocaleString()}`
+                        : `Pitch Calculated Quotation (₹${calculatedGrandTotal.toLocaleString()})`
+                      }
+                    </span>
                   </button>
                 </div>
               </form>
@@ -1303,6 +2334,16 @@ export default function BulkOrderPreviewModal({
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* View Partial Advance Receipt Button */}
+            <button
+              type="button"
+              onClick={() => setIsReceiptModalOpen(true)}
+              className="flex-1 sm:flex-initial px-3.5 py-2 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <FileText size={14} className="text-emerald-700" />
+              <span>Partial Receipt Voucher</span>
+            </button>
+
             {userRole === 'seller' && onSubmitQuote && order.status !== 'quote_accepted' && (
               <button
                 onClick={() => setModalSubTab('submit_quote')}
@@ -1435,15 +2476,27 @@ export default function BulkOrderPreviewModal({
                 </div>
 
                 <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-1">
-                  <span className="text-[10px] text-emerald-800 font-bold uppercase block">Seller Offered Price / Unit</span>
-                  <div className="text-base font-black text-emerald-950 font-mono">
-                    {Number(selectedItemForDetail.sellerPricePerUnit || selectedItemForDetail.sellerPrice || 0) > 0
-                      ? `₹${Number(selectedItemForDetail.sellerPricePerUnit || selectedItemForDetail.sellerPrice).toLocaleString()}`
-                      : 'Not Quoted Yet'}
-                  </div>
-                  <div className="text-[11px] text-emerald-900">
-                    Total Line Price: <strong>₹{((Number(selectedItemForDetail.quantity) || 0) * (Number(selectedItemForDetail.sellerPricePerUnit || selectedItemForDetail.sellerPrice) || 0)).toLocaleString()}</strong>
-                  </div>
+                  <span className="text-[10px] text-emerald-800 font-bold uppercase block">
+                    {userRole === 'seller' ? 'Your Quoted Price / Unit' : 'Seller Offered Price / Unit'}
+                  </span>
+                  {(() => {
+                    const myItemPrice = userRole === 'admin'
+                      ? Number(selectedItemForDetail.sellerPricePerUnit || selectedItemForDetail.sellerPrice || 0)
+                      : Number(existingSellerQuote?.itemPrices?.find(
+                          ip => String(ip.itemId) === String(selectedItemForDetail._id || selectedItemForDetail.id) || String(ip.itemName) === String(selectedItemForDetail.itemName)
+                        )?.pricePerUnit || 0);
+
+                    return (
+                      <>
+                        <div className="text-base font-black text-emerald-950 font-mono">
+                          {myItemPrice > 0 ? `₹${myItemPrice.toLocaleString()}` : 'Not Quoted Yet'}
+                        </div>
+                        <div className="text-[11px] text-emerald-900">
+                          Total Line Price: <strong>₹{((Number(selectedItemForDetail.quantity) || 0) * myItemPrice).toLocaleString()}</strong>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1512,6 +2565,34 @@ export default function BulkOrderPreviewModal({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Tax Invoice & Certificate Modal */}
+      {isInvoiceOpen && taxInvoiceOrder && (
+        <TaxInvoiceModal
+          isOpen={isInvoiceOpen}
+          onClose={() => setIsInvoiceOpen(false)}
+          order={taxInvoiceOrder}
+        />
+      )}
+
+      {/* Partial Advance Payment Receipt Modal */}
+      {isReceiptModalOpen && (
+        <PartialAdvanceReceiptModal
+          isOpen={isReceiptModalOpen}
+          onClose={() => setIsReceiptModalOpen(false)}
+          order={order}
+        />
+      )}
+
+      {/* Quotation Version Comparison Modal */}
+      {isComparisonOpen && comparingQuote && (
+        <QuotationVersionComparisonModal
+          isOpen={isComparisonOpen}
+          onClose={() => setIsComparisonOpen(false)}
+          quotation={comparingQuote}
+          order={order}
+        />
       )}
 
     </div>
