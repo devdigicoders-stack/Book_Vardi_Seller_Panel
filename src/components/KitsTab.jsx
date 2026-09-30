@@ -367,18 +367,30 @@ export default function KitsTab() {
 
                       {/* Stock */}
                       <td className="px-4 py-3.5">
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                          (Number(item.stock || 0)) > 5
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : (Number(item.stock || 0)) > 0
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-red-50 text-red-700'
-                        }`}>
-                          {item.stock || 0} in stock
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 ${
+                            (Number(item.stock || 0)) > 5
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : (Number(item.stock || 0)) > 0
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-red-50 text-red-700'
+                          }`}>
+                            {item.inventoryMode === 'fixed' || (Number(item.independentStock || 0) > 0) ? (
+                              <>
+                                <span>📦 {item.stock || 0}</span>
+                                <span className="text-[9px] font-medium text-emerald-600">(Independent)</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>⚡ {item.stock || 0}</span>
+                                <span className="text-[9px] font-medium text-blue-600">(Auto-Dynamic)</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
                       </td>
 
-                      {/* Status */}
+                      {/* Status & Catalog Approval */}
                       <td className="px-4 py-3.5">
                         <div className="flex flex-col gap-1 items-start">
                           <button
@@ -392,7 +404,7 @@ export default function KitsTab() {
                             title="Click to toggle availability"
                           >
                             <Power size={10} />
-                            {isAvailable ? 'Available' : 'Inactive'}
+                            {isAvailable ? 'Active' : 'Inactive'}
                           </button>
 
                           {/* Approval Status */}
@@ -401,14 +413,17 @@ export default function KitsTab() {
                             const isApp = displayApproval.toLowerCase() === 'approved';
                             const isRej = displayApproval.toLowerCase() === 'rejected';
                             return (
-                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
-                                isApp
-                                  ? 'text-teal-700 bg-teal-50'
-                                  : isRej
-                                  ? 'text-red-700 bg-red-50'
-                                  : 'text-amber-700 bg-amber-50'
-                              }`}>
-                                {displayApproval}
+                              <span
+                                title={isApp ? "Live in public catalog" : "Catalog visibility pending Admin review"}
+                                className={`text-[9px] px-2 py-0.5 rounded-full font-extrabold flex items-center gap-1 ${
+                                  isApp
+                                    ? 'text-teal-800 bg-teal-50 border border-teal-200'
+                                    : isRej
+                                    ? 'text-red-700 bg-red-50 border border-red-200'
+                                    : 'text-amber-800 bg-amber-50 border border-amber-200'
+                                }`}
+                              >
+                                {isApp ? '✓ Catalog Live' : isRej ? '✕ Rejected' : '⏳ Pending Admin Review'}
                               </span>
                             );
                           })()}
@@ -478,6 +493,64 @@ export default function KitsTab() {
               </div>
             </div>
 
+            {/* Catalog Visibility & Approval Alert */}
+            {(() => {
+              const displayApproval = selectedKitForDetail.approvalStatus || (selectedKitForDetail.isApproved ? 'Approved' : 'Pending');
+              const isApp = displayApproval.toLowerCase() === 'approved';
+              const isRej = displayApproval.toLowerCase() === 'rejected';
+
+              return (
+                <div className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
+                  isApp
+                    ? 'bg-teal-50 border-teal-200 text-teal-800'
+                    : isRej
+                    ? 'bg-red-50 border-red-200 text-red-800'
+                    : 'bg-amber-50 border-amber-200 text-amber-800'
+                }`}>
+                  <div>
+                    <span className="font-extrabold uppercase tracking-wide text-[10px] block">
+                      Catalog Visibility Status
+                    </span>
+                    <span className="text-[11px]">
+                      {isApp
+                        ? 'Visible to public shoppers across school stores.'
+                        : isRej
+                        ? 'Rejected by Administrator. Please review comments and update details.'
+                        : 'Pending review by Administrator. Hidden from public catalog until approved.'}
+                    </span>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-full font-black text-[10px] whitespace-nowrap ${
+                    isApp ? 'bg-teal-600 text-white' : isRej ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
+                  }`}>
+                    {displayApproval}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* Bundle Stock Availability Mode */}
+            <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase text-gray-500">
+                  Bundle Stock Mode
+                </span>
+                <span className="text-xs font-black text-gray-900">
+                  {selectedKitForDetail.stock || 0} Units Available
+                </span>
+              </div>
+              {selectedKitForDetail.inventoryMode === 'fixed' || (Number(selectedKitForDetail.independentStock || 0) > 0) ? (
+                <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5">
+                  <span>📦</span>
+                  <span><strong>Independent Stock:</strong> Fixed pool of pre-packed bundles ready in warehouse.</span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-blue-700 font-semibold flex items-center gap-1.5">
+                  <span>⚡</span>
+                  <span><strong>Auto-Dynamic Stock:</strong> Synchronized automatically with availability of individual articles.</span>
+                </p>
+              )}
+            </div>
+
             {/* Included Items */}
             <div className="space-y-2">
               <h5 className="text-[11px] font-black uppercase tracking-wider text-gray-400">
@@ -487,12 +560,12 @@ export default function KitsTab() {
                 {(selectedKitForDetail.items || []).map((it, idx) => (
                   <div key={idx} className="p-2.5 bg-white flex items-center justify-between text-xs">
                     <div>
-                      <div className="font-bold text-gray-900">{it.name}</div>
+                      <div className="font-bold text-gray-900">{it.name || it.title}</div>
                       {it.size && <div className="text-[10px] text-brand-teal">Size: {it.size}</div>}
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-gray-900">Qty: {it.quantity}</div>
-                      <div className="text-[11px] text-gray-500">₹{it.unitPrice} each</div>
+                      <div className="font-bold text-gray-900">Qty: {it.quantity || 1}</div>
+                      <div className="text-[11px] text-gray-500">₹{it.unitPrice || it.price} each</div>
                     </div>
                   </div>
                 ))}
@@ -511,11 +584,16 @@ export default function KitsTab() {
               </div>
             </div>
 
+            {/* Tax Info (Inherited from products) */}
+            <div className="text-[10px] text-gray-400 italic text-center">
+              GST is applied directly from constituent products (no extra kit-level surcharge).
+            </div>
+
             <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setSelectedKitForDetail(null)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold cursor-pointer"
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold cursor-pointer hover:bg-gray-200"
               >
                 Close
               </button>

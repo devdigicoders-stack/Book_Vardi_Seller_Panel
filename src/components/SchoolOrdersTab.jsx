@@ -294,24 +294,43 @@ export default function SchoolOrdersTab() {
             </button>
           </div>
         ) : (
-          filteredOrders.map((req) => {
-            const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
+          filteredOrders.map(req => {
+            const sellerCandidateIds = [
+              sellerUser?.id,
+              sellerUser?._id,
+              sellerUser?.merchantId,
+              typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+              typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+              typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+            ].filter(Boolean).map(String);
+
+            const cleanSellerPhone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
+            const cleanSellerStore = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
+
+            const isMyQuote = (q) => {
+              if (!q) return false;
+              const qSellerId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
+              if (qSellerId && sellerCandidateIds.includes(qSellerId)) return true;
+              const qPhone = String(q.sellerPhone || '').replace(/\D/g, '').slice(-10);
+              if (cleanSellerPhone && qPhone && qPhone === cleanSellerPhone) return true;
+              const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
+              if (cleanSellerStore && qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore))) return true;
+              if (Array.isArray(req.quotations) && req.quotations.length === 1) return true;
+              return false;
+            };
+
+            const myQuote = Array.isArray(req.quotations) ? req.quotations.find(isMyQuote) || null : null;
+            const hasSellerQuote = Boolean(myQuote);
+
             const assignedSellerId = req.sellerId ? (typeof req.sellerId === 'object' ? (req.sellerId._id || req.sellerId.id) : req.sellerId) : '';
 
-            const hasSellerQuote = Array.isArray(req.quotations) && req.quotations.some(
-              q => String(q.sellerId) === currentSellerId
-            );
-            const myQuote = hasSellerQuote ? req.quotations.find(
-              q => String(q.sellerId) === currentSellerId
-            ) : null;
-
-            const isWinningSeller = Boolean(req.acceptedQuoteId && req.quotations?.some(
-              q => String(q._id) === String(req.acceptedQuoteId) && String(q.sellerId) === currentSellerId
+            const isWinningSeller = Boolean(req.acceptedQuoteId && myQuote && (
+              String(myQuote._id || myQuote.id) === String(req.acceptedQuoteId)
             ));
 
             const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status);
-            const isAssignedToMe = (assignedSellerId && String(assignedSellerId) === currentSellerId) || isWinningSeller || (isAcceptedStatus && hasSellerQuote);
-            const isAcceptedOther = (req.status === 'quote_accepted' || req.acceptedQuoteId) && assignedSellerId && String(assignedSellerId) !== currentSellerId && !isAssignedToMe;
+            const isAssignedToMe = (assignedSellerId && sellerCandidateIds.includes(String(assignedSellerId))) || isWinningSeller || (isAcceptedStatus && hasSellerQuote);
+            const isAcceptedOther = (req.status === 'quote_accepted' || req.acceptedQuoteId) && assignedSellerId && !sellerCandidateIds.includes(String(assignedSellerId)) && !isAssignedToMe;
 
             const isPacked = req.status === 'packed';
             const isOutForDelivery = req.status === 'out for delivery' || req.status === 'out_for_delivery';
@@ -504,6 +523,97 @@ export default function SchoolOrdersTab() {
                     <div className="text-[10px] text-teal-700 font-medium">Logo Embroidery Included</div>
                   </div>
                 </div>
+
+                {/* Active Buyer Counter-Demand Alert Card on Order Card */}
+                {myQuote && (myQuote.negotiationStage === 'buyer_countered' || (myQuote.latestBuyerCounter && (Number(myQuote.latestBuyerCounter.targetBudget) > 0 || myQuote.latestBuyerCounter.notes))) && (
+                  <div className="p-4 bg-linear-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl space-y-2.5 shadow-xs animate-in fade-in">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                          ⚠️
+                        </span>
+                        <div>
+                          <h4 className="font-extrabold text-xs text-amber-950 flex items-center gap-1.5">
+                            <span>Buyer Sent 2nd Version Counter-Demand (v{myQuote.currentVersion || 2})</span>
+                            <span className="bg-amber-200 text-amber-900 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">Action Needed</span>
+                          </h4>
+                          <p className="text-[11px] text-amber-800">
+                            The school reviewed your pitch and submitted updated counter terms:
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewOrder(req);
+                            setInitialPreviewTab('quotes');
+                          }}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <Clock size={13} />
+                          <span>Review Timeline & Demands</span>
+                        </button>
+                        {acceptBuyerCounterDemand && (
+                          <button
+                            type="button"
+                            onClick={() => acceptBuyerCounterDemand(req.id || req._id, myQuote._id || myQuote.id)}
+                            className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                          >
+                            <CheckCircle2 size={13} />
+                            <span>Accept Demand</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Counter Metrics Grid: Demanded Budget, Quantity, Unit Rate */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                      <div className="bg-white/90 p-2 rounded-xl border border-amber-200">
+                        <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Counter Budget</span>
+                        <span className="text-sm font-extrabold text-amber-950 font-mono">
+                          ₹{Number(myQuote.latestBuyerCounter?.targetBudget || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-sans block mt-0.5">
+                          Pitch: ₹{Number(myQuote.quoteAmount).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="bg-white/90 p-2 rounded-xl border border-amber-200">
+                        <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Demanded Quantity</span>
+                        <span className="text-sm font-extrabold text-amber-950 font-mono">
+                          {myQuote.latestBuyerCounter?.totalQuantity || req.totalQuantity || req.quantity || 100} Units
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-sans block mt-0.5">
+                          Updated Order Scale
+                        </span>
+                      </div>
+                      <div className="bg-white/90 p-2 rounded-xl border border-amber-200">
+                        <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Target Unit Price</span>
+                        <span className="text-sm font-extrabold text-amber-950 font-mono">
+                          ₹{myQuote.latestBuyerCounter?.unitPrice || (myQuote.latestBuyerCounter?.targetBudget && (myQuote.latestBuyerCounter?.totalQuantity || req.totalQuantity) ? Math.round(Number(myQuote.latestBuyerCounter.targetBudget) / Number(myQuote.latestBuyerCounter.totalQuantity || req.totalQuantity)) : 0)} / unit
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-sans block mt-0.5">
+                          Offered: ₹{myQuote.unitPrice || 0}/u
+                        </span>
+                      </div>
+                      <div className="bg-white/90 p-2 rounded-xl border border-amber-200">
+                        <span className="text-[10px] text-amber-800 font-sans font-bold block uppercase">Lead & Prepayment</span>
+                        <span className="text-xs font-extrabold text-amber-950 block">
+                          {myQuote.latestBuyerCounter?.requestedDeliveryDays ? `${myQuote.latestBuyerCounter.requestedDeliveryDays} Days Lead` : 'Standard Lead'}
+                        </span>
+                        <span className="text-[11px] font-bold text-teal-800 block mt-0.5">
+                          {myQuote.latestBuyerCounter?.proposedAdvancePercentage ? `${myQuote.latestBuyerCounter.proposedAdvancePercentage}% Advance` : 'Agreed Prepayment'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {myQuote.latestBuyerCounter?.notes && (
+                      <div className="text-xs text-amber-950 italic bg-white/70 p-2 rounded-lg border border-amber-200/60">
+                        <strong>Buyer Note:</strong> "{myQuote.latestBuyerCounter.notes}"
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Seller Quote Banner if already submitted */}
                 {myQuote && (

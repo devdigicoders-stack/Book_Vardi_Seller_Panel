@@ -30,6 +30,7 @@ import ImageUploadDropzone from './ImageUploadDropzone';
 import { resolveImageUrl, dedupeImages } from '../utils/mediaUrl';
 import { fetchSchoolsApi, fetchCategoriesApi } from '../utils/api';
 import { GRADE_OPTIONS } from './SellerProductFormPage';
+import SchoolSelectorWithCustom from './SchoolSelectorWithCustom';
 
 const KIT_BADGES = [
   'School Approved',
@@ -49,7 +50,7 @@ export default function SellerKitFormPage({
   const isEdit = Boolean(kit);
 
   // Active form tab
-  const [activeTab, setActiveTab] = useState('general'); // 'general' | 'items' | 'pricing' | 'media' | 'inventory' | 'payment'
+  const [activeTab, setActiveTab] = useState('general'); // 'general' | 'items' | 'media' | 'inventory' | 'payment'
 
   // General Kit State
   const [formData, setFormData] = useState({
@@ -66,11 +67,14 @@ export default function SellerKitFormPage({
     gst: '5',
     isGstInclusive: true,
     bundlePrice: '',
-    stock: '25',
-    inventoryMode: 'fixed', // 'fixed' | 'dynamic'
+    stock: '',
+    independentStock: '',
+    inventoryMode: 'dynamic', // 'fixed' (independent) | 'dynamic' (auto-calculated from individual availability)
     lowStockThreshold: '5',
     paymentMethodAllowed: 'Both',
-    status: 'available',
+    status: 'pending', // Catalog visibility is pending by default!
+    approvalStatus: 'Pending',
+    isApproved: false,
     image: '',
     images: []
   });
@@ -233,6 +237,31 @@ export default function SellerKitFormPage({
     return Math.round((savingsAmount / calculatedTotalMrp) * 100);
   }, [calculatedTotalMrp, savingsAmount]);
 
+  // Dynamic stock calculated automatically from availability of individual constituent products
+  const dynamicKitStock = useMemo(() => {
+    if (kitItems.length === 0) return 0;
+    const stocks = kitItems.map(item => {
+      const matchedProd = existingProducts.find(p => String(p.id || p._id) === String(item.productId));
+      const availableProdStock = Number(matchedProd?.stock ?? matchedProd?.stockQuantity ?? item.stock ?? 25);
+      const qtyRequired = Math.max(1, Number(item.quantity) || 1);
+      return Math.floor(availableProdStock / qtyRequired);
+    });
+    return Math.min(...stocks);
+  }, [kitItems, existingProducts]);
+
+  // Derived effective GST from constituent products as previously defined on each product
+  const derivedProductGst = useMemo(() => {
+    if (kitItems.length === 0) return 5;
+    const totalVal = kitItems.reduce((acc, it) => acc + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 1), 0);
+    if (totalVal <= 0) return 5;
+    const totalGstWeighted = kitItems.reduce((acc, it) => {
+      const matchedP = existingProducts.find(p => String(p.id || p._id) === String(it.productId));
+      const itemGst = Number(matchedP?.gstPercentage || matchedP?.gst || it.gst || 5);
+      return acc + itemGst * ((Number(it.unitPrice) || 0) * (Number(it.quantity) || 1));
+    }, 0);
+    return Math.round(totalGstWeighted / totalVal);
+  }, [kitItems, existingProducts]);
+
   // Add catalog product into kit
   const handleAddCatalogProduct = (prod, selectedVariant = null) => {
     const unitPrice = selectedVariant
@@ -370,7 +399,7 @@ export default function SellerKitFormPage({
     const finalBundlePrice = Number(formData.bundlePrice) || effectiveBundlePrice;
     if (finalBundlePrice <= 0) {
       setError('Please specify a valid bundle price.');
-      setActiveTab('pricing');
+      setActiveTab('items');
       return;
     }
 
@@ -384,6 +413,12 @@ export default function SellerKitFormPage({
         : (paymentAllowedStr === 'COD_Only' ? ['COD'] : ['COD', 'Online']);
 
       const gradeValue = selectedGrades.join(', ');
+
+      const rawStock = Number(formData.stock);
+      const isIndependent = !isNaN(rawStock) && rawStock > 0;
+      const finalStock = isIndependent ? rawStock : dynamicKitStock;
+      const finalMode = isIndependent ? 'fixed' : 'dynamic';
+      const finalGst = derivedProductGst || 5;
 
       const payload = {
         title: formData.title.trim(),
@@ -405,20 +440,23 @@ export default function SellerKitFormPage({
         price: finalBundlePrice,
         savingsAmount,
         discountPercentage,
-        stock: Number(formData.stock) || 20,
-        stockQuantity: Number(formData.stock) || 20,
-        inventoryMode: formData.inventoryMode || 'fixed',
+        stock: finalStock,
+        stockQuantity: finalStock,
+        independentStock: isIndependent ? rawStock : 0,
+        inventoryMode: finalMode,
         lowStockThreshold: Number(formData.lowStockThreshold) || 5,
         sku: formData.sku.trim(),
-        gst: Number(formData.gst) || 5,
-        gstPercentage: Number(formData.gst) || 5,
-        isGstInclusive: Boolean(formData.isGstInclusive),
+        gst: finalGst,
+        gstPercentage: finalGst,
+        isGstInclusive: true, // GST applied as previously on constituent products
         description: formData.description.trim(),
         image: finalImages[0] || '',
         images: finalImages,
         paymentMethodAllowed: paymentAllowedStr,
         paymentMethodsAllowed: paymentAllowedArr,
-        status: formData.status || 'available'
+        status: isEdit ? (formData.status || 'pending') : 'pending', // Catalog visibility is pending by default!
+        approvalStatus: isEdit ? (formData.approvalStatus || 'Pending') : 'Pending',
+        isApproved: false
       };
 
       await onSave(payload);
@@ -506,11 +544,10 @@ export default function SellerKitFormPage({
       <div className="flex items-center gap-2 overflow-x-auto border-b border-gray-200 pb-2 scrollbar-none">
         {[
           { id: 'general', label: '1. General Info', icon: BookOpen },
-          { id: 'items', label: `2. Bundled Items (${kitItems.length})`, icon: Boxes, badge: kitItems.length },
-          { id: 'pricing', label: '3. Pricing & Taxes', icon: DollarSign },
-          { id: 'media', label: `4. Images (${formData.images.length})`, icon: ImageIcon, badge: formData.images.length },
-          { id: 'inventory', label: '5. Stock & Logistics', icon: Package },
-          { id: 'payment', label: '6. Payment Methods', icon: CreditCard }
+          { id: 'items', label: `2. Items & Pricing (${kitItems.length})`, icon: Boxes, badge: kitItems.length },
+          { id: 'media', label: `3. Images (${formData.images.length})`, icon: ImageIcon, badge: formData.images.length },
+          { id: 'inventory', label: '4. Stock & Logistics', icon: Package },
+          { id: 'payment', label: '5. Payment Methods', icon: CreditCard }
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -590,52 +627,38 @@ export default function SellerKitFormPage({
                 </div>
               </div>
 
-              {/* School & School Code */}
+              {/* School Selector with Custom School Option */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center justify-between">
-                    <span>School Name *</span>
-                    {schoolOptions.length > 0 && (
-                      <span className="text-[10px] text-brand-teal font-normal">Choose from list or type</span>
-                    )}
-                  </label>
-                  <input
-                    type="text"
-                    list="schoolOptionsList"
-                    required
-                    value={formData.schoolName}
-                    onChange={e => {
-                      const val = e.target.value;
-                      const matched = schoolOptions.find(s => s.name?.toLowerCase() === val.toLowerCase());
-                      setFormData({
-                        ...formData,
-                        schoolName: val,
-                        schoolCode: matched?.code || formData.schoolCode
-                      });
+                  <SchoolSelectorWithCustom
+                    selectedSchoolName={formData.schoolName}
+                    selectedSchoolCode={formData.schoolCode}
+                    userRole="seller"
+                    required={true}
+                    onSelectSchool={(sch) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        schoolName: sch.name,
+                        schoolCode: sch.schoolCode || sch.code || prev.schoolCode
+                      }));
                     }}
-                    placeholder="e.g. Delhi Public School, R.K. Puram"
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white"
                   />
-                  <datalist id="schoolOptionsList">
-                    {schoolOptions.map((sch, idx) => (
-                      <option key={idx} value={sch.name} />
-                    ))}
-                  </datalist>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    School Code (Optional)
+                    School Code / Affiliation
                   </label>
                   <input
                     type="text"
                     value={formData.schoolCode}
                     onChange={e => setFormData({ ...formData, schoolCode: e.target.value })}
-                    placeholder="e.g. DPS, KV, KVS"
+                    placeholder="e.g. SCH-001 or CBSE Affiliation"
                     className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white"
                   />
                 </div>
               </div>
+
 
               {/* Gender & Badge Tag */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1007,130 +1030,78 @@ export default function SellerKitFormPage({
                   </div>
                 )}
 
-                {/* Summary Metrics Bar */}
-                {kitItems.length > 0 && (
-                  <div className="p-4 rounded-xl bg-teal-50 border border-teal-200 flex flex-wrap items-center justify-between gap-4">
+                {/* Merged Pricing & Discounts Section in Step 2 */}
+                <div className="pt-4 border-t border-gray-100 space-y-4">
+                  <div className="border-b border-gray-100 pb-2">
+                    <h4 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                      <DollarSign className="text-brand-teal" size={16} /> Bundle Selling Price & Customer Savings
+                    </h4>
+                    <p className="text-[11px] text-gray-500">
+                      Set the bundled kit price parents pay. Savings are calculated automatically.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <div className="text-[11px] font-bold text-teal-800">Total Constituent Items Value</div>
-                      <div className="text-xl font-extrabold text-teal-950">₹{calculatedTotalMrp}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] font-bold text-teal-800">Bundle Price to Buyer</div>
-                      <div className="text-xl font-extrabold text-emerald-800">₹{effectiveBundlePrice}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] font-bold text-teal-800">Customer Savings</div>
-                      <div className="text-xl font-extrabold text-emerald-700 flex items-center gap-1">
-                        ₹{savingsAmount}
-                        {discountPercentage > 0 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-600 text-white font-black">
-                            {discountPercentage}% OFF
-                          </span>
-                        )}
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Combined Items MRP (Sum of Articles)
+                      </label>
+                      <div className="px-3.5 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-xs font-extrabold text-gray-700 flex items-center justify-between">
+                        <span>₹{calculatedTotalMrp}</span>
+                        <span className="text-[10px] text-gray-400 font-normal">Auto-sum from items above</span>
                       </div>
                     </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Bundle Discounted Selling Price (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        value={formData.bundlePrice}
+                        onChange={e => setFormData({ ...formData, bundlePrice: e.target.value })}
+                        placeholder={calculatedTotalMrp > 0 ? String(Math.round(calculatedTotalMrp * 0.85)) : '1299'}
+                        className="w-full px-3.5 py-2.5 bg-gray-50 border border-emerald-300 rounded-xl text-xs font-extrabold text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('pricing')}
-                  className="px-5 py-2 bg-brand-teal text-white rounded-xl text-xs font-extrabold cursor-pointer"
-                >
-                  Next: Pricing & Taxes →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: PRICING & TAXES */}
-          {activeTab === 'pricing' && (
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-6">
-              <div className="border-b border-gray-100 pb-3">
-                <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                  <DollarSign className="text-brand-teal" size={18} /> Bundle Pricing, Discounts & GST
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Set the final discounted selling price parents pay, and configure tax rules.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Calculated Total MRP (Sum of Items)
-                  </label>
-                  <div className="px-3.5 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-xs font-extrabold text-gray-700 flex items-center justify-between">
-                    <span>₹{calculatedTotalMrp}</span>
-                    <span className="text-[10px] text-gray-400 font-normal">Auto-computed from items</span>
+                  {/* Savings & Discount Summary Pill */}
+                  <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200/80 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                        <TrendingDown size={16} />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-bold text-emerald-950">Customer Direct Savings</h5>
+                        <p className="text-[11px] text-emerald-700">Parents save ₹{savingsAmount} compared to buying articles separately.</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-black">
+                        {discountPercentage}% DISCOUNT
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Bundle Discounted Selling Price (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={formData.bundlePrice}
-                    onChange={e => setFormData({ ...formData, bundlePrice: e.target.value })}
-                    placeholder={calculatedTotalMrp > 0 ? String(Math.round(calculatedTotalMrp * 0.85)) : '1299'}
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-emerald-300 rounded-xl text-xs font-extrabold text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
-                  />
-                </div>
-              </div>
-
-              {/* Savings KPI Pill */}
-              <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200/80 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-                    <TrendingDown size={18} />
+                  {/* Inherited Product GST (No New GST Applicable Option) */}
+                  <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                    <div className="space-y-0.5">
+                      <div className="font-extrabold text-gray-800 flex items-center gap-1.5">
+                        <Percent size={13} className="text-brand-teal" />
+                        <span>GST Applied From Constituent Products</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500">
+                        GST is preserved as previously set on each individual product (e.g. 0% for books, 5% for uniforms, 12% for footwear). No separate kit-level GST option is applied.
+                      </p>
+                    </div>
+                    <div className="shrink-0 bg-white px-3 py-1.5 rounded-lg border border-gray-200 text-right">
+                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">Effective Rate</span>
+                      <span className="font-mono font-bold text-gray-800">~{derivedProductGst}% GST Included</span>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-emerald-950">Customer Direct Savings</h4>
-                    <p className="text-[11px] text-emerald-700">Parents save ₹{savingsAmount} compared to buying separately.</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-black">
-                    {discountPercentage}% DISCOUNT
-                  </span>
-                </div>
-              </div>
-
-              {/* GST & Inclusivity */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Applicable GST Slab
-                  </label>
-                  <select
-                    value={formData.gst}
-                    onChange={e => setFormData({ ...formData, gst: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer focus:ring-2 focus:ring-brand-teal focus:bg-white"
-                  >
-                    <option value="0">0% (Nil / Exempted Books)</option>
-                    <option value="5">5% (Apparel & Fabric Kits)</option>
-                    <option value="12">12% (Shoes & Stationery Kits)</option>
-                    <option value="18">18% (Standard Kit Goods)</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-3 pt-6">
-                  <input
-                    type="checkbox"
-                    id="kitGstInclusive"
-                    checked={formData.isGstInclusive}
-                    onChange={e => setFormData({ ...formData, isGstInclusive: e.target.checked })}
-                    className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal"
-                  />
-                  <label htmlFor="kitGstInclusive" className="text-xs font-bold text-gray-700 cursor-pointer">
-                    Bundle Price is inclusive of GST (Recommended)
-                  </label>
                 </div>
               </div>
 
@@ -1190,7 +1161,7 @@ export default function SellerKitFormPage({
             </div>
           )}
 
-          {/* TAB 5: INVENTORY & STOCK */}
+          {/* TAB 4: STOCK & LOGISTICS */}
           {activeTab === 'inventory' && (
             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-6">
               <div className="border-b border-gray-100 pb-3">
@@ -1198,25 +1169,127 @@ export default function SellerKitFormPage({
                   <Package className="text-brand-teal" size={18} /> Kit Stock & Inventory Rules
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Manage how kit stock is counted and assign trackable warehouse SKUs.
+                  Set independent pre-packed bundle stock or let it update automatically from individual product availability.
                 </p>
               </div>
+
+              {/* Stock Mode Selection Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div
+                  onClick={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      inventoryMode: 'fixed',
+                      stock: prev.stock && Number(prev.stock) > 0 ? prev.stock : '25'
+                    }));
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    formData.inventoryMode === 'fixed'
+                      ? 'border-brand-teal bg-brand-teal/5'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                      <Package size={16} className="text-brand-teal" /> Independent Bundle Stock
+                    </span>
+                    <input
+                      type="radio"
+                      name="stockMode"
+                      checked={formData.inventoryMode === 'fixed'}
+                      onChange={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          inventoryMode: 'fixed',
+                          stock: prev.stock && Number(prev.stock) > 0 ? prev.stock : '25'
+                        }));
+                      }}
+                      className="accent-brand-teal"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-600 leading-relaxed">
+                    Set a fixed, dedicated stock count for pre-boxed / pre-assembled kit packages in your warehouse.
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      inventoryMode: 'dynamic',
+                      stock: String(dynamicKitStock)
+                    }));
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    formData.inventoryMode === 'dynamic'
+                      ? 'border-brand-teal bg-brand-teal/5'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                      <Sparkles size={16} className="text-brand-orange" /> Auto-Update (Dynamic)
+                    </span>
+                    <input
+                      type="radio"
+                      name="stockMode"
+                      checked={formData.inventoryMode === 'dynamic'}
+                      onChange={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          inventoryMode: 'dynamic',
+                          stock: String(dynamicKitStock)
+                        }));
+                      }}
+                      className="accent-brand-teal"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-600 leading-relaxed">
+                    Automatically computes bundle stock from individual constituent items ({dynamicKitStock} kits currently available).
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Alert Banner */}
+              {formData.inventoryMode === 'fixed' ? (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="font-bold">Independent Stock Active:</span> Kit availability is locked to dedicated pre-packed units ({formData.stock || 0} kits).
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs flex items-center gap-2">
+                  <Sparkles size={16} className="text-blue-600 shrink-0" />
+                  <div>
+                    <span className="font-bold">Auto-Updating Active:</span> Kit stock is dynamically calculated as{' '}
+                    <span className="font-black underline">{dynamicKitStock} kits</span> based on constituent warehouse inventory.
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Available Kit Stock *
+                    {formData.inventoryMode === 'fixed' ? 'Independent Kit Stock Count *' : 'Available Kit Stock (Auto-Computed)'}
                   </label>
                   <input
                     type="number"
                     min="0"
                     required
-                    value={formData.stock}
+                    readOnly={formData.inventoryMode === 'dynamic'}
+                    value={formData.inventoryMode === 'dynamic' ? dynamicKitStock : formData.stock}
                     onChange={e => setFormData({ ...formData, stock: e.target.value })}
-                    placeholder="25"
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white"
+                    placeholder={formData.inventoryMode === 'dynamic' ? String(dynamicKitStock) : "25"}
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-brand-teal ${
+                      formData.inventoryMode === 'dynamic' ? 'bg-gray-100 border border-gray-300 text-gray-700 cursor-not-allowed' : 'bg-gray-50 border border-gray-200 focus:bg-white'
+                    }`}
                   />
-                  <p className="text-[10px] text-gray-400 mt-1">Number of fully assembled kits ready to ship.</p>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {formData.inventoryMode === 'fixed'
+                      ? 'Pre-packed bundles ready to ship independently.'
+                      : 'Updated automatically as individual item stock changes.'}
+                  </p>
                 </div>
 
                 <div>
@@ -1234,21 +1307,73 @@ export default function SellerKitFormPage({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Stock Tracking Mode
-                  </label>
-                  <select
-                    value={formData.inventoryMode}
-                    onChange={e => setFormData({ ...formData, inventoryMode: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer focus:ring-2 focus:ring-brand-teal focus:bg-white"
-                  >
-                    <option value="fixed">Fixed Pool (Explicitly set kit quantity)</option>
-                    <option value="dynamic">Dynamic (Capped by constituent products)</option>
-                  </select>
+              {/* Component Availability Breakdown Table */}
+              <div className="pt-3 border-t border-gray-100">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-extrabold text-gray-900 flex items-center gap-1.5">
+                    <Boxes size={14} className="text-brand-teal" /> Constituent Component Availability
+                  </h4>
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    {kitItems.length} items in bundle
+                  </span>
                 </div>
 
+                {kitItems.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No items added to kit yet. Add items in Step 2.</p>
+                ) : (
+                  <div className="border border-gray-200 rounded-xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold text-[11px]">
+                        <tr>
+                          <th className="px-3 py-2">Item Name</th>
+                          <th className="px-3 py-2 text-center">Qty / Kit</th>
+                          <th className="px-3 py-2 text-center">Warehouse Stock</th>
+                          <th className="px-3 py-2 text-center">Max Kits Possible</th>
+                          <th className="px-3 py-2 text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {kitItems.map((item, idx) => {
+                          const matched = existingProducts.find(p => String(p.id || p._id) === String(item.productId));
+                          const available = Number(matched?.stock ?? matched?.stockQuantity ?? item.stock ?? 25);
+                          const qtyReq = Math.max(1, Number(item.quantity) || 1);
+                          const maxKits = Math.floor(available / qtyReq);
+                          const isBottleneck = maxKits === dynamicKitStock;
+
+                          return (
+                            <tr key={idx} className={isBottleneck && dynamicKitStock < 10 ? 'bg-amber-50/50' : ''}>
+                              <td className="px-3 py-2 font-medium text-gray-900">
+                                <div>{item.name || item.title || matched?.name || `Item #${idx + 1}`}</div>
+                                {item.variant && <div className="text-[10px] text-gray-400">{item.variant}</div>}
+                              </td>
+                              <td className="px-3 py-2 text-center font-bold text-gray-700">{qtyReq}</td>
+                              <td className="px-3 py-2 text-center font-bold text-gray-700">{available}</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`font-black ${isBottleneck ? 'text-brand-orange' : 'text-gray-900'}`}>
+                                  {maxKits} kits
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                {isBottleneck ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold text-[10px]">
+                                    Limiting Factor
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[10px]">
+                                    Sufficient
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
                     Low Stock Alert Threshold
@@ -1258,8 +1383,9 @@ export default function SellerKitFormPage({
                     min="1"
                     value={formData.lowStockThreshold}
                     onChange={e => setFormData({ ...formData, lowStockThreshold: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
+                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white"
                   />
+                  <p className="text-[10px] text-gray-400 mt-1">Receive warning when kit stock drops below this.</p>
                 </div>
               </div>
 
