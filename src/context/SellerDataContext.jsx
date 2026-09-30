@@ -662,7 +662,19 @@ export const SellerDataProvider = ({ children }) => {
               if (idx === -1) {
                 merged.push(l);
               } else {
-                merged[idx] = { ...merged[idx], ...l };
+                const serverOrder = merged[idx];
+                merged[idx] = {
+                  ...l,
+                  ...serverOrder,
+                  status: serverOrder.status || l.status,
+                  deliveryDetails: { ...l.deliveryDetails, ...serverOrder.deliveryDetails },
+                  quotations: (Array.isArray(serverOrder.quotations) && serverOrder.quotations.length > 0)
+                    ? serverOrder.quotations
+                    : (l.quotations || []),
+                  latestBuyerCounter: serverOrder.latestBuyerCounter || l.latestBuyerCounter,
+                  negotiationStage: serverOrder.negotiationStage || l.negotiationStage,
+                  currentVersion: serverOrder.currentVersion || l.currentVersion
+                };
               }
             });
           }
@@ -786,7 +798,16 @@ export const SellerDataProvider = ({ children }) => {
                 if (idx === -1) {
                   merged.push(item);
                 } else {
-                  merged[idx] = { ...merged[idx], ...item };
+                  const current = merged[idx];
+                  const hasRicherQuotations = Array.isArray(current.quotations) && current.quotations.some(q => (q.currentVersion || 1) >= (item.quotations?.[0]?.currentVersion || 1));
+                  merged[idx] = {
+                    ...item,
+                    ...current,
+                    quotations: hasRicherQuotations ? current.quotations : (item.quotations || current.quotations || []),
+                    latestBuyerCounter: current.latestBuyerCounter || item.latestBuyerCounter,
+                    negotiationStage: current.negotiationStage || item.negotiationStage,
+                    currentVersion: current.currentVersion || item.currentVersion
+                  };
                 }
               });
               return merged;

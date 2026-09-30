@@ -291,7 +291,7 @@ export default function KitsTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 font-medium">
-                {filteredKits.map((item) => {
+                {filteredKits.map((item, idx) => {
                   const kitImg = item.images?.[0] || item.image || '';
                   const totalMrp = Number(item.totalMrp || item.originalPrice || item.mrp || 0);
                   const bundlePrice = Number(item.bundlePrice || item.price || 0);
@@ -301,7 +301,7 @@ export default function KitsTab() {
                   const isAvailable = item.status === 'available';
 
                   return (
-                    <tr key={item.id || item._id} className="hover:bg-gray-50/60 transition-colors">
+                    <tr key={item.id || item._id || `kit-${idx}`} className="hover:bg-gray-50/60 transition-colors">
                       {/* Kit Column */}
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-3">

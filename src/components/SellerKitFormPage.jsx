@@ -453,10 +453,9 @@ export default function SellerKitFormPage({
         image: finalImages[0] || '',
         images: finalImages,
         paymentMethodAllowed: paymentAllowedStr,
-        paymentMethodsAllowed: paymentAllowedArr,
-        status: isEdit ? (formData.status || 'pending') : 'pending', // Catalog visibility is pending by default!
+        status: isEdit ? (formData.status || 'available') : 'available',
         approvalStatus: isEdit ? (formData.approvalStatus || 'Pending') : 'Pending',
-        isApproved: false
+        isApproved: isEdit ? Boolean(formData.isApproved) : false
       };
 
       await onSave(payload);
@@ -627,6 +626,61 @@ export default function SellerKitFormPage({
                 </div>
               </div>
 
+              {/* Universal / Open for All Schools Quick Toggle */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-teal-50/70 border border-teal-200 gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-brand-teal text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <School size={16} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                      <span>Open for All Schools (Universal Kit)</span>
+                      {(formData.schoolName?.toLowerCase().includes('all school') || formData.schoolCode === 'ALL') && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      Enable this if this kit bundle is general and applicable for students of any school.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isAll = formData.schoolName?.toLowerCase().includes('all school') || formData.schoolCode === 'ALL';
+                    if (isAll) {
+                      setFormData(prev => ({
+                        ...prev,
+                        schoolName: '',
+                        schoolCode: ''
+                      }));
+                    } else {
+                      setFormData(prev => ({
+                        ...prev,
+                        schoolName: 'All Schools (Open for All Schools)',
+                        schoolCode: 'ALL'
+                      }));
+                    }
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    (formData.schoolName?.toLowerCase().includes('all school') || formData.schoolCode === 'ALL')
+                      ? 'bg-brand-teal text-white shadow-xs'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:border-teal-400 hover:bg-teal-50/50'
+                  }`}
+                >
+                  {(formData.schoolName?.toLowerCase().includes('all school') || formData.schoolCode === 'ALL') ? (
+                    <>
+                      <Check size={13} />
+                      <span>All Schools Enabled</span>
+                    </>
+                  ) : (
+                    <span>Make Open for All Schools</span>
+                  )}
+                </button>
+              </div>
+
               {/* School Selector with Custom School Option */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -653,7 +707,7 @@ export default function SellerKitFormPage({
                     type="text"
                     value={formData.schoolCode}
                     onChange={e => setFormData({ ...formData, schoolCode: e.target.value })}
-                    placeholder="e.g. SCH-001 or CBSE Affiliation"
+                    placeholder="e.g. SCH-001, ALL, or CBSE Affiliation"
                     className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white"
                   />
                 </div>
@@ -695,10 +749,30 @@ export default function SellerKitFormPage({
 
               {/* Multi-Select Target Grades */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center justify-between">
-                  <span>Target Class / Grade *</span>
-                  <span className="text-[10px] text-gray-400">Select one or more grades</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-gray-700">
+                    Target Class / Grade *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedGrades(GRADE_OPTIONS);
+                      }}
+                      className="text-[11px] font-extrabold text-brand-teal hover:underline cursor-pointer"
+                    >
+                      Select All Classes
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGrades([])}
+                      className="text-[11px] font-bold text-gray-400 hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-1.5 p-3 rounded-xl bg-gray-50 border border-gray-200">
                   {GRADE_OPTIONS.map(grade => {
                     const isSelected = selectedGrades.includes(grade);

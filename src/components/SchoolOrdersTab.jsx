@@ -23,7 +23,9 @@ import {
   Percent,
   Truck,
   Package,
-  Check
+  Check,
+  Lock,
+  AlertCircle
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
@@ -85,20 +87,45 @@ export default function SchoolOrdersTab() {
 
   // Filtered Orders for Seller (ONLY SHOW ORDERS DISTRIBUTED / ACCESSIBLE TO THIS SELLER)
   const filteredOrders = useMemo(() => {
-    const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
+    const sellerCandidateIds = [
+      sellerUser?.id,
+      sellerUser?._id,
+      sellerUser?.merchantId,
+      typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+    ].filter(Boolean).map(String);
+
+    const currentSellerId = String(sellerUser?.id || sellerUser?._id || sellerCandidateIds[0] || '');
+    const cleanSellerPhone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanSellerStore = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
 
     return schoolOrders.filter((req) => {
       const assignedSellerId = req.sellerId ? String(typeof req.sellerId === 'object' ? (req.sellerId._id || req.sellerId.id) : req.sellerId) : '';
-      const isAssigned = Boolean(assignedSellerId && assignedSellerId === currentSellerId);
+      const isAssigned = Boolean(assignedSellerId && (assignedSellerId === currentSellerId || sellerCandidateIds.includes(assignedSellerId)));
       const isInvited = Array.isArray(req.invitedSellerIds) && req.invitedSellerIds.some(
-        s => String(typeof s === 'object' ? (s._id || s.id) : s) === currentSellerId
+        s => {
+          const sId = String(typeof s === 'object' ? (s._id || s.id) : s);
+          return sId === currentSellerId || sellerCandidateIds.includes(sId);
+        }
       );
       const isBroadcast = req.assignmentMode === 'broadcast';
       const hasSellerQuote = Array.isArray(req.quotations) && req.quotations.some(
-        q => String(q.sellerId) === currentSellerId
+        q => {
+          const qSellerId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
+          if (qSellerId && (qSellerId === currentSellerId || sellerCandidateIds.includes(qSellerId))) return true;
+          if (cleanSellerPhone && String(q.sellerPhone || '').replace(/\D/g, '').slice(-10) === cleanSellerPhone) return true;
+          if (cleanSellerStore && (q.sellerStoreName || q.sellerName || '').trim().toLowerCase() === cleanSellerStore) return true;
+          if (Array.isArray(req.quotations) && req.quotations.length === 1) return true;
+          return false;
+        }
       );
       const isWinningSeller = Boolean(req.acceptedQuoteId && req.quotations?.some(
-        q => String(q._id) === String(req.acceptedQuoteId) && String(q.sellerId) === currentSellerId
+        q => String(q._id || q.id) === String(req.acceptedQuoteId) && (
+          (currentSellerId && String(q.sellerId) === currentSellerId) ||
+          sellerCandidateIds.includes(String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '')) ||
+          hasSellerQuote
+        )
       ));
       const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status);
 
@@ -335,6 +362,10 @@ export default function SchoolOrdersTab() {
             const isPacked = req.status === 'packed';
             const isOutForDelivery = req.status === 'out for delivery' || req.status === 'out_for_delivery';
             const isReceived = req.status === 'received' || req.status === 'delivered';
+
+            const advRequired = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0) > 0 || Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || 0) > 0;
+            const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
+            const isPrepaymentPending = advRequired && !isPrepaymentPaid;
 
             return (
               <div key={req.id || req._id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs hover:border-teal-200 transition-all space-y-4">
@@ -643,22 +674,43 @@ export default function SchoolOrdersTab() {
                 )}
 
                 {/* Advance Payment Indicator Strip */}
-                {(req.buyerAdvancePercentage || req.buyerAdvanceAmount || req.sellerAdvancePercentage || req.sellerAdvanceAmount || req.advancePaymentStatus === 'paid_partially') && (
+                {isPrepaymentPending ? (
+                  <div className="bg-amber-50 border-2 border-amber-300 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle size={15} className="text-amber-700 shrink-0" />
+                      <div>
+                        <span className="font-extrabold text-amber-950 block">
+                          ⏳ Awaiting Buyer's Online Prepayment: ₹{Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()} ({req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || 0}%)
+                        </span>
+                        <span className="text-amber-800 text-[11px]">
+                          The buyer has been prompted to pay online. Order fulfillment & packing controls will unlock once payment is verified.
+                        </span>
+                      </div>
+                    </div>
+                    <span className="bg-amber-200 text-amber-900 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
+                      Prepayment Pending
+                    </span>
+                  </div>
+                ) : (req.buyerAdvancePercentage || req.buyerAdvanceAmount || req.sellerAdvancePercentage || req.sellerAdvanceAmount || isPrepaymentPaid) ? (
                   <div className="bg-emerald-50/70 border border-emerald-200/80 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
                       <DollarSign size={14} className="text-emerald-700 shrink-0" />
-                      <span className="font-extrabold text-emerald-950">
-                        {req.advancePaymentStatus === 'paid_partially' ? (
-                          <span className="text-emerald-800">✅ Advance Mobilization Paid: ₹{Number(req.advancePaidAmount || req.buyerAdvanceAmount || 0).toLocaleString()}</span>
-                        ) : req.buyerAdvancePercentage ? (
-                          <span>Buyer Offered Advance: <strong className="text-emerald-900">{req.buyerAdvancePercentage}%</strong>{req.buyerAdvanceAmount ? ` (₹${Number(req.buyerAdvanceAmount).toLocaleString()})` : ''}</span>
-                        ) : (
-                          <span>Advance Terms Specified</span>
+                      <div>
+                        <span className="font-extrabold text-emerald-950 block">
+                          {isPrepaymentPaid ? (
+                            <span className="text-emerald-800">✅ Online Prepayment Confirmed: ₹{Number(req.advancePaidAmount || req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()}</span>
+                          ) : req.buyerAdvancePercentage ? (
+                            <span>Buyer Offered Advance: <strong className="text-emerald-900">{req.buyerAdvancePercentage}%</strong>{req.buyerAdvanceAmount ? ` (₹${Number(req.buyerAdvanceAmount).toLocaleString()})` : ''}</span>
+                          ) : (
+                            <span>Advance Terms Specified</span>
+                          )}
+                        </span>
+                        {isPrepaymentPaid && req.advanceTransactionId && (
+                          <span className="text-emerald-800 font-mono text-[10px]">
+                            Razorpay TXN: <strong>{req.advanceTransactionId}</strong>
+                          </span>
                         )}
-                      </span>
-                      {req.buyerAdvanceNote && (
-                        <span className="text-gray-500 text-[11px] hidden sm:inline">"{req.buyerAdvanceNote}"</span>
-                      )}
+                      </div>
                     </div>
 
                     <button
@@ -670,7 +722,7 @@ export default function SchoolOrdersTab() {
                       <span>Partial Receipt</span>
                     </button>
                   </div>
-                )}
+                ) : null}
 
                 {/* Actions Footer with Order Processing Workflow */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-gray-100">
@@ -696,15 +748,27 @@ export default function SchoolOrdersTab() {
                     {/* Order Processing Buttons for Seller on Accepted Orders */}
                     {isAssignedToMe && (
                       <>
-                        {/* 1. If Accepted -> Advance to Packed */}
+                        {/* 1. If Accepted -> Advance to Packed (Gated behind prepayment) */}
                         {(!req.status || req.status === 'quote_accepted' || req.status === 'accepted' || req.status === 'assigned') && (
-                          <button
-                            onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'packed' })}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
-                          >
-                            <Package size={14} />
-                            <span>Mark as Packed</span>
-                          </button>
+                          isPrepaymentPending ? (
+                            <button
+                              type="button"
+                              disabled
+                              title={`Online prepayment of ₹${Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()} must be completed by buyer before packing`}
+                              className="flex items-center gap-1.5 px-4 py-2 bg-gray-200 text-gray-500 text-xs font-bold rounded-xl cursor-not-allowed opacity-80"
+                            >
+                              <Lock size={14} />
+                              <span>Prepayment Pending (₹{Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()})</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'packed' })}
+                              className="flex items-center gap-1.5 px-4 py-2 bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
+                            >
+                              <Package size={14} />
+                              <span>Mark as Packed</span>
+                            </button>
+                          )
                         )}
 
                         {/* 2. If Packed -> Open Self-Delivery Dispatch Modal */}
@@ -1262,29 +1326,31 @@ export default function SchoolOrdersTab() {
       )}
 
       {/* Expanded Bulk Order Details Preview Modal */}
-      <BulkOrderPreviewModal
-        order={previewOrder}
-        onClose={() => setPreviewOrder(null)}
-        userRole="seller"
-        sellerUser={sellerUser}
-        initialTab={initialPreviewTab}
-        onSubmitQuote={(orderId, payload) => {
-          submitSchoolQuote(orderId, payload);
-          setPreviewOrder(null);
-        }}
-        onAcceptCounterDemand={(orderId, quoteId, payload) => {
-          if (acceptBuyerCounterDemand) acceptBuyerCounterDemand(orderId, quoteId, payload);
-          setPreviewOrder(null);
-        }}
-        onReviseQuote={(orderId, quoteId, payload) => {
-          if (reviseSchoolQuote) reviseSchoolQuote(orderId, quoteId, payload);
-          setPreviewOrder(null);
-        }}
-        onAcceptDirect={(orderId) => {
-          acceptSchoolOrder(orderId);
-          setPreviewOrder(null);
-        }}
-      />
+      {previewOrder && (
+        <BulkOrderPreviewModal
+          order={previewOrder}
+          onClose={() => setPreviewOrder(null)}
+          userRole="seller"
+          sellerUser={sellerUser}
+          initialTab={initialPreviewTab}
+          onSubmitQuote={(orderId, payload) => {
+            submitSchoolQuote(orderId, payload);
+            setPreviewOrder(null);
+          }}
+          onAcceptCounterDemand={(orderId, quoteId, payload) => {
+            if (acceptBuyerCounterDemand) acceptBuyerCounterDemand(orderId, quoteId, payload);
+            setPreviewOrder(null);
+          }}
+          onReviseQuote={(orderId, quoteId, payload) => {
+            if (reviseSchoolQuote) reviseSchoolQuote(orderId, quoteId, payload);
+            setPreviewOrder(null);
+          }}
+          onAcceptDirect={(orderId) => {
+            acceptSchoolOrder(orderId);
+            setPreviewOrder(null);
+          }}
+        />
+      )}
 
       {/* Partial Advance Payment Receipt Modal */}
       {selectedReceiptOrder && (
