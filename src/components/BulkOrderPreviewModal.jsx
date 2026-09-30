@@ -48,8 +48,6 @@ export default function BulkOrderPreviewModal({
   onAcceptDirect, // (orderId) => void
   sellerUser = null // Current seller info when userRole === 'seller'
 }) {
-  if (!order) return null;
-
   // Active Lightbox / Image Preview
   const [zoomImage, setZoomImage] = useState(null);
 
@@ -84,12 +82,12 @@ export default function BulkOrderPreviewModal({
   };
 
   // Admin Distribution State
-  const [distributeMode, setDistributeMode] = useState(order.assignmentMode || 'direct');
+  const [distributeMode, setDistributeMode] = useState(order?.assignmentMode || 'direct');
   const [selectedSingleSeller, setSelectedSingleSeller] = useState(
-    order.sellerId ? (typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : ''
+    order?.sellerId ? (typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : ''
   );
   const [selectedMultipleSellers, setSelectedMultipleSellers] = useState(
-    (order.invitedSellerIds || []).map(s => (typeof s === 'object' ? (s._id || s.id) : s))
+    (order?.invitedSellerIds || []).map(s => (typeof s === 'object' ? (s._id || s.id) : s))
   );
   const [sellerSearchQuery, setSellerSearchQuery] = useState('');
 
@@ -105,6 +103,7 @@ export default function BulkOrderPreviewModal({
     ].filter(Boolean).map(String);
   }, [sellerUser]);
 
+  const currentSellerId = String(sellerUser?.id || sellerUser?._id || sellerCandidateIds[0] || '');
   const cleanSellerPhone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
   const cleanSellerStore = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
 
@@ -114,7 +113,7 @@ export default function BulkOrderPreviewModal({
     // 1. Check direct candidate ID match
     const matchById = order.quotations.find(q => {
       const qId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
-      return qId && sellerCandidateIds.includes(qId);
+      return qId && (qId === currentSellerId || sellerCandidateIds.includes(qId));
     });
     if (matchById) return matchById;
 
@@ -142,13 +141,26 @@ export default function BulkOrderPreviewModal({
     }
 
     return null;
-  }, [order?.quotations, sellerCandidateIds, cleanSellerPhone, cleanSellerStore, userRole]);
+  }, [order?.quotations, currentSellerId, sellerCandidateIds, cleanSellerPhone, cleanSellerStore, userRole]);
 
-  const targetBudgetNum = Number(order.targetBudgetPerKit || order.estimatedBudget || 0);
+  const isMyQuote = (q) => {
+    if (!q) return false;
+    const qSellerId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
+    if (qSellerId && (qSellerId === currentSellerId || sellerCandidateIds.includes(qSellerId))) return true;
+    const qPhone = String(q.sellerPhone || '').replace(/\D/g, '').slice(-10);
+    if (cleanSellerPhone && qPhone && qPhone === cleanSellerPhone) return true;
+    const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
+    if (cleanSellerStore && qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore))) return true;
+    if (existingSellerQuote && String(existingSellerQuote._id || existingSellerQuote.id) === String(q._id || q.id)) return true;
+    if (userRole === 'seller' && Array.isArray(order?.quotations) && order.quotations.length === 1) return true;
+    return false;
+  };
+
+  const targetBudgetNum = Number(order?.targetBudgetPerKit || order?.estimatedBudget || 0);
   const totalQtyNum = Number(
-    order.totalQuantity ||
-    order.quantity ||
-    (Array.isArray(order.requirements) ? order.requirements.reduce((s, r) => s + Number(r.quantity || 0), 0) : 100)
+    order?.totalQuantity ||
+    order?.quantity ||
+    (Array.isArray(order?.requirements) ? order.requirements.reduce((s, r) => s + Number(r.quantity || 0), 0) : 100)
   );
 
   const [quoteAmount, setQuoteAmount] = useState(
@@ -168,16 +180,16 @@ export default function BulkOrderPreviewModal({
 
   // Advance Payment Counter-Demand State
   const [sellerAdvanceType, setSellerAdvanceType] = useState(
-    existingSellerQuote?.sellerAdvanceType || order.buyerAdvanceType || 'percentage'
+    existingSellerQuote?.sellerAdvanceType || order?.buyerAdvanceType || 'percentage'
   );
   const [sellerAdvancePercentage, setSellerAdvancePercentage] = useState(
-    existingSellerQuote?.sellerAdvancePercentage ?? (order.buyerAdvancePercentage || 30)
+    existingSellerQuote?.sellerAdvancePercentage ?? (order?.buyerAdvancePercentage || 30)
   );
   const [sellerAdvanceAmount, setSellerAdvanceAmount] = useState(
-    existingSellerQuote?.sellerAdvanceAmount ? String(existingSellerQuote.sellerAdvanceAmount) : (order.buyerAdvanceAmount ? String(order.buyerAdvanceAmount) : '')
+    existingSellerQuote?.sellerAdvanceAmount ? String(existingSellerQuote.sellerAdvanceAmount) : (order?.buyerAdvanceAmount ? String(order.buyerAdvanceAmount) : '')
   );
   const [sellerAdvanceTerms, setSellerAdvanceTerms] = useState(
-    existingSellerQuote?.sellerAdvanceTerms || (order.buyerAdvanceNote ? `Agreed to buyer advance: ${order.buyerAdvanceNote}` : '30% advance on sample approval before bulk procurement, 70% upon delivery.')
+    existingSellerQuote?.sellerAdvanceTerms || (order?.buyerAdvanceNote ? `Agreed to buyer advance: ${order.buyerAdvanceNote}` : '30% advance on sample approval before bulk procurement, 70% upon delivery.')
   );
 
   // Keep state updated when order changes
@@ -207,33 +219,34 @@ export default function BulkOrderPreviewModal({
   }, [order, initialTab]);
 
   // Normalization Helpers
-  const refId = order.referenceId || order.id || `SCH-${order._id}`;
-  const instName = order.institutionName || order.schoolName || 'School / College';
-  const instType = order.institutionType || 'Educational Institution';
-  const schId = order.schoolId || '';
+  const refId = order?.referenceId || order?.id || (order?._id ? `SCH-${order._id}` : 'SCH-BULK');
+  const instName = order?.institutionName || order?.schoolName || 'School / College';
+  const instType = order?.institutionType || 'Educational Institution';
+  const schId = order?.schoolId || '';
 
-  const contactName = order.contactName || order.contactPerson || 'Purchaser Contact';
-  const contactPhone = order.contactPhone || 'N/A';
-  const contactEmail = order.contactEmail || 'N/A';
-  const designation = order.designation || 'Administrator';
+  const contactName = order?.contactName || order?.contactPerson || 'Purchaser Contact';
+  const contactPhone = order?.contactPhone || 'N/A';
+  const contactEmail = order?.contactEmail || 'N/A';
+  const designation = order?.designation || 'Administrator';
 
-  const address = order.address || order.addressLine || 'N/A';
-  const city = order.city || 'Delhi';
-  const state = order.state || 'Delhi';
-  const pincode = order.pincode || '';
+  const address = order?.address || order?.addressLine || 'N/A';
+  const city = order?.city || 'Delhi';
+  const state = order?.state || 'Delhi';
+  const pincode = order?.pincode || '';
 
   const requirementsList = useMemo(() => {
+    if (!order) return [];
     return Array.isArray(order.requirements) && order.requirements.length > 0
       ? order.requirements
       : [
           {
             category: 'Bulk Procurement',
-            itemName: order.requirementSummary || order.additionalNotes || 'Bulk School Uniform & Stationery',
+            itemName: order?.requirementSummary || order?.additionalNotes || 'Bulk School Uniform & Stationery',
             quantity: totalQtyNum,
             budgetPerUnit: targetBudgetNum && totalQtyNum ? Math.round(targetBudgetNum / totalQtyNum) : 0,
             sellerPricePerUnit: 0,
             sampleImage: '',
-            notes: order.additionalNotes || ''
+            notes: order?.additionalNotes || ''
           }
         ];
   }, [order, totalQtyNum, targetBudgetNum]);
@@ -309,24 +322,24 @@ export default function BulkOrderPreviewModal({
     });
   };
 
-  const winningQuote = Array.isArray(order.quotations)
-    ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId))
+  const winningQuote = Array.isArray(order?.quotations)
+    ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order?.acceptedQuoteId))
     : null;
 
   // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
-  const normStatus = String(order.deliveryStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
+  const normStatus = String(order?.deliveryStatus || order?.status || '').toLowerCase().replace(/_/g, ' ');
   const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
-  const isSelf = String(order.deliveryMode || '').toLowerCase().includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPersonName);
-  const isThirdParty = String(order.deliveryMode || '').toLowerCase().includes('third') || Boolean(order.courierName && order.courierName !== 'N/A');
-  const hasPartner = isSelf || isThirdParty || Boolean((order.courierName && order.courierName !== 'N/A') || order.selfDeliveryDetails?.deliveryPersonName);
-  const canViewTracking = isOut && hasPartner && Boolean(order.trackingNumber || order.selfDeliveryDetails?.deliveryPartnerToken);
+  const isSelf = String(order?.deliveryMode || '').toLowerCase().includes('self') || Boolean(order?.selfDeliveryDetails?.deliveryPartnerToken || order?.selfDeliveryDetails?.deliveryPersonName);
+  const isThirdParty = String(order?.deliveryMode || '').toLowerCase().includes('third') || Boolean(order?.courierName && order?.courierName !== 'N/A');
+  const hasPartner = isSelf || isThirdParty || Boolean((order?.courierName && order?.courierName !== 'N/A') || order?.selfDeliveryDetails?.deliveryPersonName);
+  const canViewTracking = isOut && hasPartner && Boolean(order?.trackingNumber || order?.selfDeliveryDetails?.deliveryPartnerToken);
 
   const deliveryPartnerDisplay = isSelf 
-    ? (order.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
-    : (order.courierName || 'N/A');
+    ? (order?.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
+    : (order?.courierName || 'N/A');
 
-  const trackingNumberDisplay = order.trackingNumber || (isSelf ? order.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
-  const trackingLinkDisplay = order.trackingUrl || order.selfDeliveryDetails?.trackingUrl || '';
+  const trackingNumberDisplay = order?.trackingNumber || (isSelf ? order?.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
+  const trackingLinkDisplay = order?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || '';
 
   // Transform bulk order into TaxInvoice-compatible object
   const taxInvoiceOrder = useMemo(() => {
@@ -512,6 +525,8 @@ export default function BulkOrderPreviewModal({
 
     setModalSubTab('specs');
   };
+
+  if (!order) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in">
@@ -730,8 +745,20 @@ export default function BulkOrderPreviewModal({
               {/* Approved Winning Quotation / Status Banners */}
               {(() => {
                 const assignedId = order.sellerId ? (typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : '';
-                const isAcceptedToMe = winningQuote && String(winningQuote.sellerId) === String(currentSellerId);
-                const isAcceptedOtherSeller = (order.status === 'quote_accepted' || winningQuote) && assignedId && String(assignedId) !== String(currentSellerId);
+                const isAcceptedToMe = Boolean(
+                  winningQuote && (
+                    isMyQuote(winningQuote) ||
+                    (currentSellerId && String(winningQuote.sellerId) === String(currentSellerId)) ||
+                    sellerCandidateIds.includes(String(winningQuote.sellerId))
+                  )
+                );
+                const isAcceptedOtherSeller = Boolean(
+                  (order.status === 'quote_accepted' || winningQuote) &&
+                  assignedId &&
+                  !sellerCandidateIds.includes(String(assignedId)) &&
+                  String(assignedId) !== String(currentSellerId) &&
+                  !isAcceptedToMe
+                );
 
                 if (isAcceptedToMe && userRole === 'seller') {
                   return (
@@ -1301,7 +1328,7 @@ export default function BulkOrderPreviewModal({
             const visibleQuotations = userRole === 'admin'
               ? (order.quotations || [])
               : (Array.isArray(order.quotations)
-                  ? order.quotations.filter(q => String(q.sellerId) === String(currentSellerId))
+                  ? order.quotations.filter(q => isMyQuote(q) || (currentSellerId && String(q.sellerId) === String(currentSellerId)))
                   : []);
 
             return (
@@ -1359,7 +1386,7 @@ export default function BulkOrderPreviewModal({
                     {visibleQuotations.map(quote => {
                     const qId = quote._id || quote.id;
                     const isApproved = quote.status === 'approved' || String(order.acceptedQuoteId) === String(qId);
-                    const isCurrentSellerQuote = String(quote.sellerId) === String(currentSellerId);
+                    const isCurrentSellerQuote = isMyQuote(quote) || (currentSellerId && String(quote.sellerId) === String(currentSellerId));
                     const hasItemPrices = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0;
 
                     return (

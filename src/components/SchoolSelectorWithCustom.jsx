@@ -14,7 +14,19 @@ import {
 } from 'lucide-react';
 import { fetchSchoolsApi } from '../utils/api';
 
+export const ALL_SCHOOLS_OPTION = {
+  schoolId: 'SCH-ALL',
+  name: 'All Schools (Open for All Schools)',
+  shortName: 'All Schools',
+  code: 'ALL',
+  schoolCode: 'ALL',
+  city: 'Pan-India',
+  board: 'All Boards',
+  status: 'Partner Active'
+};
+
 export const DEFAULT_FALLBACK_SCHOOLS = [
+  ALL_SCHOOLS_OPTION,
   { schoolId: 'SCH-001', name: 'Kendriya Vidyalaya No. 1', shortName: 'KV No. 1', city: 'Delhi Cantt', board: 'CBSE', status: 'Partner Active' },
   { schoolId: 'SCH-002', name: 'Delhi Public School, R.K. Puram', shortName: 'DPS RK Puram', city: 'New Delhi', board: 'CBSE', status: 'Partner Active' },
   { schoolId: 'SCH-003', name: 'DPS Kanpur Kalyanpur', shortName: 'DPS Kanpur', city: 'Kanpur', board: 'CBSE', status: 'Partner Active' },
@@ -69,15 +81,27 @@ export default function SchoolSelectorWithCustom({
       if (raw) localSchools = JSON.parse(raw);
     } catch (e) {}
 
-    // Deduplicate by name
+    // Deduplicate prioritizing ALL_SCHOOLS_OPTION first, then authoritative apiSchools, then local, then fallbacks
     const schoolMap = new Map();
-    [...DEFAULT_FALLBACK_SCHOOLS, ...localSchools, ...apiSchools].forEach(sch => {
+    const seenIds = new Set();
+    const combined = [ALL_SCHOOLS_OPTION, ...apiSchools, ...localSchools, ...DEFAULT_FALLBACK_SCHOOLS];
+
+    combined.forEach((sch, idx) => {
       if (sch && sch.name) {
-        const key = sch.name.trim().toLowerCase();
-        schoolMap.set(key, {
-          ...sch,
-          status: sch.status || 'Partner Active'
-        });
+        const nameKey = sch.name.trim().toLowerCase();
+        if (!schoolMap.has(nameKey)) {
+          let sId = sch.schoolId || sch.code || `SCH-${idx + 1}`;
+          if (seenIds.has(sId) && !sch._id) {
+            sId = `${sId}-${idx + 1}`;
+          }
+          seenIds.add(sId);
+
+          schoolMap.set(nameKey, {
+            ...sch,
+            schoolId: sId,
+            status: sch.status || 'Partner Active'
+          });
+        }
       }
     });
 
@@ -262,16 +286,26 @@ export default function SchoolSelectorWithCustom({
               />
             </div>
 
-            {/* Quick Action: Add Custom School Button */}
+            {/* Quick Action Buttons */}
             {!isAddingCustom && (
-              <button
-                type="button"
-                onClick={() => setIsAddingCustom(true)}
-                className="w-full px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-brand-teal border border-teal-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>Add Custom / Unlisted School</span>
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSelect(ALL_SCHOOLS_OPTION)}
+                  className="flex-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <CheckCircle2 size={13} className="text-emerald-600" />
+                  <span>All Schools (Universal)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddingCustom(true)}
+                  className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-brand-teal border border-teal-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                >
+                  <Plus size={14} />
+                  <span>+ Custom</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -358,9 +392,10 @@ export default function SchoolSelectorWithCustom({
               filteredSchools.map((sch, idx) => {
                 const isSelected = sch.name?.toLowerCase() === selectedSchoolName.toLowerCase();
                 const isPending = sch.status === 'pending';
+                const itemKey = sch._id ? String(sch._id) : `${sch.schoolId || 'sch'}-${sch.name || idx}-${idx}`;
                 return (
                   <div
-                    key={sch.schoolId || sch._id || idx}
+                    key={itemKey}
                     onClick={() => handleSelect(sch)}
                     className={`p-2.5 px-3 flex items-center justify-between text-xs hover:bg-teal-50/50 cursor-pointer transition-colors ${
                       isSelected ? 'bg-teal-50 font-bold' : ''
