@@ -373,7 +373,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                     Delivery Mode: <strong className="text-gray-900">{deliveryPartnerDisplay}</strong>
                   </div>
                   <div>
-                    Tracking ID / AWB: <strong className="font-mono text-teal-950 font-bold bg-white px-2 py-0.5 rounded border border-teal-200">{trackingNumberDisplay}</strong>
+                    Tracking ID / AWB: <strong className="font-mono text-teal-950 font-bold bg-white px-2 py-0.5 rounded border border-teal-200">{trackingNumberDisplay || 'Not Assigned'}</strong>
                   </div>
                 </div>
                 {trackingLinkDisplay && (
@@ -395,9 +395,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
               )}
             </div>
           ) : (
-            <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 text-[11px] text-gray-500 flex items-center justify-between">
-              <span>Logistics Status: <strong className="text-gray-700">{isOut ? 'Out for Delivery (Awaiting Partner Assignment)' : 'Awaiting Out for Delivery Dispatch'}</strong></span>
-              <span className="text-[10px] text-gray-400 italic">Official Tracking ID & Link generated upon Out for Delivery</span>
+            <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 text-[11px] text-gray-500 flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5">
+                <Truck size={13} className="text-gray-400" />
+                Logistics Tracking ID: <strong className="text-amber-800 font-mono font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Not Assigned</strong>
+              </span>
+              <span className="text-[10px] text-gray-400 italic">Official Tracking ID is dynamically generated when delivery partner is assigned</span>
             </div>
           )}
 

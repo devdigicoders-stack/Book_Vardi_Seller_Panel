@@ -25,9 +25,14 @@ import {
   Package,
   Check,
   Lock,
-  AlertCircle
+  AlertCircle,
+  ExternalLink,
+  Copy,
+  MessageSquare,
+  Download
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import { SERVER_URL } from '../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import PartialAdvanceReceiptModal from './PartialAdvanceReceiptModal';
 
@@ -355,13 +360,14 @@ export default function SchoolOrdersTab() {
               String(myQuote._id || myQuote.id) === String(req.acceptedQuoteId)
             ));
 
-            const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status);
+            const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
             const isAssignedToMe = (assignedSellerId && sellerCandidateIds.includes(String(assignedSellerId))) || isWinningSeller || (isAcceptedStatus && hasSellerQuote);
             const isAcceptedOther = (req.status === 'quote_accepted' || req.acceptedQuoteId) && assignedSellerId && !sellerCandidateIds.includes(String(assignedSellerId)) && !isAssignedToMe;
 
             const isPacked = req.status === 'packed';
             const isOutForDelivery = req.status === 'out for delivery' || req.status === 'out_for_delivery';
-            const isReceived = req.status === 'received' || req.status === 'delivered';
+            const isCompleted = req.status === 'completed' || req.status === 'fulfilled' || req.remainingPaymentStatus === 'paid';
+            const isReceived = req.status === 'received' || req.status === 'delivered' || isCompleted;
 
             const advRequired = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0) > 0 || Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || 0) > 0;
             const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
@@ -430,7 +436,9 @@ export default function SchoolOrdersTab() {
 
                   <div className="flex items-center gap-2">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                      isReceived
+                      isCompleted
+                        ? 'bg-emerald-100 text-emerald-950 border-emerald-400 font-black'
+                        : isReceived
                         ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                         : isOutForDelivery
                         ? 'bg-amber-100 text-amber-950 border-amber-300'
@@ -444,7 +452,8 @@ export default function SchoolOrdersTab() {
                         ? 'bg-purple-50 text-purple-800 border-purple-200'
                         : 'bg-teal-50 text-teal-800 border-teal-200'
                     }`}>
-                      {isReceived ? '✅ Consignment Delivered & Received' :
+                      {isCompleted ? '🎉 Order Completed & Paid (UPI)' :
+                       isReceived ? '✅ Consignment Delivered & Received' :
                        isOutForDelivery ? '🚚 Out for Delivery (Store Fleet)' :
                        isPacked ? '📦 Consignment Packed & Ready' :
                        isAssignedToMe ? '🎉 Order Accepted by Buyer' :
@@ -487,39 +496,134 @@ export default function SchoolOrdersTab() {
                       ))}
                     </div>
 
-                    {/* Self-Delivery Rider Card when Out for Delivery or Received */}
-                    {(isOutForDelivery || isReceived) && req.deliveryDetails && (
-                      <div className="bg-white border border-teal-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs mt-2 shadow-2xs">
-                        <div className="space-y-0.5">
-                          <div className="font-extrabold text-gray-900 flex items-center gap-1.5">
-                            <Truck size={14} className="text-teal-700" />
-                            <span>Rider: {req.deliveryDetails.deliveryBoyName || 'Store Fleet Rider'}</span>
-                            {req.deliveryDetails.deliveryBoyPhone && (
-                              <a
-                                href={`tel:${req.deliveryDetails.deliveryBoyPhone}`}
-                                className="text-teal-700 hover:underline font-bold inline-flex items-center gap-0.5 ml-1"
-                              >
-                                <Phone size={11} /> {req.deliveryDetails.deliveryBoyPhone}
-                              </a>
+                    {/* Self-Delivery Rider Card & Tracking Verification Link */}
+                    {(isOutForDelivery || isReceived || isCompleted) && req.deliveryDetails && (
+                      <div className="bg-white border border-teal-200 rounded-xl p-3.5 space-y-2 text-xs mt-2 shadow-2xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <div className="font-extrabold text-gray-900 flex items-center gap-1.5">
+                              <Truck size={14} className="text-teal-700" />
+                              <span>Rider: {req.deliveryDetails.deliveryBoyName || 'Store Fleet Rider'}</span>
+                              {req.deliveryDetails.deliveryBoyPhone && (
+                                <a
+                                  href={`tel:${req.deliveryDetails.deliveryBoyPhone}`}
+                                  className="text-teal-700 hover:underline font-bold inline-flex items-center gap-0.5 ml-1"
+                                >
+                                  <Phone size={11} /> {req.deliveryDetails.deliveryBoyPhone}
+                                </a>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-gray-500">
+                              Vehicle: <strong>{req.deliveryDetails.vehicleNumber || 'Store Van/Fleet'}</strong> • Mode: <strong className="text-teal-800">Store Self-Delivery Fleet</strong>
+                            </div>
+                            {req.deliveryDetails.notes && (
+                              <div className="text-[10px] text-gray-400 italic">"{req.deliveryDetails.notes}"</div>
                             )}
                           </div>
-                          <div className="text-[11px] text-gray-500">
-                            Vehicle: <strong>{req.deliveryDetails.vehicleNumber || 'Store Van/Fleet'}</strong> • Mode: <strong className="text-teal-800">Store Self Delivery</strong>
+
+                          <div className="text-right shrink-0">
+                            <div className="font-mono font-bold text-[11px] text-teal-900 bg-teal-50 px-2.5 py-0.5 rounded border border-teal-200">
+                              Token: {req.deliveryDetails.trackingId || req.deliveryDetails.deliveryPartnerToken || `BV-SLF-${req.referenceId}`}
+                            </div>
+                            {req.deliveryDetails.dispatchedAt && (
+                              <div className="text-[10px] text-gray-400 mt-0.5">
+                                Dispatched: {new Date(req.deliveryDetails.dispatchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            )}
                           </div>
-                          {req.deliveryDetails.notes && (
-                            <div className="text-[10px] text-gray-400 italic">"{req.deliveryDetails.notes}"</div>
-                          )}
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <div className="font-mono font-bold text-[11px] text-teal-900 bg-teal-50 px-2.5 py-0.5 rounded border border-teal-200">
-                            Token: {req.deliveryDetails.trackingId || req.deliveryDetails.deliveryPartnerToken || `BV-SLF-${req.referenceId}`}
-                          </div>
-                          {req.deliveryDetails.dispatchedAt && (
-                            <div className="text-[10px] text-gray-400 mt-0.5">
-                              Dispatched: {new Date(req.deliveryDetails.dispatchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {/* Live Delivery Tracker Verification Link */}
+                        {(() => {
+                          const tokenVal = req.deliveryDetails.trackingId || req.deliveryDetails.deliveryPartnerToken || `BV-SLF-${req.referenceId}`;
+                          const trackerUrl = `${window.location.origin.replace(':5174', ':5173')}/#delivery-partner?token=${tokenVal}`;
+                          return (
+                            <div className="pt-2 border-t border-teal-100 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-1 min-w-[240px]">
+                                <span className="text-[10px] font-bold text-teal-900 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                                  <ExternalLink size={12} className="text-teal-700" /> Tracker Link:
+                                </span>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={trackerUrl}
+                                  className="flex-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded text-[11px] font-mono text-gray-700 select-all truncate"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(trackerUrl);
+                                    alert('📋 Live Delivery Tracker Link copied to clipboard!');
+                                  }}
+                                  className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 rounded font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Copy size={11} /> Copy Link
+                                </button>
+                                <a
+                                  href={trackerUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-2.5 py-1 bg-teal-800 hover:bg-teal-900 text-white rounded font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                                >
+                                  <ExternalLink size={11} /> Open Tracker
+                                </a>
+                                {req.deliveryDetails.deliveryBoyPhone && (
+                                  <a
+                                    href={`https://wa.me/91${req.deliveryDetails.deliveryBoyPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${req.deliveryDetails.deliveryBoyName || 'Delivery Partner'}, here is your BookVardi live tracking & verification link for Bulk Order #${req.referenceId}:\n${trackerUrl}`)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  >
+                                    <MessageSquare size={11} /> WhatsApp
+                                  </a>
+                                )}
+                              </div>
                             </div>
-                          )}
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Financial & Settlement Breakdown for Accepted / Dispatched / Fulfilled orders */}
+                    {myQuote && (
+                      <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-2">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-gray-500 block">Total Quotation Value</span>
+                          <span className="text-sm font-black text-gray-900">₹{Number(myQuote.quoteAmount || req.overallBudget || 0).toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-emerald-800 block">Advance Prepayment (Paid)</span>
+                          <span className="text-sm font-black text-emerald-900 flex items-center gap-1">
+                            <CheckCircle2 size={13} className="text-emerald-700" />
+                            ₹{Number(req.advancePaidAmount || myQuote.prepaymentAmount || 0).toLocaleString()}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-teal-800 block">Remaining Balance</span>
+                          {(() => {
+                            const tot = Number(myQuote.quoteAmount || req.overallBudget || 0);
+                            const adv = Number(req.advancePaidAmount || myQuote.prepaymentAmount || 0);
+                            const rem = Math.max(0, tot - adv);
+                            const isPaid = req.remainingPaymentStatus === 'paid' || req.status === 'completed';
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-sm font-black ${isPaid ? 'text-emerald-900 line-through' : 'text-amber-900'}`}>
+                                  ₹{rem.toLocaleString()}
+                                </span>
+                                {isPaid ? (
+                                  <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 font-extrabold text-[10px] rounded-full uppercase">
+                                    Paid Online (UPI)
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-amber-200 text-amber-950 font-extrabold text-[10px] rounded-full uppercase">
+                                    Due on Delivery
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     )}
@@ -713,14 +817,25 @@ export default function SchoolOrdersTab() {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setSelectedReceiptOrder(req)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-emerald-300 hover:bg-emerald-100/60 text-emerald-900 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <FileText size={12} className="text-emerald-700" />
-                      <span>Partial Receipt</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => window.open(`${SERVER_URL}/schools/bulk-orders/${req._id || req.id || req.referenceId}/advance-receipt`, '_blank')}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-900 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                        title="Download Official Tax Invoice & Mobilization Advance Receipt"
+                      >
+                        <Download size={12} className="text-emerald-700" />
+                        <span>Prepayment Invoice</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedReceiptOrder(req)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-emerald-300 hover:bg-emerald-100/60 text-emerald-900 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <FileText size={12} className="text-emerald-700" />
+                        <span>Receipt View</span>
+                      </button>
+                    </div>
                   </div>
                 ) : null}
 
@@ -788,22 +903,39 @@ export default function SchoolOrdersTab() {
                           </button>
                         )}
 
-                        {/* 3. If Out for Delivery -> Mark as Received / Handover Completed */}
+                        {/* 3. If Out for Delivery -> Update Logistics or Confirm Handover */}
                         {isOutForDelivery && (
-                          <button
-                            onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'received' })}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
-                          >
-                            <CheckCircle2 size={14} />
-                            <span>Confirm Received by School</span>
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDispatchModalOrder(req);
+                                setRiderName(req.deliveryDetails?.deliveryBoyName || '');
+                                setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
+                                setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
+                                setDeliveryNotes(req.deliveryDetails?.notes || '');
+                              }}
+                              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold rounded-xl border border-amber-300 shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <Truck size={14} className="text-amber-700" />
+                              <span>Update Logistics & Tracking</span>
+                            </button>
+
+                            <button
+                              onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'completed' })}
+                              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Confirm Handover & Completed</span>
+                            </button>
+                          </>
                         )}
 
-                        {/* 4. If Received */}
-                        {isReceived && (
-                          <span className="flex items-center gap-1 px-3.5 py-2 bg-emerald-100 text-emerald-900 text-xs font-extrabold rounded-xl border border-emerald-300">
+                        {/* 4. If Received or Completed */}
+                        {(isReceived || isCompleted) && (
+                          <span className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-100 text-emerald-900 text-xs font-black rounded-xl border border-emerald-300">
                             <CheckCircle2 size={14} className="text-emerald-700" />
-                            <span>Fulfilled & Received</span>
+                            <span>{isCompleted ? 'Fulfilled & Completed (Paid)' : 'Fulfilled & Received'}</span>
                           </span>
                         )}
                       </>
@@ -1304,21 +1436,112 @@ export default function SchoolOrdersTab() {
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              {/* Generated Delivery Tracker Verification Link Preview */}
+              {(() => {
+                const modalToken = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
+                const modalTrackerUrl = `${window.location.origin.replace(':5174', ':5173')}/#delivery-partner?token=${modalToken}`;
+                return (
+                  <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold text-teal-950 uppercase tracking-wider flex items-center gap-1">
+                        <ExternalLink size={13} className="text-teal-700" /> Delivery Tracker Verification Link:
+                      </span>
+                      <span className="font-mono text-[10px] font-bold bg-white text-teal-900 px-2 py-0.5 rounded border border-teal-200">
+                        {modalToken}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        readOnly
+                        value={modalTrackerUrl}
+                        className="flex-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-700 truncate select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(modalTrackerUrl);
+                          alert('📋 Delivery Tracker Verification Link copied to clipboard!');
+                        }}
+                        className="px-3 py-1.5 bg-white hover:bg-teal-100 text-teal-900 border border-teal-300 font-bold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                      >
+                        <Copy size={12} /> Copy Link
+                      </button>
+                      <a
+                        href={modalTrackerUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                      >
+                        <ExternalLink size={12} /> Preview
+                      </a>
+                    </div>
+                    {riderPhone.trim() && (
+                      <div className="pt-1">
+                        <a
+                          href={`https://wa.me/91${riderPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${riderName || 'Delivery Partner'}, here is your BookVardi live tracking & verification link for Bulk Order #${dispatchModalOrder.referenceId}:\n${modalTrackerUrl}`)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 hover:underline"
+                        >
+                          <MessageSquare size={12} /> Share Link directly via WhatsApp to Rider ({riderPhone})
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setDispatchModalOrder(null)}
-                  className="flex-1 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
+                  className="px-4 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer text-xs"
                 >
                   Cancel
                 </button>
+
                 <button
-                  type="submit"
-                  className="flex-1 py-2.5 font-bold text-white bg-teal-800 hover:bg-teal-900 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  type="button"
+                  onClick={() => {
+                    if (!riderName.trim() || !riderPhone.trim()) {
+                      alert('Please provide rider name and contact phone.');
+                      return;
+                    }
+                    const token = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
+                    updateSchoolOrderStatus(dispatchModalOrder.id || dispatchModalOrder._id, {
+                      status: dispatchModalOrder.status === 'packed' ? 'out for delivery' : (dispatchModalOrder.status || 'out for delivery'),
+                      deliveryDetails: {
+                        deliveryBoyName: riderName.trim(),
+                        deliveryBoyPhone: riderPhone.trim(),
+                        vehicleNumber: vehicleNumber.trim() || 'Store Fleet',
+                        deliveryPartnerToken: token,
+                        trackingId: token,
+                        trackingUrl: `/#delivery-partner?token=${token}`,
+                        notes: deliveryNotes.trim()
+                      }
+                    });
+                    setDispatchModalOrder(null);
+                    setRiderName('');
+                    setRiderPhone('');
+                    setVehicleNumber('');
+                    setDeliveryNotes('');
+                  }}
+                  className="flex-1 py-2.5 font-bold text-teal-900 bg-teal-100 hover:bg-teal-200 border border-teal-300 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 text-xs"
                 >
-                  <Truck size={15} />
-                  <span>Confirm Dispatch & Out for Delivery</span>
+                  <Check size={14} />
+                  <span>Save Logistics & Update Tracking</span>
                 </button>
+
+                {dispatchModalOrder.status !== 'out for delivery' && (
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 font-bold text-white bg-teal-800 hover:bg-teal-900 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <Truck size={14} />
+                    <span>Confirm Dispatch & Out for Delivery</span>
+                  </button>
+                )}
               </div>
             </form>
           </div>

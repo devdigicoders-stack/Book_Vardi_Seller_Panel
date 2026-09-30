@@ -328,18 +328,15 @@ export default function BulkOrderPreviewModal({
 
   // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
   const normStatus = String(order?.deliveryStatus || order?.status || '').toLowerCase().replace(/_/g, ' ');
-  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
-  const isSelf = String(order?.deliveryMode || '').toLowerCase().includes('self') || Boolean(order?.selfDeliveryDetails?.deliveryPartnerToken || order?.selfDeliveryDetails?.deliveryPersonName);
-  const isThirdParty = String(order?.deliveryMode || '').toLowerCase().includes('third') || Boolean(order?.courierName && order?.courierName !== 'N/A');
-  const hasPartner = isSelf || isThirdParty || Boolean((order?.courierName && order?.courierName !== 'N/A') || order?.selfDeliveryDetails?.deliveryPersonName);
-  const canViewTracking = isOut && hasPartner && Boolean(order?.trackingNumber || order?.selfDeliveryDetails?.deliveryPartnerToken);
+  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered' || normStatus === 'completed' || normStatus === 'received';
+  const riderName = order?.deliveryDetails?.deliveryBoyName || order?.selfDeliveryDetails?.deliveryPersonName || order?.deliveryBoyName || '';
+  const isSelf = true; // Bulk institutional orders are strictly Self-Delivery
+  const tokenVal = order?.deliveryDetails?.deliveryPartnerToken || order?.deliveryDetails?.trackingId || order?.selfDeliveryDetails?.deliveryPartnerToken || (order?.referenceId ? `BV-SLF-${order.referenceId}` : '');
+  const canViewTracking = isOut && Boolean(tokenVal || riderName);
 
-  const deliveryPartnerDisplay = isSelf 
-    ? (order?.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
-    : (order?.courierName || 'N/A');
-
-  const trackingNumberDisplay = order?.trackingNumber || (isSelf ? order?.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
-  const trackingLinkDisplay = order?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || '';
+  const deliveryPartnerDisplay = riderName ? `Direct Self-Delivery (Rider: ${riderName})` : 'Direct Self-Delivery (Store Fleet)';
+  const trackingNumberDisplay = tokenVal;
+  const trackingLinkDisplay = order?.deliveryDetails?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || order?.trackingUrl || `${window.location.origin.replace(':5174', ':5173')}/#delivery-partner?token=${tokenVal}`;
 
   // Transform bulk order into TaxInvoice-compatible object
   const taxInvoiceOrder = useMemo(() => {

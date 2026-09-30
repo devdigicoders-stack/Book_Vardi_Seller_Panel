@@ -523,6 +523,50 @@ export const SellerDataProvider = ({ children }) => {
     };
   }, []);
 
+  // Real-time synchronization of orders for seller panel
+  useEffect(() => {
+    const handleOrderSync = () => {
+      if (!isAuthenticated) return;
+      fetchSellerOrdersApi().then(ordersList => {
+        if (Array.isArray(ordersList)) {
+          const normalizedOrders = ordersList.map(o => ({
+            ...o,
+            id: o._id || o.id,
+            shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
+              ? [
+                  o.shippingAddress.name || o.shippingAddress.fullName,
+                  o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address,
+                  o.shippingAddress.colony || o.shippingAddress.landmark,
+                  o.shippingAddress.city,
+                  o.shippingAddress.state,
+                  o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null,
+                  o.shippingAddress.phone ? `(Phone: ${o.shippingAddress.phone})` : null
+                ].filter(Boolean).join(', ')
+              : (o.shippingAddress || 'Store / Counter Pickup')
+          }));
+          setOrders(normalizedOrders);
+          try {
+            localStorage.setItem('bv_seller_orders', JSON.stringify(normalizedOrders));
+          } catch (e) {}
+        }
+      }).catch(() => {});
+    };
+
+    window.addEventListener('bv_orders_updated', handleOrderSync);
+    window.addEventListener('focus', handleOrderSync);
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'bv_order_sync_timestamp' || e.key === 'admin_orders' || e.key === 'bv_seller_orders') {
+        handleOrderSync();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('bv_orders_updated', handleOrderSync);
+      window.removeEventListener('focus', handleOrderSync);
+      window.removeEventListener('storage', handleOrderSync);
+    };
+  }, [isAuthenticated]);
+
   // Initial API Data Sync on mount directly from backend DB
   useEffect(() => {
     let isMounted = true;
@@ -1579,9 +1623,17 @@ export const SellerDataProvider = ({ children }) => {
       if (res && res.order) {
         editOrder(id, { ...res.order, status: res.order.status || status });
       }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: { orderId: id, status, ...details } }));
+        localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+      }
       showToast(`Order #${id} status updated to ${status}`);
       return res;
     } catch (err) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: { orderId: id, status, ...details } }));
+        localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+      }
       showToast(`Order #${id} status updated locally.`);
       return null;
     }

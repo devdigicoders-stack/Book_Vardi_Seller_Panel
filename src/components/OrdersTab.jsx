@@ -45,9 +45,11 @@ const maskPhoneNumber = (phone) => {
 
 const STATUS_CONFIG = {
   Pending: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: Clock },
+  Processing: { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-200', icon: Clock },
   Confirmed: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200', icon: CheckCircle },
   Packed: { bg: 'bg-indigo-50', text: 'text-indigo-800', border: 'border-indigo-200', icon: Package },
   Shipped: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200', icon: Truck },
+  'Out for Delivery': { bg: 'bg-purple-100', text: 'text-purple-900', border: 'border-purple-300', icon: Truck },
   Delivered: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', icon: CheckCircle },
   Cancelled: { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', icon: XCircle },
   'Return Requested': { bg: 'bg-amber-100', text: 'text-amber-950', border: 'border-amber-300', icon: RefreshCw },
@@ -150,16 +152,27 @@ export default function OrdersTab() {
     });
   }, [orders, selectedStatus, searchQuery]);
 
+// Helper to generate dynamic tracking ID based on courier name
+export const generateDynamicTrackingId = (courierName) => {
+  const prefix = String(courierName || 'BLUEDART')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 10) || 'COURIER';
+  const randomNum = Math.floor(10000000 + Math.random() * 90000000);
+  return `${prefix}-${randomNum}`;
+};
+
   const handleOpenShipModal = (orderId) => {
     setShippingOrderId(orderId);
-    setTrackingNumberInput(`TRACK-${Math.floor(100000 + Math.random() * 900000)}`);
+    setTrackingNumberInput(generateDynamicTrackingId(courierInput || 'BlueDart'));
     setIsShipModalOpen(true);
   };
 
   const handleConfirmShip = () => {
     if (shippingOrderId) {
+      const finalAwb = trackingNumberInput.trim() || generateDynamicTrackingId(courierInput || 'BlueDart');
       updateOrderStatus(shippingOrderId, 'Shipped', {
-        trackingNumber: trackingNumberInput,
+        trackingNumber: finalAwb,
         courierName: courierInput
       });
       setIsShipModalOpen(false);
@@ -188,6 +201,10 @@ export default function OrdersTab() {
 
   const handleModalSaveStatus = async () => {
     if (activeOrderModal) {
+      let finalAwb = '';
+      let tokenVal = '';
+      let trackingLink = '';
+
       if (deliveryModeInput === 'self_delivery') {
         if (!modalDriverName.trim()) {
           alert('⚠️ Please enter Driver / Delivery Person Name.');
@@ -197,20 +214,18 @@ export default function OrdersTab() {
           alert('⚠️ Please enter Driver Phone Number.');
           return;
         }
+        tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
+        const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
+        trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+        finalAwb = tokenVal;
       } else if (deliveryModeInput === 'third_party') {
         if (!modalCourierInput.trim()) {
           alert('⚠️ Please select or enter Courier Partner Name.');
           return;
         }
-        if (!modalTrackingInput.trim()) {
-          alert('⚠️ Please enter Tracking AWB Number.');
-          return;
-        }
+        finalAwb = modalTrackingInput.trim() || generateDynamicTrackingId(modalCourierInput);
+        setModalTrackingInput(finalAwb);
       }
-
-      const tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
-      const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
-      const trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
 
       const sellerPayload = {
         sellerId: sellerUser?.id || sellerUser?._id || activeOrderModal.sellerDetails?.sellerId,
@@ -222,17 +237,17 @@ export default function OrdersTab() {
         city: sellerUser?.city || activeOrderModal.sellerDetails?.city || ''
       };
 
-      const carrierUrl = deliveryModeInput === 'third_party' && modalTrackingInput.trim() ? (
-        modalCourierInput.toLowerCase().includes('delhivery') ? `https://www.delhivery.com/track/package/${modalTrackingInput.trim()}` :
-        modalCourierInput.toLowerCase().includes('bluedart') ? `https://www.bluedart.com/tracking?awb=${modalTrackingInput.trim()}` :
-        modalCourierInput.toLowerCase().includes('dtdc') ? `https://www.dtdc.in/tracking/shipment-tracking.asp?awb=${modalTrackingInput.trim()}` :
-        modalCourierInput.toLowerCase().includes('ekart') ? `https://ekartlogistics.com/shipmenttrack/${modalTrackingInput.trim()}` :
-        `https://track.shiprocket.in/tracking/${modalTrackingInput.trim()}`
+      const carrierUrl = deliveryModeInput === 'third_party' && finalAwb ? (
+        modalCourierInput.toLowerCase().includes('delhivery') ? `https://www.delhivery.com/track/package/${finalAwb}` :
+        modalCourierInput.toLowerCase().includes('bluedart') ? `https://www.bluedart.com/tracking?awb=${finalAwb}` :
+        modalCourierInput.toLowerCase().includes('dtdc') ? `https://www.dtdc.in/tracking/shipment-tracking.asp?awb=${finalAwb}` :
+        modalCourierInput.toLowerCase().includes('ekart') ? `https://ekartlogistics.com/shipmenttrack/${finalAwb}` :
+        `https://track.shiprocket.in/tracking/${finalAwb}`
       ) : '';
 
       const details = {
         courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',
-        trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput.trim() : tokenVal,
+        trackingNumber: finalAwb,
         trackingUrl: deliveryModeInput === 'self_delivery' ? trackingLink : carrierUrl,
         deliveryMode: deliveryModeInput,
         deliveryType: deliveryModeInput,
@@ -384,8 +399,8 @@ export default function OrdersTab() {
       </div>
 
       {/* KPI Status Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-        {['All', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Returns & Exchanges', 'Cancelled'].map((st) => {
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3">
+        {['All', 'Pending', 'Confirmed', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Returns & Exchanges', 'Cancelled'].map((st) => {
           const count = st === 'All' 
             ? orders.length 
             : st === 'Returns & Exchanges'
@@ -965,7 +980,13 @@ export default function OrdersTab() {
                         <label className="font-semibold text-gray-700">Courier Partner</label>
                         <select
                           value={modalCourierInput}
-                          onChange={(e) => setModalCourierInput(e.target.value)}
+                          onChange={(e) => {
+                            const selected = e.target.value;
+                            setModalCourierInput(selected);
+                            if (!modalTrackingInput.trim()) {
+                              setModalTrackingInput(generateDynamicTrackingId(selected));
+                            }
+                          }}
                           className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium focus:outline-none focus:border-teal-600"
                         >
                           <option value="Delhivery">Delhivery Express</option>
@@ -977,12 +998,21 @@ export default function OrdersTab() {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="font-semibold text-gray-700">Tracking AWB Number</label>
+                        <div className="flex items-center justify-between">
+                          <label className="font-semibold text-gray-700">Tracking AWB Number</label>
+                          <button
+                            type="button"
+                            onClick={() => setModalTrackingInput(generateDynamicTrackingId(modalCourierInput))}
+                            className="text-[10px] text-teal-700 hover:text-teal-900 font-bold underline cursor-pointer"
+                          >
+                            ⚡ Generate Dynamic AWB
+                          </button>
+                        </div>
                         <input
                           type="text"
                           value={modalTrackingInput}
                           onChange={(e) => setModalTrackingInput(e.target.value)}
-                          placeholder="e.g. DLH-98765432"
+                          placeholder="Not Assigned (Click Generate or type AWB)"
                           className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-mono"
                         />
                       </div>
@@ -1091,8 +1121,10 @@ export default function OrdersTab() {
                     >
                       <option value="Pending">🕒 Pending</option>
                       <option value="Confirmed">✅ Confirmed</option>
+                      <option value="Processing">⏳ Processing</option>
                       <option value="Packed">📦 Packed</option>
-                      <option value="Shipped">🚚 Shipped / Out for Delivery</option>
+                      <option value="Shipped">🚚 Shipped</option>
+                      <option value="Out for Delivery">🛵 Out for Delivery</option>
                       <option value="Delivered">🎉 Delivered</option>
                       <option value="Cancelled">❌ Cancelled</option>
                     </select>
@@ -1276,7 +1308,11 @@ export default function OrdersTab() {
                 <label className="font-semibold text-gray-700">Courier Partner</label>
                 <select
                   value={courierInput}
-                  onChange={(e) => setCourierInput(e.target.value)}
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    setCourierInput(selected);
+                    setTrackingNumberInput(generateDynamicTrackingId(selected));
+                  }}
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
                 >
                   <option value="Delhivery">Delhivery Express</option>
@@ -1287,11 +1323,21 @@ export default function OrdersTab() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-gray-700">Tracking AWB Number</label>
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-gray-700">Tracking AWB Number</label>
+                  <button
+                    type="button"
+                    onClick={() => setTrackingNumberInput(generateDynamicTrackingId(courierInput))}
+                    className="text-[10px] text-teal-700 hover:text-teal-900 font-bold underline cursor-pointer"
+                  >
+                    ⚡ Generate Dynamic AWB
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={trackingNumberInput}
                   onChange={(e) => setTrackingNumberInput(e.target.value)}
+                  placeholder="Not Assigned"
                   className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono"
                 />
               </div>
