@@ -33,6 +33,16 @@ import { useSellerData } from '../context/SellerDataContext';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
 
+// Helper to generate dynamic tracking ID based on courier name
+export const generateDynamicTrackingId = (courierName) => {
+  const prefix = String(courierName || 'BLUEDART')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 10) || 'COURIER';
+  const randomNum = Math.floor(10000000 + Math.random() * 90000000);
+  return `${prefix}-${randomNum}`;
+};
+
 const maskPhoneNumber = (phone) => {
   if (!phone || typeof phone !== 'string') return '+91 98XXXXXX00';
   const clean = phone.replace(/\D/g, '');
@@ -151,16 +161,6 @@ export default function OrdersTab() {
       return matchesStatus && matchesSearch;
     });
   }, [orders, selectedStatus, searchQuery]);
-
-// Helper to generate dynamic tracking ID based on courier name
-export const generateDynamicTrackingId = (courierName) => {
-  const prefix = String(courierName || 'BLUEDART')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 10) || 'COURIER';
-  const randomNum = Math.floor(10000000 + Math.random() * 90000000);
-  return `${prefix}-${randomNum}`;
-};
 
   const handleOpenShipModal = (orderId) => {
     setShippingOrderId(orderId);
