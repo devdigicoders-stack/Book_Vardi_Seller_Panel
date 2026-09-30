@@ -134,15 +134,23 @@ export default function OrdersTab() {
     shippingAddress: ''
   });
 
-  const isReturnExchangeOrder = (order) => {
+  const hasActiveReturnRequest = (order) => {
     if (!order) return false;
-    if (order.returnRequest && (order.returnRequest.type || order.returnRequest.status)) return true;
+    if (order.returnRequest && (order.returnRequest.type || (order.returnRequest.status && !['none', 'n/a', 'no_request', 'normal', 'requesting'].includes(String(order.returnRequest.status).toLowerCase())))) {
+      return true;
+    }
     const s = String(order.status || order.rawStatus || '').toLowerCase();
-    return s.includes('return') || s.includes('exchange') || s.includes('refund') || [
+    const returnStatuses = [
       'return_requested', 'exchange_requested', 'return_approved', 'exchange_approved',
       'return_rejected', 'exchange_rejected', 'pickup_scheduled', 'product_received',
       'refund_completed', 'exchanged', 'exchange_dispatched'
-    ].includes(s);
+    ];
+    return returnStatuses.includes(s);
+  };
+
+  const isReturnExchangeOrder = (order) => {
+    if (!order) return false;
+    return hasActiveReturnRequest(order);
   };
 
   const filteredOrders = useMemo(() => {
@@ -714,7 +722,7 @@ export default function OrdersTab() {
               )}
 
               {/* Customer Return & Exchange Request Card */}
-              {(activeOrderModal.returnRequest?.type || isReturnExchangeOrder(activeOrderModal)) && (
+              {hasActiveReturnRequest(activeOrderModal) && (
                 <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-950 space-y-3 shadow-xs">
                   <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
                     <span className="font-extrabold text-xs uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
@@ -730,8 +738,10 @@ export default function OrdersTab() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
-                      <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.type || 'Return/Exchange'}</span></p>
-                      <p><strong>Reason:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest?.reason || 'Customer requested return'}</span></p>
+                      <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.type || (activeOrderModal.status?.toLowerCase().includes('exchange') ? 'Exchange' : 'Return')}</span></p>
+                      {activeOrderModal.returnRequest?.reason && (
+                        <p><strong>Reason:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest.reason}</span></p>
+                      )}
                       {activeOrderModal.returnRequest?.comment && (
                         <p><strong>Comments:</strong> <span className="text-gray-800 italic">"{activeOrderModal.returnRequest.comment}"</span></p>
                       )}
