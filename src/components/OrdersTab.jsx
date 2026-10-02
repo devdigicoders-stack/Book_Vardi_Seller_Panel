@@ -134,15 +134,23 @@ export default function OrdersTab() {
     shippingAddress: ''
   });
 
-  const isReturnExchangeOrder = (order) => {
+  const hasActiveReturnRequest = (order) => {
     if (!order) return false;
-    if (order.returnRequest && (order.returnRequest.type || order.returnRequest.status)) return true;
+    if (order.returnRequest && (order.returnRequest.type || (order.returnRequest.status && !['none', 'n/a', 'no_request', 'normal', 'requesting'].includes(String(order.returnRequest.status).toLowerCase())))) {
+      return true;
+    }
     const s = String(order.status || order.rawStatus || '').toLowerCase();
-    return s.includes('return') || s.includes('exchange') || s.includes('refund') || [
+    const returnStatuses = [
       'return_requested', 'exchange_requested', 'return_approved', 'exchange_approved',
       'return_rejected', 'exchange_rejected', 'pickup_scheduled', 'product_received',
       'refund_completed', 'exchanged', 'exchange_dispatched'
-    ].includes(s);
+    ];
+    return returnStatuses.includes(s);
+  };
+
+  const isReturnExchangeOrder = (order) => {
+    if (!order) return false;
+    return hasActiveReturnRequest(order);
   };
 
   const filteredOrders = useMemo(() => {
@@ -714,7 +722,7 @@ export default function OrdersTab() {
               )}
 
               {/* Customer Return & Exchange Request Card */}
-              {(activeOrderModal.returnRequest?.type || isReturnExchangeOrder(activeOrderModal)) && (
+              {hasActiveReturnRequest(activeOrderModal) && (
                 <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-950 space-y-3 shadow-xs">
                   <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
                     <span className="font-extrabold text-xs uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
@@ -730,8 +738,10 @@ export default function OrdersTab() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
-                      <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.type || 'Return/Exchange'}</span></p>
-                      <p><strong>Reason:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest?.reason || 'Customer requested return'}</span></p>
+                      <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.type || (activeOrderModal.status?.toLowerCase().includes('exchange') ? 'Exchange' : 'Return')}</span></p>
+                      {activeOrderModal.returnRequest?.reason && (
+                        <p><strong>Reason:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest.reason}</span></p>
+                      )}
                       {activeOrderModal.returnRequest?.comment && (
                         <p><strong>Comments:</strong> <span className="text-gray-800 italic">"{activeOrderModal.returnRequest.comment}"</span></p>
                       )}
@@ -1058,10 +1068,10 @@ export default function OrdersTab() {
                     <div className="space-y-2 pt-2 border-t border-teal-100">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-gray-800 text-[11px] flex items-center gap-1">
-                          <ExternalLink size={13} className="text-teal-700" /> Self-Delivery Tracking Link:
+                          <ExternalLink size={13} className="text-teal-700" /> Rider / Delivery Executive Link (For Driver only):
                         </span>
                         <span className="text-[10px] text-teal-800 font-extrabold bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
-                          Token: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
+                          Tracking ID: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
                         </span>
                       </div>
 
@@ -1077,18 +1087,29 @@ export default function OrdersTab() {
                           onClick={() => {
                             const link = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`;
                             navigator.clipboard.writeText(link);
-                            alert('📋 Delivery Partner Link copied to clipboard!');
+                            alert('📋 Rider Executive Link copied! (Share with Driver only)');
                           }}
                           className="px-2.5 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
                         >
-                          Copy Link
+                          Copy Driver Link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const tId = modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id);
+                            navigator.clipboard.writeText(tId);
+                            alert('📋 Buyer Tracking ID copied to clipboard!');
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
+                        >
+                          Copy Buyer Tracking ID
                         </button>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         {modalDriverPhone && (
                           <a
-                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`)}`}
+                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery executive link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`)}`}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"

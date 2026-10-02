@@ -172,7 +172,9 @@ export default function ProductsTab() {
       const matchesSearch = 
         p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.sku?.toLowerCase().includes(searchTerm.toLowerCase());
+        p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.displayId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(p._id || p.id).toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
 
@@ -496,7 +498,7 @@ export default function ProductsTab() {
                                 <span>{p.name}</span>
                               </div>
                               <div className="text-[11px] text-gray-500 truncate">{p.subtitle || p.description || 'Verified product'}</div>
-                              <div className="text-[10px] text-teal-700 font-mono mt-0.5">{p.sku || `SKU-${p.id}`}</div>
+                              <div className="text-[10px] text-teal-700 font-mono mt-0.5">{p.displayId || p.sku || `SC-${p.id}`}</div>
                               {p.approvalStatus === 'Rejected' && (
                                 <div className="mt-1 px-2 py-0.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[10px] flex items-start gap-1 shadow-2xs">
                                   <AlertTriangle size={11} className="shrink-0 text-rose-600 mt-0.5" />
@@ -738,7 +740,7 @@ export default function ProductsTab() {
                     )}
                   </div>
                   <p className="text-xs text-gray-500 flex items-center gap-2 mt-0.5 flex-wrap">
-                    <span>SKU: <strong className="font-mono text-gray-700">{selectedProductForDetail.sku || `SKU-${selectedProductForDetail.id}`}</strong></span>
+                    <span>SKU / Product ID: <strong className="font-mono text-gray-700">{selectedProductForDetail.displayId || selectedProductForDetail.sku || `SC-${selectedProductForDetail.id}`}</strong></span>
                     <span>•</span>
                     <span>Category: <strong className="capitalize text-gray-700">{selectedProductForDetail.subCategory ? `${selectedProductForDetail.category} > ${selectedProductForDetail.subCategory}` : (selectedProductForDetail.category || 'Uniforms')}</strong></span>
                   </p>

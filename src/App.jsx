@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ToastProvider } from './context/ToastContext';
 import { SellerDataProvider } from './context/SellerDataContext';
 import SellerDashboard from './pages/SellerDashboard';
 import DeliveryPartnerPage from './components/DeliveryPartnerPage';
@@ -37,14 +38,16 @@ export default function App() {
   };
 
   return (
-    <SellerDataProvider>
-      <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal">
-        {isDeliveryPartnerRoute ? (
-          <DeliveryPartnerPage onNavigate={handleExitToCustomerStore} />
-        ) : (
-          <SellerDashboard onNavigate={handleExitToCustomerStore} />
-        )}
-      </div>
-    </SellerDataProvider>
+    <ToastProvider>
+      <SellerDataProvider>
+        <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal">
+          {isDeliveryPartnerRoute ? (
+            <DeliveryPartnerPage onNavigate={handleExitToCustomerStore} />
+          ) : (
+            <SellerDashboard onNavigate={handleExitToCustomerStore} />
+          )}
+        </div>
+      </SellerDataProvider>
+    </ToastProvider>
   );
 }
