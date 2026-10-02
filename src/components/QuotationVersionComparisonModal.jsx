@@ -17,6 +17,40 @@ import {
 } from 'lucide-react';
 
 /**
+ * Safely extracts non-zero numeric unit price from any item object.
+ */
+export const getItemUnitPrice = (ip, defaultUnitPrice = 0) => {
+  if (!ip) return Number(defaultUnitPrice) || 0;
+
+  const candidates = [
+    ip.sellerPrice,
+    ip.pricePerUnit,
+    ip.sellerPricePerUnit,
+    ip.targetUnitPrice,
+    ip.unitPrice,
+    ip.budgetPerUnit,
+    ip.rate,
+    ip.price,
+    ip.unitRate,
+    ip.offeredRate,
+    ip.customerBudget
+  ];
+
+  for (const c of candidates) {
+    const val = Number(c);
+    if (!isNaN(val) && val > 0) return val;
+  }
+
+  const qty = Number(ip.quantity) || 1;
+  const tot = Number(ip.totalPrice ?? ip.targetTotalPrice ?? 0);
+  if (!isNaN(tot) && tot > 0 && qty > 0) {
+    return Math.round(tot / qty);
+  }
+
+  return Number(defaultUnitPrice) || 0;
+};
+
+/**
  * Extracts and normalizes all available negotiation versions/rounds for a quotation.
  */
 export const extractAllQuotationVersions = (quote, order) => {
@@ -32,22 +66,44 @@ export const extractAllQuotationVersions = (quote, order) => {
       const isBuyer = h.senderRole === 'buyer';
 
       const items = Array.isArray(h.itemPrices) && h.itemPrices.length > 0
-        ? h.itemPrices.map(ip => ({
-            itemId: String(ip.itemId || ip._id || ''),
-            itemName: ip.itemName || 'Demanded Product',
-            quantity: Number(ip.quantity) || 1,
-            sellerPrice: Number(ip.sellerPrice ?? ip.pricePerUnit ?? ip.targetUnitPrice ?? 0),
-            totalPrice: Number(ip.totalPrice ?? ip.targetTotalPrice ?? 0) || ((Number(ip.quantity) || 1) * Number(ip.sellerPrice ?? ip.pricePerUnit ?? ip.targetUnitPrice ?? 0)),
-            discountTierNote: ip.discountTierNote || ip.notes || ''
-          }))
-        : (Array.isArray(quote.itemPrices) ? quote.itemPrices.map(ip => ({
-            itemId: String(ip.itemId || ip._id || ''),
-            itemName: ip.itemName || 'Demanded Product',
-            quantity: Number(ip.quantity) || 1,
-            sellerPrice: Number(ip.pricePerUnit ?? ip.sellerPrice ?? 0),
-            totalPrice: Number(ip.totalPrice ?? 0) || ((Number(ip.quantity) || 1) * Number(ip.pricePerUnit ?? 0)),
-            discountTierNote: ip.discountTierNote || ''
-          })) : []);
+        ? h.itemPrices.map(ip => {
+            const qty = Number(ip.quantity) || 1;
+            const price = getItemUnitPrice(ip, h.unitPrice || quote.unitPrice);
+            const tot = Number(ip.totalPrice ?? ip.targetTotalPrice ?? 0) || (qty * price);
+            return {
+              itemId: String(ip.itemId || ip._id || ''),
+              itemName: ip.itemName || 'Demanded Product',
+              quantity: qty,
+              sellerPrice: price,
+              totalPrice: tot,
+              discountTierNote: ip.discountTierNote || ip.notes || ''
+            };
+          })
+        : (Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0 ? quote.itemPrices.map(ip => {
+            const qty = Number(ip.quantity) || 1;
+            const price = getItemUnitPrice(ip, h.unitPrice || quote.unitPrice);
+            const tot = Number(ip.totalPrice ?? 0) || (qty * price);
+            return {
+              itemId: String(ip.itemId || ip._id || ''),
+              itemName: ip.itemName || 'Demanded Product',
+              quantity: qty,
+              sellerPrice: price,
+              totalPrice: tot,
+              discountTierNote: ip.discountTierNote || ''
+            };
+          }) : (Array.isArray(order?.requirements) ? order.requirements.map(r => {
+            const qty = Number(r.quantity) || 1;
+            const price = getItemUnitPrice(r, h.unitPrice || quote.unitPrice);
+            const tot = qty * price;
+            return {
+              itemId: String(r._id || r.itemId || ''),
+              itemName: r.itemName || 'Demanded Product',
+              quantity: qty,
+              sellerPrice: price,
+              totalPrice: tot,
+              discountTierNote: ''
+            };
+          }) : []));
 
       const totalQty = items.reduce((sum, item) => sum + item.quantity, 0) || Number(order?.totalQuantity) || 1;
       const amt = Number(h.quoteAmount ?? 0);
@@ -77,15 +133,32 @@ export const extractAllQuotationVersions = (quote, order) => {
   } else {
     // Initial round 1 from base quote fields
     const baseItems = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0
-      ? quote.itemPrices.map(ip => ({
-          itemId: String(ip.itemId || ip._id || ''),
-          itemName: ip.itemName || 'Demanded Product',
-          quantity: Number(ip.quantity) || 1,
-          sellerPrice: Number(ip.pricePerUnit ?? ip.sellerPrice ?? 0),
-          totalPrice: Number(ip.totalPrice ?? 0) || ((Number(ip.quantity) || 1) * Number(ip.pricePerUnit ?? 0)),
-          discountTierNote: ip.discountTierNote || ''
-        }))
-      : [];
+      ? quote.itemPrices.map(ip => {
+          const qty = Number(ip.quantity) || 1;
+          const price = getItemUnitPrice(ip, quote.unitPrice);
+          const tot = Number(ip.totalPrice ?? 0) || (qty * price);
+          return {
+            itemId: String(ip.itemId || ip._id || ''),
+            itemName: ip.itemName || 'Demanded Product',
+            quantity: qty,
+            sellerPrice: price,
+            totalPrice: tot,
+            discountTierNote: ip.discountTierNote || ''
+          };
+        })
+      : (Array.isArray(order?.requirements) ? order.requirements.map(r => {
+          const qty = Number(r.quantity) || 1;
+          const price = getItemUnitPrice(r, quote.unitPrice);
+          const tot = qty * price;
+          return {
+            itemId: String(r._id || r.itemId || ''),
+            itemName: r.itemName || 'Demanded Product',
+            quantity: qty,
+            sellerPrice: price,
+            totalPrice: tot,
+            discountTierNote: ''
+          };
+        }) : []);
     const baseTotalQty = baseItems.reduce((sum, item) => sum + item.quantity, 0) || Number(order?.totalQuantity) || 1;
     const baseAmt = Number(quote.quoteAmount ?? 0);
     const baseUnitP = Number(quote.unitPrice ?? 0) || (baseTotalQty > 0 ? Math.round(baseAmt / baseTotalQty) : 0);
@@ -116,27 +189,39 @@ export const extractAllQuotationVersions = (quote, order) => {
   const hasBuyerRound = versions.some(v => v.senderRole === 'buyer' && v.version >= 2);
   if (!hasBuyerRound && quote.latestBuyerCounter && (Number(quote.latestBuyerCounter.targetBudget) > 0 || quote.latestBuyerCounter.notes)) {
     const counter = quote.latestBuyerCounter;
-    const counterItems = Array.isArray(counter.itemDemands) && counter.itemDemands.length > 0
-      ? counter.itemDemands.map(idm => ({
-          itemId: String(idm.itemId || ''),
-          itemName: idm.itemName || 'Demanded Product',
-          quantity: Number(idm.quantity) || 1,
-          sellerPrice: Number(idm.targetUnitPrice || 0),
-          totalPrice: Number(idm.targetTotalPrice || 0) || (Number(idm.quantity || 1) * Number(idm.targetUnitPrice || 0)),
-          discountTierNote: idm.notes || ''
-        }))
-      : (Array.isArray(order?.requirements) ? order.requirements.map(r => ({
-          itemId: String(r._id || r.itemId || ''),
-          itemName: r.itemName,
-          quantity: Number(r.quantity) || 1,
-          sellerPrice: Number(r.estimatedPrice || 0),
-          totalPrice: (Number(r.quantity) || 1) * Number(r.estimatedPrice || 0),
-          discountTierNote: ''
-        })) : []);
-
-    const counterQty = counterItems.reduce((sum, item) => sum + item.quantity, 0) || Number(order?.totalQuantity) || 1;
+    const counterQtyTemp = Number(counter.totalQuantity || order?.totalQuantity) || 1;
     const counterAmt = Number(counter.targetBudget || 0);
-    const counterUnitP = counterQty > 0 ? Math.round(counterAmt / counterQty) : 0;
+    const counterUnitP = Number(counter.unitPrice) || (counterQtyTemp > 0 ? Math.round(counterAmt / counterQtyTemp) : 0);
+
+    const counterItems = Array.isArray(counter.itemDemands) && counter.itemDemands.length > 0
+      ? counter.itemDemands.map(idm => {
+          const qty = Number(idm.quantity) || 1;
+          const price = getItemUnitPrice(idm, counterUnitP || quote.unitPrice);
+          const tot = Number(idm.targetTotalPrice || 0) || (qty * price);
+          return {
+            itemId: String(idm.itemId || ''),
+            itemName: idm.itemName || 'Demanded Product',
+            quantity: qty,
+            sellerPrice: price,
+            totalPrice: tot,
+            discountTierNote: idm.notes || ''
+          };
+        })
+      : (Array.isArray(order?.requirements) ? order.requirements.map(r => {
+          const qty = Number(r.quantity) || 1;
+          const price = getItemUnitPrice(r, counterUnitP || quote.unitPrice);
+          const tot = qty * price;
+          return {
+            itemId: String(r._id || r.itemId || ''),
+            itemName: r.itemName || 'Demanded Product',
+            quantity: qty,
+            sellerPrice: price,
+            totalPrice: tot,
+            discountTierNote: ''
+          };
+        }) : []);
+
+    const counterQty = counterItems.reduce((sum, item) => sum + item.quantity, 0) || counterQtyTemp;
     const nextVer = (quote.currentVersion && quote.currentVersion > 1) ? quote.currentVersion : (versions.length + 1);
 
     versions.push({
@@ -169,16 +254,13 @@ export default function QuotationVersionComparisonModal({
   onClose,
   quote,
   order,
-  userRole = 'seller',
-  onAcceptCounterDemand,
-  onOpenRevisePitch,
-  onAcceptQuote
+  userRole = 'admin'
 }) {
   if (!isOpen || !quote) return null;
 
   const allVersions = useMemo(() => extractAllQuotationVersions(quote, order), [quote, order]);
 
-  // Default Version A to round 1 (or penultimate), Version B to latest round
+  // Default Version A to round 1, Version B to latest round
   const [versionAIndex, setVersionAIndex] = useState(0);
   const [versionBIndex, setVersionBIndex] = useState(() => (allVersions.length > 1 ? allVersions.length - 1 : 0));
 
@@ -267,7 +349,7 @@ export default function QuotationVersionComparisonModal({
                   {orderRef}
                 </span>
                 <h2 className="text-base sm:text-lg font-extrabold text-white font-display">
-                  Negotiation Version Comparison
+                  Quotation Negotiation Audit & Comparison
                 </h2>
               </div>
               <p className="text-xs text-teal-200 mt-0.5 flex flex-wrap items-center gap-2">
@@ -606,12 +688,12 @@ export default function QuotationVersionComparisonModal({
                     const iB = uItem.itemB;
 
                     const qtyA = iA?.quantity || 0;
-                    const priceA = iA?.sellerPrice || 0;
-                    const totalA = iA?.totalPrice || (qtyA * priceA);
+                    const priceA = getItemUnitPrice(iA, verA?.unitPrice);
+                    const totalA = Number(iA?.totalPrice) || (qtyA * priceA);
 
                     const qtyB = iB?.quantity || 0;
-                    const priceB = iB?.sellerPrice || 0;
-                    const totalB = iB?.totalPrice || (qtyB * priceB);
+                    const priceB = getItemUnitPrice(iB, verB?.unitPrice);
+                    const totalB = Number(iB?.totalPrice) || (qtyB * priceB);
 
                     const itemQtyDiff = qtyB - qtyA;
                     const itemPriceDiff = priceB - priceA;
@@ -707,54 +789,19 @@ export default function QuotationVersionComparisonModal({
         {/* Modal Action Footer */}
         <div className="bg-white px-4 sm:px-6 py-3.5 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-gray-500 font-medium">
-            Comparing <strong className="text-teal-900">{verA.shortLabel}</strong> with <strong className="text-purple-900">{verB.shortLabel}</strong>
+            Auditing: Comparing <strong className="text-teal-900">{verA.shortLabel}</strong> with <strong className="text-purple-900">{verB.shortLabel}</strong>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Quick Actions depending on user role and comparison target */}
-            {userRole === 'seller' && onAcceptCounterDemand && verB.senderRole === 'buyer' && (
-              <button
-                type="button"
-                onClick={onAcceptCounterDemand}
-                className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <CheckCircle2 size={14} />
-                <span>Accept Buyer Counter (v{verB.version})</span>
-              </button>
-            )}
-
-            {userRole === 'seller' && onOpenRevisePitch && (
-              <button
-                type="button"
-                onClick={onOpenRevisePitch}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Sparkles size={14} />
-                <span>Revise Pitch (v{(quote.currentVersion || 1) + 1})</span>
-              </button>
-            )}
-
-            {userRole === 'consumer' && onAcceptQuote && (
-              <button
-                type="button"
-                onClick={onAcceptQuote}
-                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <CheckCircle2 size={14} />
-                <span>Accept Winning Quote</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={onClose}
               className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
             >
-              Close Comparison
+              Close Audit Modal
             </button>
           </div>
         </div>
-
       </div>
     </div>
   );

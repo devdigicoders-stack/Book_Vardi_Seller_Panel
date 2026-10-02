@@ -78,6 +78,7 @@ export default function InventoryTab() {
       const matchesSearch = 
         p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.displayId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.category?.toLowerCase().includes(searchTerm.toLowerCase());
 
       let matchesFilter = true;
@@ -333,7 +334,7 @@ export default function InventoryTab() {
                           />
                           <div className="max-w-xs">
                             <div className="font-bold text-gray-900 truncate">{p.name}</div>
-                            <div className="text-[10px] text-teal-700 font-mono mt-0.5">{p.sku || `SKU-${p.id}`}</div>
+                            <div className="text-[10px] text-teal-700 font-mono mt-0.5">{p.displayId || p.sku || `SC-${p.id}`}</div>
                           </div>
                         </div>
                       </td>

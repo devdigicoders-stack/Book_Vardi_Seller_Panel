@@ -25,6 +25,7 @@ import {
   acceptSchoolOrderApi,
   submitSchoolQuoteApi,
   acceptBuyerCounterDemandApi,
+  confirmSellerAcceptanceApi,
   reviseSchoolQuoteApi,
   fetchPromotionsApi,
   createPromotionApi,
@@ -638,13 +639,25 @@ export const SellerDataProvider = ({ children }) => {
         }
 
         if (productsRes.status === 'fulfilled' && Array.isArray(productsRes.value)) {
-          const normalized = productsRes.value.map(p => ({
-            ...p,
-            id: p._id || p.id,
-            _id: p._id || p.id,
-            stockQuantity: p.stockQuantity ?? p.stock ?? 50,
-            inStock: p.inStock !== undefined ? p.inStock : ((p.stockQuantity ?? p.stock ?? 50) > 0)
-          }));
+          const normalized = productsRes.value.map(p => {
+            const idStr = String(p._id || p.id || '');
+            let cleanSku = p.sku;
+            if (!cleanSku || !String(cleanSku).trim() || String(cleanSku).includes('6ab') || String(cleanSku).length > 20) {
+              const numericSuffix = idStr.length >= 6 ? (parseInt(idStr.slice(-6), 16) % 9000 + 1000) : Math.floor(1000 + Math.random() * 9000);
+              cleanSku = `SC-${numericSuffix}`;
+            } else {
+              cleanSku = String(cleanSku).trim().toUpperCase();
+            }
+            return {
+              ...p,
+              id: p._id || p.id,
+              _id: p._id || p.id,
+              sku: cleanSku,
+              displayId: cleanSku,
+              stockQuantity: p.stockQuantity ?? p.stock ?? 50,
+              inStock: p.inStock !== undefined ? p.inStock : ((p.stockQuantity ?? p.stock ?? 50) > 0)
+            };
+          });
           setProducts(normalized);
           try {
             localStorage.setItem('bv_seller_products', JSON.stringify(normalized));
@@ -652,13 +665,25 @@ export const SellerDataProvider = ({ children }) => {
         }
 
         if (kitsRes.status === 'fulfilled' && Array.isArray(kitsRes.value)) {
-          const normalizedKits = kitsRes.value.map(k => ({
-            ...k,
-            id: k._id || k.id,
-            _id: k._id || k.id,
-            stockQuantity: k.stockQuantity ?? k.stock ?? 25,
-            inStock: (k.stockQuantity ?? k.stock ?? 25) > 0
-          }));
+          const normalizedKits = kitsRes.value.map(k => {
+            const idStr = String(k._id || k.id || '');
+            let cleanSku = k.sku || k.kitCode;
+            if (!cleanSku || !String(cleanSku).trim() || String(cleanSku).includes('6ab') || String(cleanSku).length > 20) {
+              const numericSuffix = idStr.length >= 6 ? (parseInt(idStr.slice(-6), 16) % 9000 + 1000) : Math.floor(1000 + Math.random() * 9000);
+              cleanSku = `KIT-${numericSuffix}`;
+            } else {
+              cleanSku = String(cleanSku).trim().toUpperCase();
+            }
+            return {
+              ...k,
+              id: k._id || k.id,
+              _id: k._id || k.id,
+              sku: cleanSku,
+              displayId: cleanSku,
+              stockQuantity: k.stockQuantity ?? k.stock ?? 25,
+              inStock: (k.stockQuantity ?? k.stock ?? 25) > 0
+            };
+          });
           setKits(normalizedKits);
           try {
             localStorage.setItem('bv_seller_kits', JSON.stringify(normalizedKits));
@@ -1925,6 +1950,38 @@ export const SellerDataProvider = ({ children }) => {
     }
   };
 
+  const confirmSellerAcceptance = async (orderId) => {
+    checkPermission();
+    try {
+      const res = await confirmSellerAcceptanceApi(orderId);
+      if (res?.success) {
+        showToast(res.message || 'Acceptance confirmed and prepayment requested!');
+        if (res.order) {
+          setSchoolOrders(prev => prev.map(o => String(o.id || o._id) === String(orderId) ? res.order : o));
+          ['bv_sync_school_orders', 'bv_customer_bulk_orders', 'admin_school_orders'].forEach(k => {
+            try {
+              const list = JSON.parse(localStorage.getItem(k) || '[]');
+              const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && String(o.referenceId) === String(orderId)));
+              if (idx !== -1) {
+                list[idx] = res.order;
+                localStorage.setItem(k, JSON.stringify(list));
+              }
+            } catch (e) {}
+          });
+          window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+          window.dispatchEvent(new Event('storage'));
+        }
+        return { success: true, order: res.order };
+      } else {
+        showToast(res?.message || 'Failed to confirm acceptance');
+        return { success: false, message: res?.message };
+      }
+    } catch (e) {
+      showToast(e.message || 'Error confirming acceptance');
+      return { success: false, message: e.message };
+    }
+  };
+
   const reviseSchoolQuote = async (orderId, quoteId, quoteData) => {
     checkPermission();
     try {
@@ -2319,6 +2376,7 @@ export const SellerDataProvider = ({ children }) => {
         acceptSchoolOrder,
         submitSchoolQuote,
         acceptBuyerCounterDemand,
+        confirmSellerAcceptance,
         reviseSchoolQuote,
         updateSchoolOrderStatus,
         // Customer actions

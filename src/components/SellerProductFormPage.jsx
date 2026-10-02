@@ -759,6 +759,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
         const payload = {
           ...formData,
+          sku: formData.sku?.trim() ? formData.sku.trim().toUpperCase() : `SC-${Math.floor(1000 + Math.random() * 9000)}`,
           bundleType: 'single',
           schoolName: formData.schoolName || '',
           schoolCode: formData.schoolCode || '',

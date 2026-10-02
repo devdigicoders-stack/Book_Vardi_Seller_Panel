@@ -489,6 +489,36 @@ export const acceptBuyerCounterDemandApi = async (id, quoteId, payload = {}) => 
   }
 };
 
+export const confirmBuyerAcceptanceApi = async (id) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/confirm-buyer-acceptance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      }
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const confirmSellerAcceptanceApi = async (id) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/confirm-seller-acceptance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      }
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
 export const reviseSchoolQuoteApi = async (id, quoteId, quoteData) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/school-orders/${id}/quotations/${quoteId}/revise`, {
