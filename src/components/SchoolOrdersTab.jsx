@@ -779,39 +779,64 @@ export default function SchoolOrdersTab() {
                 )}
 
                 {/* Two-Way Acceptance Confirmation Banner for Seller */}
-                {(req.status === 'buyer_accepted' || myQuote?.status === 'buyer_accepted') ? (
-                  <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
-                    <div className="flex items-center gap-2">
-                      <Sparkles size={18} className="text-emerald-700 shrink-0" />
-                      <div>
-                        <span className="font-extrabold text-emerald-950 text-xs block">
-                          🎉 Buyer accepted your quotation! Confirm acceptance to request prepayment.
+                {(() => {
+                  const isAdvancedOrder = isPrepaymentPaid || isCompleted || req.remainingPaymentStatus === 'paid' || [
+                    'prepayment_pending',
+                    'advance_paid',
+                    'in_production',
+                    'processing',
+                    'dispatched',
+                    'out_for_delivery',
+                    'remaining_pending',
+                    'remaining_paid',
+                    'completed',
+                    'delivered'
+                  ].includes(String(req.status || '').toLowerCase());
+
+                  if (!isAdvancedOrder && (req.status === 'buyer_accepted' || myQuote?.status === 'buyer_accepted')) {
+                    return (
+                      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <Sparkles size={18} className="text-emerald-700 shrink-0" />
+                          <div>
+                            <span className="font-extrabold text-emerald-950 text-xs block">
+                              🎉 Buyer accepted your quotation! Confirm acceptance to request prepayment.
+                            </span>
+                            <span className="text-emerald-800 text-[11px]">
+                              Prepayment Amount: <strong>₹{Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || Math.round((Number(myQuote?.quoteAmount || req.overallBudget || 0) * (myQuote?.prepaymentPercentage || req.sellerAdvancePercentage || 20)) / 100)).toLocaleString()} ({myQuote?.prepaymentPercentage || req.sellerAdvancePercentage || 20}%)</strong>
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => confirmSellerAcceptance(req.id || req._id)}
+                          className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 size={15} />
+                          <span>Confirm Acceptance & Request Prepayment</span>
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (!isAdvancedOrder && (req.status === 'seller_accepted_counter' || myQuote?.status === 'seller_accepted')) {
+                    return (
+                      <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-950 font-bold">
+                        <span className="flex items-center gap-1.5">
+                          <Clock size={15} className="text-amber-600 shrink-0" />
+                          <span>You accepted buyer's deal. Awaiting buyer confirmation & online prepayment.</span>
                         </span>
-                        <span className="text-emerald-800 text-[11px]">
-                          Prepayment Amount: <strong>₹{Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || Math.round((Number(myQuote?.quoteAmount || req.overallBudget || 0) * (myQuote?.prepaymentPercentage || req.sellerAdvancePercentage || 20)) / 100)).toLocaleString()} ({myQuote?.prepaymentPercentage || req.sellerAdvancePercentage || 20}%)</strong>
+                        <span className="bg-amber-200 text-amber-900 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
+                          Awaiting Buyer Confirmation
                         </span>
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => confirmSellerAcceptance(req.id || req._id)}
-                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 size={15} />
-                      <span>Confirm Acceptance & Request Prepayment</span>
-                    </button>
-                  </div>
-                ) : (req.status === 'seller_accepted_counter' || myQuote?.status === 'seller_accepted') ? (
-                  <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-950 font-bold">
-                    <span className="flex items-center gap-1.5">
-                      <Clock size={15} className="text-amber-600 shrink-0" />
-                      <span>You accepted buyer's deal. Awaiting buyer confirmation & online prepayment.</span>
-                    </span>
-                    <span className="bg-amber-200 text-amber-900 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
-                      Awaiting Buyer Confirmation
-                    </span>
-                  </div>
-                ) : isPrepaymentPending ? (
+                    );
+                  }
+
+                  return null;
+                })()}
+
+                {isPrepaymentPending ? (
                   <div className="bg-amber-50 border-2 border-amber-300 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
                     <div className="flex items-center gap-2">
                       <AlertCircle size={15} className="text-amber-700 shrink-0" />

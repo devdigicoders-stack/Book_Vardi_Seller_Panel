@@ -1068,10 +1068,10 @@ export default function OrdersTab() {
                     <div className="space-y-2 pt-2 border-t border-teal-100">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-gray-800 text-[11px] flex items-center gap-1">
-                          <ExternalLink size={13} className="text-teal-700" /> Self-Delivery Tracking Link:
+                          <ExternalLink size={13} className="text-teal-700" /> Rider / Delivery Executive Link (For Driver only):
                         </span>
                         <span className="text-[10px] text-teal-800 font-extrabold bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
-                          Token: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
+                          Tracking ID: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
                         </span>
                       </div>
 
@@ -1087,18 +1087,29 @@ export default function OrdersTab() {
                           onClick={() => {
                             const link = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`;
                             navigator.clipboard.writeText(link);
-                            alert('📋 Delivery Partner Link copied to clipboard!');
+                            alert('📋 Rider Executive Link copied! (Share with Driver only)');
                           }}
                           className="px-2.5 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
                         >
-                          Copy Link
+                          Copy Driver Link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const tId = modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id);
+                            navigator.clipboard.writeText(tId);
+                            alert('📋 Buyer Tracking ID copied to clipboard!');
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
+                        >
+                          Copy Buyer Tracking ID
                         </button>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         {modalDriverPhone && (
                           <a
-                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`)}`}
+                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery executive link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`)}`}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
