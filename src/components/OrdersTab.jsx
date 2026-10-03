@@ -145,14 +145,23 @@ export default function OrdersTab() {
 
   const hasActiveReturnRequest = (order) => {
     if (!order) return false;
-    if (order.returnRequest && (order.returnRequest.type || (order.returnRequest.status && !['none', 'n/a', 'no_request', 'normal', 'requesting'].includes(String(order.returnRequest.status).toLowerCase())))) {
-      return true;
+    const req = order.returnRequest;
+    if (req && typeof req === 'object') {
+      const type = req.requestType || req.type;
+      const status = String(req.status || '').toLowerCase().trim();
+      const invalidStatuses = ['', 'none', 'n/a', 'no_request', 'normal', 'null', 'undefined', 'requesting', 'requested'];
+      
+      if (type && !['none', 'n/a', ''].includes(String(type).toLowerCase())) return true;
+      if (status && !invalidStatuses.includes(status)) return true;
+      if (req.requestedAt) return true;
+      if (req.reason && req.reason !== 'N/A' && req.reason.trim() !== '') return true;
     }
     const s = String(order.status || order.rawStatus || '').toLowerCase();
     const returnStatuses = [
       'return_requested', 'exchange_requested', 'return_approved', 'exchange_approved',
       'return_rejected', 'exchange_rejected', 'pickup_scheduled', 'product_received',
-      'refund_completed', 'exchanged', 'exchange_dispatched'
+      'refund_initiated', 'refund_processed', 'refund_completed', 'exchanged', 'exchange_dispatched',
+      'refund_requested', 'refunded'
     ];
     return returnStatuses.includes(s);
   };
@@ -231,6 +240,10 @@ export default function OrdersTab() {
           alert('⚠️ Please enter Driver Phone Number.');
           return;
         }
+        if (!modalVehicleNumber.trim()) {
+          alert('⚠️ Please enter Vehicle Number (e.g. UP32 AB 1234).');
+          return;
+        }
         tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
         const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
         trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
@@ -254,11 +267,16 @@ export default function OrdersTab() {
         city: sellerUser?.city || activeOrderModal.sellerDetails?.city || ''
       };
 
+      const lowerCourier = modalCourierInput.toLowerCase().trim();
       const carrierUrl = deliveryModeInput === 'third_party' && finalAwb ? (
-        modalCourierInput.toLowerCase().includes('delhivery') ? `https://www.delhivery.com/track/package/${finalAwb}` :
-        modalCourierInput.toLowerCase().includes('bluedart') ? `https://www.bluedart.com/tracking?awb=${finalAwb}` :
-        modalCourierInput.toLowerCase().includes('dtdc') ? `https://www.dtdc.in/tracking/shipment-tracking.asp?awb=${finalAwb}` :
-        modalCourierInput.toLowerCase().includes('ekart') ? `https://ekartlogistics.com/shipmenttrack/${finalAwb}` :
+        lowerCourier.includes('bluedart') ? `https://www.bluedart.com/tracking?awb=${finalAwb}` :
+        lowerCourier.includes('delhivery') ? `https://www.delhivery.com/track/package/${finalAwb}` :
+        lowerCourier.includes('dtdc') ? `https://www.dtdc.in/tracking/shipment-tracking.asp?awb=${finalAwb}` :
+        lowerCourier.includes('ekart') ? `https://ekartlogistics.com/shipmenttrack/${finalAwb}` :
+        lowerCourier.includes('fedex') ? `https://www.fedex.com/fedextrack/?trknbr=${finalAwb}` :
+        lowerCourier.includes('shadowfax') ? `https://track.shadowfax.in/track?tracking_id=${finalAwb}` :
+        lowerCourier.includes('xpressbees') ? `https://www.xpressbees.com/track?shipment_id=${finalAwb}` :
+        lowerCourier.includes('indiapost') || lowerCourier.includes('speedpost') ? `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx?consignmentNo=${finalAwb}` :
         `https://track.shiprocket.in/tracking/${finalAwb}`
       ) : '';
 
@@ -736,18 +754,18 @@ export default function OrdersTab() {
                   <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
                     <span className="font-extrabold text-xs uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
                       <RefreshCw size={15} className="text-amber-700" />
-                      {activeOrderModal.returnRequest?.type === 'exchange' || activeOrderModal.status?.includes('Exchange')
+                      {activeOrderModal.returnRequest?.requestType === 'exchange' || activeOrderModal.returnRequest?.type === 'exchange' || String(activeOrderModal.status).toLowerCase().includes('exchange')
                         ? '🔄 Product Exchange Request'
                         : '📦 Product Return & Refund Request'}
                     </span>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-950 border border-amber-300">
-                      Status: {activeOrderModal.returnRequest?.status || activeOrderModal.status}
+                      Status: {(activeOrderModal.returnRequest?.status && activeOrderModal.returnRequest.status !== 'no_request') ? activeOrderModal.returnRequest.status.replace(/_/g, ' ') : activeOrderModal.status}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
-                      <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.type || (activeOrderModal.status?.toLowerCase().includes('exchange') ? 'Exchange' : 'Return')}</span></p>
+                      <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.requestType || activeOrderModal.returnRequest?.type || (String(activeOrderModal.status).toLowerCase().includes('exchange') ? 'Exchange' : 'Return')}</span></p>
                       {activeOrderModal.returnRequest?.reason && (
                         <p><strong>Reason:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest.reason}</span></p>
                       )}
@@ -1062,7 +1080,7 @@ export default function OrdersTab() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="font-semibold text-gray-700">Vehicle Number</label>
+                        <label className="font-semibold text-gray-700">Vehicle Number *</label>
                         <input
                           type="text"
                           value={modalVehicleNumber}
