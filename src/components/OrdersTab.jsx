@@ -53,6 +53,15 @@ const maskPhoneNumber = (phone) => {
   return '+91 98XXXXXX00';
 };
 
+export const formatDisplayOrderId = (rawId) => {
+  if (!rawId) return '';
+  const str = String(rawId).trim().replace(/^#+/, '');
+  if (/^[0-9a-fA-F]{24}$/.test(str)) {
+    return `#${str.slice(-8).toUpperCase()}`;
+  }
+  return str;
+};
+
 const STATUS_CONFIG = {
   Pending: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: Clock },
   Processing: { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-200', icon: Clock },
@@ -527,7 +536,7 @@ export default function OrdersTab() {
 
                       {/* ID & Date */}
                       <td className="py-3.5 px-4">
-                        <div className="font-bold text-gray-900 font-mono">{o.id}</div>
+                        <div className="font-bold text-gray-900 font-mono">{formatDisplayOrderId(o.orderId || o.id)}</div>
                         <div className="text-[11px] text-gray-500 mt-0.5">{o.date}</div>
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           <span className="text-[10px] text-gray-500">{o.paymentMethod}</span>
@@ -665,7 +674,7 @@ export default function OrdersTab() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-gray-900 text-base">Order Details #{activeOrderModal.id}</h3>
+                  <h3 className="font-bold text-gray-900 text-base">Order ID: {formatDisplayOrderId(activeOrderModal.orderId || activeOrderModal.id)}</h3>
                   <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${STATUS_CONFIG[activeOrderModal.status]?.bg || 'bg-gray-100'} ${STATUS_CONFIG[activeOrderModal.status]?.text || 'text-gray-800'} ${STATUS_CONFIG[activeOrderModal.status]?.border || 'border-gray-200'}`}>
                     {activeOrderModal.status}
                   </span>
@@ -1193,10 +1202,11 @@ export default function OrdersTab() {
 
               {/* Summary Footer & Complete Itemized Price Breakdown */}
               {(() => {
-                const subtotalVal = Number(activeOrderModal.subtotal || activeOrderModal.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || activeOrderModal.total || 0);
+                const subtotalVal = Number(activeOrderModal.sellerSubtotal || activeOrderModal.subtotal || activeOrderModal.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || activeOrderModal.total || 0);
                 const shipVal = Number(activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 0);
                 const couponVal = Number(activeOrderModal.discountAmount ?? activeOrderModal.discount ?? 0);
-                const grandVal = Number(activeOrderModal.total || activeOrderModal.totalAmount || (subtotalVal + shipVal - couponVal));
+                const codFeeVal = Number(activeOrderModal.codFee ?? activeOrderModal.codCharges ?? 0);
+                const grandVal = Number(activeOrderModal.total || activeOrderModal.totalAmount || (subtotalVal + shipVal + codFeeVal - couponVal));
 
                 let totalTaxable = 0;
                 let totalTax = 0;
@@ -1290,6 +1300,12 @@ export default function OrdersTab() {
                         {shipVal === 0 ? 'Not Applied (FREE)' : `₹${shipVal.toFixed(2)}`}
                       </span>
                     </div>
+                    {codFeeVal > 0 && (
+                      <div className="flex justify-between text-gray-700">
+                        <span>COD / Convenience Fee:</span>
+                        <span className="font-mono font-bold text-teal-800">₹{codFeeVal.toFixed(2)}</span>
+                      </div>
+                    )}
                     {couponVal > 0 ? (
                       <div className="flex justify-between text-teal-800 font-bold">
                         <span>Offer / Coupon Applied:</span>
