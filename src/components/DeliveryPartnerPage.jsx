@@ -370,9 +370,45 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-gray-200 flex justify-between font-extrabold text-sm text-gray-900">
-                <span>Total Collection Amount:</span>
-                <span className="text-teal-900 font-black">₹{order?.totalAmount || 0}</span>
+              <div className="pt-3 border-t border-gray-200 space-y-1.5 text-xs text-gray-700 font-medium">
+                <div className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider mb-1">
+                  Payment & Price Breakdown
+                </div>
+
+                <div className="flex justify-between items-center text-gray-600">
+                  <span>Items Subtotal:</span>
+                  <span className="font-semibold text-gray-900 font-mono">
+                    ₹{Number(order?.subtotal || order?.items?.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0) || 0).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-gray-600">
+                  <span>Delivery Charge:</span>
+                  <span className="font-semibold text-gray-900 font-mono">
+                    {(order?.shippingFee !== undefined ? order.shippingFee : (order?.shippingCost !== undefined ? order.shippingCost : 0)) > 0
+                      ? `₹${Number(order?.shippingFee !== undefined ? order.shippingFee : order?.shippingCost).toLocaleString()}`
+                      : 'FREE Delivery'}
+                  </span>
+                </div>
+
+                {Boolean(order?.discount || order?.discountAmount) && Number(order?.discount || order?.discountAmount) > 0 && (
+                  <div className="flex justify-between items-center text-emerald-700 font-semibold">
+                    <span>Coupon / Savings Discount:</span>
+                    <span className="font-mono">-₹{Number(order?.discount || order?.discountAmount).toLocaleString()}</span>
+                  </div>
+                )}
+
+                {Boolean(order?.gst || order?.taxAmount) && Number(order?.gst || order?.taxAmount) > 0 && (
+                  <div className="flex justify-between items-center text-gray-600">
+                    <span>Estimated GST / Taxes:</span>
+                    <span className="font-semibold text-gray-900 font-mono">₹{Number(order?.gst || order?.taxAmount).toLocaleString()}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-gray-100 flex justify-between items-center font-extrabold text-sm text-gray-900">
+                  <span>Total Collection Amount:</span>
+                  <span className="text-teal-900 font-black text-base font-mono">₹{Number(order?.totalAmount || order?.total || 0).toLocaleString()}</span>
+                </div>
               </div>
             </div>
 
