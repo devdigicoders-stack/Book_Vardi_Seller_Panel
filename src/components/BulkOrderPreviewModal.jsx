@@ -46,6 +46,7 @@ export default function BulkOrderPreviewModal({
   onAcceptCounterDemand, // (orderId, quoteId, payload) => void
   onReviseQuote, // (orderId, quoteId, payload) => void
   onAcceptDirect, // (orderId) => void
+  onUpdateLogistics, // (orderId, payload) => void
   sellerUser = null // Current seller info when userRole === 'seller'
 }) {
   // Active Lightbox / Image Preview
@@ -178,6 +179,13 @@ export default function BulkOrderPreviewModal({
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
 
+  // Logistics & Delivery Tracking State
+  const [deliveryStatus, setDeliveryStatus] = useState(order?.deliveryStatus || order?.status || 'quote_accepted');
+  const [deliveryPersonName, setDeliveryPersonName] = useState(order?.deliveryDetails?.deliveryBoyName || order?.deliveryDetails?.deliveryPersonName || order?.selfDeliveryDetails?.deliveryPersonName || '');
+  const [deliveryPersonPhone, setDeliveryPersonPhone] = useState(order?.deliveryDetails?.deliveryBoyPhone || order?.deliveryDetails?.deliveryPersonPhone || order?.selfDeliveryDetails?.deliveryPersonPhone || '');
+  const [vehicleNumber, setVehicleNumber] = useState(order?.deliveryDetails?.vehicleNumber || order?.selfDeliveryDetails?.vehicleNumber || '');
+  const [logisticsSavedMessage, setLogisticsSavedMessage] = useState('');
+
   // Advance Payment Counter-Demand State
   const [sellerAdvanceType, setSellerAdvanceType] = useState(
     existingSellerQuote?.sellerAdvanceType || order?.buyerAdvanceType || 'percentage'
@@ -215,6 +223,10 @@ export default function BulkOrderPreviewModal({
         setSellerAdvanceAmount(order.buyerAdvanceAmount ? String(order.buyerAdvanceAmount) : '');
         setSellerAdvanceTerms(order.buyerAdvanceNote ? `Agreed to buyer advance: ${order.buyerAdvanceNote}` : '30% advance on sample approval before bulk procurement, 70% upon delivery.');
       }
+      setDeliveryStatus(order.deliveryStatus || order.status || 'quote_accepted');
+      setDeliveryPersonName(order.deliveryDetails?.deliveryBoyName || order.deliveryDetails?.deliveryPersonName || order.selfDeliveryDetails?.deliveryPersonName || '');
+      setDeliveryPersonPhone(order.deliveryDetails?.deliveryBoyPhone || order.deliveryDetails?.deliveryPersonPhone || order.selfDeliveryDetails?.deliveryPersonPhone || '');
+      setVehicleNumber(order.deliveryDetails?.vehicleNumber || order.selfDeliveryDetails?.vehicleNumber || '');
     }
   }, [order, initialTab]);
 
@@ -322,9 +334,28 @@ export default function BulkOrderPreviewModal({
     });
   };
 
-  const winningQuote = Array.isArray(order?.quotations)
-    ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order?.acceptedQuoteId))
-    : null;
+  const winningQuote = useMemo(() => {
+    if (!order) return null;
+    if (Array.isArray(order.quotations) && order.quotations.length > 0) {
+      const found = order.quotations.find(q =>
+        q.status === 'approved' ||
+        q.status === 'buyer_accepted' ||
+        q.status === 'seller_accepted' ||
+        q.negotiationStage === 'buyer_accepted_quote' ||
+        q.negotiationStage === 'seller_accepted_counter' ||
+        String(q._id) === String(order.acceptedQuoteId) ||
+        String(q.id) === String(order.acceptedQuoteId)
+      );
+      if (found) return found;
+      if (order.status === 'quote_accepted') {
+        return existingSellerQuote || order.quotations[0];
+      }
+    }
+    if (order.status === 'quote_accepted' && existingSellerQuote) {
+      return existingSellerQuote;
+    }
+    return null;
+  }, [order, existingSellerQuote]);
 
   // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
   const normStatus = String(order?.deliveryStatus || order?.status || '').toLowerCase().replace(/_/g, ' ');
@@ -521,6 +552,40 @@ export default function BulkOrderPreviewModal({
     }
 
     setModalSubTab('specs');
+  };
+
+  const handleSaveLogistics = (e) => {
+    e.preventDefault();
+    if (!onUpdateLogistics) return;
+
+    const riderToken = order.deliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPartnerToken || `BV-SLF-${order.referenceId || order.id || Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const websiteOrigin = window.location.origin.replace(':5174', ':5173');
+    const riderUrl = `${websiteOrigin}/#delivery-partner?token=${riderToken}`;
+
+    const selfDetails = {
+      deliveryBoyName: deliveryPersonName,
+      deliveryBoyPhone: deliveryPersonPhone,
+      deliveryPersonName,
+      deliveryPersonPhone,
+      vehicleNumber,
+      deliveryPartnerToken: riderToken,
+      trackingId: riderToken,
+      trackingUrl: riderUrl
+    };
+
+    onUpdateLogistics(order.id || order._id, {
+      status: deliveryStatus,
+      deliveryStatus,
+      deliveryMode: 'self_delivery',
+      courierName: '',
+      trackingNumber: riderToken,
+      trackingUrl: riderUrl,
+      deliveryDetails: selfDetails,
+      selfDeliveryDetails: selfDetails
+    });
+
+    setLogisticsSavedMessage('Logistics & Tracking updated successfully with Self-Delivery verification link!');
+    setTimeout(() => setLogisticsSavedMessage(''), 4000);
   };
 
   if (!order) return null;
@@ -743,10 +808,13 @@ export default function BulkOrderPreviewModal({
               {(() => {
                 const assignedId = order.sellerId ? (typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : '';
                 const isAcceptedToMe = Boolean(
-                  winningQuote && (
-                    isMyQuote(winningQuote) ||
-                    (currentSellerId && String(winningQuote.sellerId) === String(currentSellerId)) ||
-                    sellerCandidateIds.includes(String(winningQuote.sellerId))
+                  (order.status === 'quote_accepted' || winningQuote) && (
+                    userRole === 'admin' ||
+                    (winningQuote && isMyQuote(winningQuote)) ||
+                    (currentSellerId && String(winningQuote?.sellerId) === String(currentSellerId)) ||
+                    (winningQuote && sellerCandidateIds.includes(String(winningQuote?.sellerId))) ||
+                    (assignedId && (String(assignedId) === String(currentSellerId) || sellerCandidateIds.includes(String(assignedId)))) ||
+                    (userRole === 'seller' && Array.isArray(order?.quotations) && order.quotations.length === 1 && (order?.status === 'quote_accepted' || winningQuote?.status === 'approved'))
                   )
                 );
                 const isAcceptedOtherSeller = Boolean(
@@ -756,56 +824,6 @@ export default function BulkOrderPreviewModal({
                   String(assignedId) !== String(currentSellerId) &&
                   !isAcceptedToMe
                 );
-
-                if (isAcceptedToMe && userRole === 'seller') {
-                  return (
-                    <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-3 border border-emerald-500">
-                      <div className="font-black text-sm flex items-center gap-2">
-                        <Sparkles size={18} className="text-amber-300" /> 🎉 Order Received! Your Quotation Was Accepted by Customer
-                      </div>
-                      <p className="text-xs text-emerald-100 font-medium">
-                        Congratulations! The customer accepted your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount).toLocaleString()}</strong>. Admin and Customer have received your fulfillment commitment.
-                      </p>
-
-                      {/* Action Row: View Tax Invoice Button & Tracking Status */}
-                      <div className="pt-2 border-t border-emerald-500/80 flex flex-wrap items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsInvoiceOpen(true)}
-                          className="px-3.5 py-1.5 bg-white hover:bg-gray-100 text-emerald-950 font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                        >
-                          <FileText size={14} />
-                          <span>View Official Tax Invoice & PO Certificate</span>
-                        </button>
-
-                        {canViewTracking ? (
-                          <div className="flex items-center gap-2 bg-emerald-700/80 text-white px-3 py-1.5 rounded-xl border border-emerald-400 text-xs">
-                            <Truck size={14} className="text-amber-300" />
-                            <span>{isSelf ? '🛵 Self-Delivery' : `🚚 ${order.courierName || 'Courier'}`}:</span>
-                            <span className="font-mono font-bold bg-white/20 px-1.5 py-0.5 rounded border border-white/20">{trackingNumberDisplay}</span>
-                            {trackingLinkDisplay && (
-                              <a
-                                href={trackingLinkDisplay}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-amber-300 hover:text-white font-bold underline flex items-center gap-0.5 ml-1"
-                              >
-                                Track <ExternalLink size={11} />
-                              </a>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-[11px] text-emerald-100 bg-emerald-700/50 px-2.5 py-1 rounded-lg border border-emerald-500 flex items-center gap-1.5">
-                            <Lock size={12} className="text-emerald-200" />
-                            <span>
-                              {isOut ? 'Out for Delivery (Delivery partner pending)' : 'Tracking available once Out for Delivery & partner decided'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
 
                 if (isAcceptedOtherSeller && userRole === 'seller' && existingSellerQuote) {
                   return (
@@ -822,71 +840,218 @@ export default function BulkOrderPreviewModal({
 
                 if (winningQuote && (userRole === 'admin' || isAcceptedToMe)) {
                   return (
-                    <div className="bg-emerald-50 border border-emerald-300 p-4 rounded-2xl space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-emerald-900 flex items-center gap-1.5 text-sm">
-                          <CheckCircle2 size={18} className="text-emerald-600" /> Approved & Winning Vendor Quotation
-                        </span>
-                        <span className="font-extrabold text-lg text-emerald-950 font-mono">
-                          ₹{Number(winningQuote.quoteAmount).toLocaleString()}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs bg-white p-3 rounded-xl border border-emerald-200">
-                        <div>
-                          <span className="text-gray-400">Fulfilled By:</span>
-                          <div className="font-bold text-gray-900">{winningQuote.sellerStoreName || winningQuote.sellerName}</div>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Vendor Phone:</span>
-                          <div className="font-bold text-gray-900">{winningQuote.sellerPhone || 'N/A'}</div>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Delivery Lead Time:</span>
-                          <div className="font-bold text-gray-900">{winningQuote.estimatedDeliveryDays || 7} Days</div>
-                        </div>
-                        {winningQuote.notes && (
-                          <div className="col-span-2 sm:col-span-3 text-gray-700 italic border-t border-gray-100 pt-1 mt-1">
-                            "{winningQuote.notes}"
+                    <div className="space-y-4">
+                      {/* Winner Notification Banner for Seller */}
+                      {userRole === 'seller' && isAcceptedToMe && (
+                        <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-1.5 border border-emerald-500">
+                          <div className="font-black text-sm flex items-center gap-2">
+                            <Sparkles size={18} className="text-amber-300" /> 🎉 Order Received! Your Quotation Was Accepted by Customer
                           </div>
-                        )}
-                      </div>
+                          <p className="text-xs text-emerald-100 font-medium">
+                            Congratulations! The customer accepted your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount || 0).toLocaleString()}</strong>. Admin and Customer have received your fulfillment commitment.
+                          </p>
+                        </div>
+                      )}
 
-                      {/* Action Row: View Tax Invoice Button & Tracking Status */}
-                      <div className="pt-2 border-t border-emerald-200/80 flex flex-wrap items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsInvoiceOpen(true)}
-                          className="px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                        >
-                          <FileText size={14} />
-                          <span>View Official Tax Invoice & PO Certificate</span>
-                        </button>
+                      {/* Approved & Winning Vendor Quotation Card */}
+                      <div className="bg-emerald-50 border border-emerald-300 p-4 rounded-2xl space-y-3 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-emerald-900 flex items-center gap-1.5 text-sm">
+                            <CheckCircle2 size={18} className="text-emerald-600" /> Approved & Winning Vendor Quotation
+                          </span>
+                          <span className="font-extrabold text-lg text-emerald-950 font-mono">
+                            ₹{Number(winningQuote.quoteAmount || 0).toLocaleString()}
+                          </span>
+                        </div>
 
-                        {canViewTracking ? (
-                          <div className="flex items-center gap-2 bg-emerald-100/90 text-emerald-950 px-3 py-1.5 rounded-xl border border-emerald-300 text-xs">
-                            <Truck size={14} className="text-emerald-700" />
-                            <span>{isSelf ? '🛵 Self-Delivery' : `🚚 ${order.courierName || 'Courier'}`}:</span>
-                            <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-200">{trackingNumberDisplay}</span>
-                            {trackingLinkDisplay && (
-                              <a
-                                href={trackingLinkDisplay}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-emerald-700 hover:text-emerald-900 font-bold underline flex items-center gap-0.5 ml-1"
-                              >
-                                Track <ExternalLink size={11} />
-                              </a>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs bg-white p-3 rounded-xl border border-emerald-200">
+                          <div>
+                            <span className="text-gray-400">Fulfilled By:</span>
+                            <div className="font-bold text-gray-900">{winningQuote.sellerStoreName || winningQuote.sellerName || sellerUser?.storeName || 'BookVardi Verified Seller'}</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Vendor Phone:</span>
+                            <div className="font-bold text-gray-900">{winningQuote.sellerPhone || sellerUser?.phone || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Delivery Lead Time:</span>
+                            <div className="font-bold text-gray-900">{winningQuote.estimatedDeliveryDays || 7} Days</div>
+                          </div>
+                          {winningQuote.notes && (
+                            <div className="col-span-2 sm:col-span-3 text-gray-700 italic border-t border-gray-100 pt-1 mt-1">
+                              "{winningQuote.notes}"
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action Row: View Tax Invoice Button & Tracking Status */}
+                        <div className="pt-2 border-t border-emerald-200/80 flex flex-wrap items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsInvoiceOpen(true)}
+                            className="px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                          >
+                            <FileText size={14} />
+                            <span>View Official Tax Invoice & PO Certificate</span>
+                          </button>
+
+                          {canViewTracking ? (
+                            <div className="flex items-center gap-2 bg-emerald-100/90 text-emerald-950 px-3 py-1.5 rounded-xl border border-emerald-300 text-xs">
+                              <Truck size={14} className="text-emerald-700" />
+                              <span>{isSelf ? '🛵 Self-Delivery' : `🚚 ${order.courierName || 'Courier'}`}:</span>
+                              <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-200">{trackingNumberDisplay}</span>
+                              {trackingLinkDisplay && (
+                                <a
+                                  href={trackingLinkDisplay}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-emerald-700 hover:text-emerald-900 font-bold underline flex items-center gap-0.5 ml-1"
+                                >
+                                  Track <ExternalLink size={11} />
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200 flex items-center gap-1.5">
+                              <Lock size={12} className="text-gray-400" />
+                              <span>
+                                {isOut ? 'Out for Delivery (Delivery partner pending)' : 'Tracking available once Out for Delivery & partner decided'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Logistics & Dispatch Management Section */}
+                        <div className="mt-3 p-3.5 bg-white rounded-xl border border-emerald-200 text-xs space-y-3">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <span className="font-extrabold text-gray-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                              <Truck size={14} className="text-emerald-700" /> Logistics & Dispatch Management
+                            </span>
+                            {logisticsSavedMessage && (
+                              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                ✓ {logisticsSavedMessage}
+                              </span>
                             )}
                           </div>
-                        ) : (
-                          <div className="text-[11px] text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200 flex items-center gap-1.5">
-                            <Lock size={12} className="text-gray-400" />
-                            <span>
-                              {isOut ? 'Out for Delivery (Delivery partner pending)' : 'Tracking available once Out for Delivery & partner decided'}
-                            </span>
-                          </div>
-                        )}
+
+                          <form onSubmit={handleSaveLogistics} className="space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
+                                  Delivery / Order Status
+                                </label>
+                                <select
+                                  value={deliveryStatus}
+                                  onChange={(e) => setDeliveryStatus(e.target.value)}
+                                  className="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-xs font-bold text-gray-800 focus:outline-none focus:border-emerald-600"
+                                >
+                                  <option value="quote_accepted">Quote Accepted / In Preparation</option>
+                                  <option value="in_production">In Production / Processing</option>
+                                  <option value="out for delivery">Out for Delivery</option>
+                                  <option value="delivered">Delivered</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
+                                  Delivery Partner Mode
+                                </label>
+                                <div className="bg-teal-50 border border-teal-200 rounded-lg p-2 text-xs font-bold text-teal-900 flex items-center gap-1.5">
+                                  <Truck size={14} className="text-teal-700" />
+                                  <span>Exclusive Store Self-Delivery Fleet (Bulk Institutional Orders)</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Self-Delivery Rider Details */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-200">
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-0.5">Rider / Delivery Boy Name</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Ramesh Kumar"
+                                  value={deliveryPersonName}
+                                  onChange={(e) => setDeliveryPersonName(e.target.value)}
+                                  className="w-full bg-white border border-gray-300 rounded-md p-1.5 text-xs text-gray-800"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-0.5">Rider Mobile Number</label>
+                                <input
+                                  type="tel"
+                                  placeholder="e.g. 9876543210"
+                                  value={deliveryPersonPhone}
+                                  onChange={(e) => setDeliveryPersonPhone(e.target.value)}
+                                  className="w-full bg-white border border-gray-300 rounded-md p-1.5 text-xs text-gray-800"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-0.5">Vehicle Number</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. UP 32 AB 1234"
+                                  value={vehicleNumber}
+                                  onChange={(e) => setVehicleNumber(e.target.value)}
+                                  className="w-full bg-white border border-gray-300 rounded-md p-1.5 text-xs font-mono text-gray-800"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Live Delivery Tracker Verification Link Card */}
+                            {(() => {
+                              const tokenVal = order.deliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPartnerToken || `BV-SLF-${order.referenceId || order.id}`;
+                              const websiteOrigin = window.location.origin.replace(':5174', ':5173');
+                              const trackerUrl = `${websiteOrigin}/#delivery-partner?token=${tokenVal}`;
+                              return (
+                                <div className="p-2.5 bg-teal-50 border border-teal-200 rounded-xl space-y-1.5 text-xs">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-extrabold text-[11px] text-teal-950 uppercase tracking-wider flex items-center gap-1">
+                                      <ExternalLink size={12} className="text-teal-700" /> Live Delivery Tracker Verification Link:
+                                    </span>
+                                    <span className="font-mono text-[10px] font-bold bg-white text-teal-900 px-2 py-0.5 rounded border border-teal-200">
+                                      {tokenVal}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="text"
+                                      readOnly
+                                      value={trackerUrl}
+                                      className="flex-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-700 truncate select-all"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(trackerUrl);
+                                        alert('📋 Delivery Tracker Verification Link copied to clipboard!');
+                                      }}
+                                      className="px-3 py-1.5 bg-white hover:bg-teal-100 text-teal-900 border border-teal-300 font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                                    >
+                                      Copy Link
+                                    </button>
+                                    <a
+                                      href={trackerUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-3 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0 shadow-2xs"
+                                    >
+                                      Open Tracker
+                                    </a>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            <div className="flex justify-end pt-1">
+                              <button
+                                type="submit"
+                                className="px-4 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"
+                              >
+                                Save Logistics & Update Tracking
+                              </button>
+                            </div>
+                          </form>
+                        </div>
                       </div>
                     </div>
                   );
@@ -931,9 +1096,10 @@ export default function BulkOrderPreviewModal({
                     </thead>
                     <tbody className="divide-y divide-gray-200 text-xs">
                       {requirementsList.map((item, idx) => {
-                        const imagesList = Array.isArray(item.sampleImages) && item.sampleImages.length > 0
+                        const rawImages = Array.isArray(item.sampleImages) && item.sampleImages.length > 0
                           ? item.sampleImages
                           : (item.sampleImage ? [item.sampleImage] : []);
+                        const imagesList = rawImages.filter(img => typeof img === 'string' && img.trim() !== '');
 
                         const custBudget = Number(item.budgetPerUnit || item.budgetUnit || 0);
                         const myQuotedPrice = existingSellerQuote?.itemPrices?.find(
@@ -973,7 +1139,7 @@ export default function BulkOrderPreviewModal({
                                       onClick={() => setZoomImage(img)}
                                       className="relative w-9 h-9 rounded-lg overflow-hidden border-2 border-white shadow-2xs cursor-pointer group hover:z-10 hover:scale-110 transition-transform"
                                     >
-                                      <img src={img} alt="Sample" className="w-full h-full object-cover" />
+                                      <img src={img || null} alt="Sample" className="w-full h-full object-cover" />
                                     </div>
                                   ))}
                                   {imagesList.length > 3 && (
@@ -1274,21 +1440,35 @@ export default function BulkOrderPreviewModal({
                           const sId = seller.id || seller._id;
                           const isChecked = selectedMultipleSellers.includes(sId);
                           return (
-                            <label
+                            <div
                               key={sId}
                               onClick={() => toggleSellerSelect(sId)}
-                              className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                                isChecked ? 'bg-purple-50 border-purple-300 text-purple-900 font-bold' : 'bg-white border-gray-100 hover:bg-gray-50'
+                              className={`flex items-center justify-between p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                                isChecked ? 'bg-purple-50 border-purple-300 text-purple-900 font-bold shadow-2xs' : 'bg-white border-gray-100 hover:bg-purple-50/40 text-gray-700'
                               }`}
                             >
-                              <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={isChecked} onChange={() => {}} className="accent-purple-700" />
+                              <div className="flex items-center gap-2.5 select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    toggleSellerSelect(sId);
+                                  }}
+                                  className="accent-purple-700 w-4 h-4 cursor-pointer shrink-0"
+                                />
                                 <div>
-                                  <div>{seller.storeName || seller.businessName || seller.name}</div>
-                                  <div className="text-[10px] text-gray-400">{seller.ownerName} • {seller.city}</div>
+                                  <div className="font-bold text-gray-900">{seller.storeName || seller.businessName || seller.name}</div>
+                                  <div className="text-[10px] text-gray-500 font-normal">{seller.ownerName ? `${seller.ownerName} • ` : ''}{seller.city || 'Pan-India'}</div>
                                 </div>
                               </div>
-                            </label>
+                              {isChecked && (
+                                <span className="text-[10px] font-extrabold uppercase text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">
+                                  Selected
+                                </span>
+                              )}
+                            </div>
                           );
                         })
                       )}
@@ -2415,7 +2595,7 @@ export default function BulkOrderPreviewModal({
             >
               <X size={20} />
             </button>
-            <img src={zoomImage} alt="Sample Zoomed" className="w-full h-full object-contain max-h-[80vh] rounded-2xl" />
+            <img src={zoomImage || null} alt="Sample Zoomed" className="w-full h-full object-contain max-h-[80vh] rounded-2xl" />
           </div>
         </div>
       )}
@@ -2453,9 +2633,10 @@ export default function BulkOrderPreviewModal({
               
               {/* Image Gallery */}
               {(() => {
-                const itemImages = Array.isArray(selectedItemForDetail.sampleImages) && selectedItemForDetail.sampleImages.length > 0
+                const rawItemImages = Array.isArray(selectedItemForDetail.sampleImages) && selectedItemForDetail.sampleImages.length > 0
                   ? selectedItemForDetail.sampleImages
                   : (selectedItemForDetail.sampleImage ? [selectedItemForDetail.sampleImage] : []);
+                const itemImages = rawItemImages.filter(img => typeof img === 'string' && img.trim() !== '');
 
                 return (
                   <div className="space-y-2">
@@ -2471,7 +2652,7 @@ export default function BulkOrderPreviewModal({
                             onClick={() => setZoomImage(imgSrc)}
                             className="relative aspect-square rounded-xl overflow-hidden border border-gray-300 shadow-2xs group cursor-pointer"
                           >
-                            <img src={imgSrc} alt={`Sample ${iIdx + 1}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                            <img src={imgSrc || null} alt={`Sample ${iIdx + 1}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
                             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
                               <Eye size={16} />
                             </div>

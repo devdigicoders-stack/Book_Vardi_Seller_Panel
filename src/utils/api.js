@@ -567,6 +567,22 @@ export const createPromotionApi = async (promoData) => {
   }
 };
 
+export const updatePromotionApi = async (id, promoData) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/promotions/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(promoData)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
 export const deletePromotionApi = async (id) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/promotions/${id}`, {

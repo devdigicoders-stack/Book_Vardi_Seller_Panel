@@ -60,6 +60,7 @@ export default function SchoolOrdersTab() {
 
   // Self-Delivery Dispatch Modal State (Only Self Delivery allowed for bulk orders)
   const [dispatchModalOrder, setDispatchModalOrder] = useState(null);
+  const [dispatchStatus, setDispatchStatus] = useState('out for delivery');
   const [riderName, setRiderName] = useState('');
   const [riderPhone, setRiderPhone] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
@@ -81,6 +82,7 @@ export default function SchoolOrdersTab() {
   const [formData, setFormData] = useState({
     schoolName: '',
     contactPerson: '',
+    designation: 'Partner Merchant / Seller',
     contactPhone: '',
     contactEmail: '',
     requirementSummary: '',
@@ -949,6 +951,7 @@ export default function SchoolOrdersTab() {
                           <button
                             onClick={() => {
                               setDispatchModalOrder(req);
+                              setDispatchStatus(req.status || req.deliveryStatus || 'out for delivery');
                               setRiderName(req.deliveryDetails?.deliveryBoyName || '');
                               setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
                               setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
@@ -961,32 +964,23 @@ export default function SchoolOrdersTab() {
                           </button>
                         )}
 
-                        {/* 3. If Out for Delivery -> Update Logistics or Confirm Handover */}
+                        {/* 3. If Out for Delivery -> Update Logistics */}
                         {isOutForDelivery && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDispatchModalOrder(req);
-                                setRiderName(req.deliveryDetails?.deliveryBoyName || '');
-                                setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
-                                setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
-                                setDeliveryNotes(req.deliveryDetails?.notes || '');
-                              }}
-                              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold rounded-xl border border-amber-300 shadow-2xs transition-colors cursor-pointer"
-                            >
-                              <Truck size={14} className="text-amber-700" />
-                              <span>Update Logistics & Tracking</span>
-                            </button>
-
-                            <button
-                              onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'completed' })}
-                              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
-                            >
-                              <CheckCircle2 size={14} />
-                              <span>Confirm Handover & Completed</span>
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDispatchModalOrder(req);
+                              setDispatchStatus(req.status || req.deliveryStatus || 'out for delivery');
+                              setRiderName(req.deliveryDetails?.deliveryBoyName || '');
+                              setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
+                              setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
+                              setDeliveryNotes(req.deliveryDetails?.notes || '');
+                            }}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold rounded-xl border border-amber-300 shadow-2xs transition-colors cursor-pointer"
+                          >
+                            <Truck size={14} className="text-amber-700" />
+                            <span>Update Logistics & Tracking</span>
+                          </button>
                         )}
 
                         {/* 4. If Received or Completed */}
@@ -1276,7 +1270,7 @@ export default function SchoolOrdersTab() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-700">Contact Person</label>
                   <input
@@ -1284,8 +1278,22 @@ export default function SchoolOrdersTab() {
                     placeholder="Principal / Admin Officer"
                     value={formData.contactPerson}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Designation / Role</label>
+                  <select
+                    value={formData.designation || 'Partner Merchant / Seller'}
+                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
+                  >
+                    <option value="Partner Merchant / Seller">Partner Merchant / Seller / Distributor</option>
+                    <option value="Principal / Director">Principal / Director</option>
+                    <option value="Procurement Lead">Procurement Lead / Store Manager</option>
+                    <option value="Administrator">Administrator / Vice Principal</option>
+                    <option value="Teacher / Committee Lead">Teacher / Uniform Committee Lead</option>
+                  </select>
                 </div>
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-700">Phone</label>
@@ -1294,7 +1302,7 @@ export default function SchoolOrdersTab() {
                     placeholder="+91 98..."
                     value={formData.contactPhone}
                     onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
                   />
                 </div>
               </div>
@@ -1404,7 +1412,8 @@ export default function SchoolOrdersTab() {
 
                 const token = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
                 updateSchoolOrderStatus(dispatchModalOrder.id || dispatchModalOrder._id, {
-                  status: 'out for delivery',
+                  status: dispatchStatus || 'out for delivery',
+                  deliveryStatus: dispatchStatus || 'out for delivery',
                   deliveryDetails: {
                     deliveryBoyName: riderName.trim(),
                     deliveryBoyPhone: riderPhone.trim(),
@@ -1427,6 +1436,22 @@ export default function SchoolOrdersTab() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Delivery / Order Status *
+                  </label>
+                  <select
+                    value={dispatchStatus}
+                    onChange={(e) => setDispatchStatus(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-300 text-gray-800 font-bold focus:outline-none focus:border-teal-600 text-xs"
+                  >
+                    <option value="quote_accepted">Quote Accepted / In Preparation</option>
+                    <option value="in_production">In Production / Processing</option>
+                    <option value="out for delivery">Out for Delivery</option>
+                    <option value="delivered">Delivered & Completed</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
                     Delivery Partner Mode
                   </label>
                   <input
@@ -1436,7 +1461,9 @@ export default function SchoolOrdersTab() {
                     className="w-full px-3 py-2 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 font-bold cursor-not-allowed text-xs"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
                     Vehicle / Reg. Number
@@ -1447,6 +1474,19 @@ export default function SchoolOrdersTab() {
                     value={vehicleNumber}
                     onChange={(e) => setVehicleNumber(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 font-medium text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Special Dispatch Notes / Gate Instructions
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Deliver to Admin Block Gate 2..."
+                    value={deliveryNotes}
+                    onChange={(e) => setDeliveryNotes(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
                   />
                 </div>
               </div>
@@ -1479,19 +1519,6 @@ export default function SchoolOrdersTab() {
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 font-semibold text-xs"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
-                  Special Dispatch Notes / Gate Instructions
-                </label>
-                <textarea
-                  rows="2"
-                  placeholder="e.g. Deliver to Admin Block Gate 2; cartons marked 1-10..."
-                  value={deliveryNotes}
-                  onChange={(e) => setDeliveryNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
-                />
               </div>
 
               {/* Generated Delivery Tracker Verification Link Preview */}
@@ -1568,7 +1595,8 @@ export default function SchoolOrdersTab() {
                     }
                     const token = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
                     updateSchoolOrderStatus(dispatchModalOrder.id || dispatchModalOrder._id, {
-                      status: dispatchModalOrder.status === 'packed' ? 'out for delivery' : (dispatchModalOrder.status || 'out for delivery'),
+                      status: dispatchStatus || 'out for delivery',
+                      deliveryStatus: dispatchStatus || 'out for delivery',
                       deliveryDetails: {
                         deliveryBoyName: riderName.trim(),
                         deliveryBoyPhone: riderPhone.trim(),
@@ -1629,6 +1657,9 @@ export default function SchoolOrdersTab() {
           onAcceptDirect={(orderId) => {
             acceptSchoolOrder(orderId);
             setPreviewOrder(null);
+          }}
+          onUpdateLogistics={(orderId, payload) => {
+            updateSchoolOrderStatus(orderId, payload);
           }}
         />
       )}
