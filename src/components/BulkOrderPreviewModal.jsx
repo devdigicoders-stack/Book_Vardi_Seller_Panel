@@ -136,13 +136,8 @@ export default function BulkOrderPreviewModal({
       if (matchByStore) return matchByStore;
     }
 
-    // 4. In seller panel with sanitized array of length 1: it belongs to this seller!
-    if (userRole === 'seller' && order.quotations.length === 1) {
-      return order.quotations[0];
-    }
-
     return null;
-  }, [order?.quotations, currentSellerId, sellerCandidateIds, cleanSellerPhone, cleanSellerStore, userRole]);
+  }, [order?.quotations, currentSellerId, sellerCandidateIds, cleanSellerPhone, cleanSellerStore]);
 
   const isMyQuote = (q) => {
     if (!q) return false;
@@ -153,7 +148,6 @@ export default function BulkOrderPreviewModal({
     const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
     if (cleanSellerStore && qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore))) return true;
     if (existingSellerQuote && String(existingSellerQuote._id || existingSellerQuote.id) === String(q._id || q.id)) return true;
-    if (userRole === 'seller' && Array.isArray(order?.quotations) && order.quotations.length === 1) return true;
     return false;
   };
 
@@ -348,7 +342,7 @@ export default function BulkOrderPreviewModal({
       );
       if (found) return found;
       if (order.status === 'quote_accepted') {
-        return existingSellerQuote || order.quotations[0];
+        return existingSellerQuote;
       }
     }
     if (order.status === 'quote_accepted' && existingSellerQuote) {
@@ -589,6 +583,32 @@ export default function BulkOrderPreviewModal({
   };
 
   if (!order) return null;
+
+  const assignedSellerId = order.sellerId ? String(typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : '';
+  const isAssignedToMe = Boolean(assignedSellerId && (assignedSellerId === currentSellerId || sellerCandidateIds.includes(assignedSellerId)));
+  const isAssignedToAnother = Boolean(assignedSellerId && !isAssignedToMe);
+
+  if (userRole === 'seller' && isAssignedToAnother) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in">
+        <div className="bg-white rounded-3xl w-full max-w-md p-6 text-center shadow-2xl border border-red-200">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Lock size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h3>
+          <p className="text-sm text-gray-600 mb-6">
+            This school bulk order has been awarded to another seller for fulfillment. Access and fulfillment details are private.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in">

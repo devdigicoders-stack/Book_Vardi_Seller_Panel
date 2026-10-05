@@ -347,10 +347,6 @@ export const SellerDataProvider = ({ children }) => {
     try {
       const savedSync = localStorage.getItem('bv_sync_school_orders');
       if (savedSync) return JSON.parse(savedSync);
-      const savedAdmin = localStorage.getItem('admin_school_orders');
-      if (savedAdmin) return JSON.parse(savedAdmin);
-      const savedCust = localStorage.getItem('bv_customer_bulk_orders');
-      if (savedCust) return JSON.parse(savedCust);
       return [];
     } catch {
       return [];
@@ -733,36 +729,8 @@ export const SellerDataProvider = ({ children }) => {
 
         if (schoolRes.status === 'fulfilled' && Array.isArray(schoolRes.value)) {
           const apiList = schoolRes.value;
-          let localList = [];
-          try {
-            const raw = localStorage.getItem('bv_sync_school_orders') || localStorage.getItem('admin_school_orders') || localStorage.getItem('bv_customer_bulk_orders');
-            if (raw) localList = JSON.parse(raw);
-          } catch {}
-          const merged = [...apiList];
-          if (Array.isArray(localList)) {
-            localList.forEach(l => {
-              const idx = merged.findIndex(m => String(m.id || m._id || m.referenceId) === String(l.id || l._id || l.referenceId));
-              if (idx === -1) {
-                merged.push(l);
-              } else {
-                const serverOrder = merged[idx];
-                merged[idx] = {
-                  ...l,
-                  ...serverOrder,
-                  status: serverOrder.status || l.status,
-                  deliveryDetails: { ...l.deliveryDetails, ...serverOrder.deliveryDetails },
-                  quotations: (Array.isArray(serverOrder.quotations) && serverOrder.quotations.length > 0)
-                    ? serverOrder.quotations
-                    : (l.quotations || []),
-                  latestBuyerCounter: serverOrder.latestBuyerCounter || l.latestBuyerCounter,
-                  negotiationStage: serverOrder.negotiationStage || l.negotiationStage,
-                  currentVersion: serverOrder.currentVersion || l.currentVersion
-                };
-              }
-            });
-          }
-          setSchoolOrders(merged);
-          try { localStorage.setItem('bv_sync_school_orders', JSON.stringify(merged)); } catch {}
+          setSchoolOrders(apiList);
+          try { localStorage.setItem('bv_sync_school_orders', JSON.stringify(apiList)); } catch {}
         }
 
         if (promosRes.status === 'fulfilled' && Array.isArray(promosRes.value)) {
@@ -1660,13 +1628,14 @@ export const SellerDataProvider = ({ children }) => {
 
   const updateOrderStatus = async (id, status, details = {}) => {
     checkPermission();
-    editOrder(id, { status, ...details });
+    editOrder(id, { status, overallStatus: status, ...details });
     try {
       const res = await updateOrderStatusApi(id, status, details);
       if (res && (res.order || res.success)) {
         const updatedOrder = res.order || {};
-        editOrder(id, { ...updatedOrder, status: updatedOrder.status || status });
-        showToast(`Order #${id} status updated to ${status}`);
+        const finalStatus = updatedOrder.status || updatedOrder.overallStatus || status;
+        editOrder(id, { ...updatedOrder, status: finalStatus, overallStatus: finalStatus });
+        showToast(`Order #${id} status updated to ${finalStatus}`);
       } else if (res && (res.success === false || res.message)) {
         showToast(`⚠️ ${res.message || 'Failed to update order status'}`);
         handleOrderSync();
@@ -2402,17 +2371,17 @@ export const SellerDataProvider = ({ children }) => {
         isLoadingProducts,
         isLoadingKits,
         isLoadingSellerData,
-        // State
-        products,
-        kits,
-        orders,
-        promotions,
-        schoolOrders,
-        customers: activeCustomers,
-        finance,
-        reviews,
-        notifications,
-        shippingPartners,
+        // State (Guaranteed Array Safety)
+        products: Array.isArray(products) ? products : [],
+        kits: Array.isArray(kits) ? kits : [],
+        orders: Array.isArray(orders) ? orders : [],
+        promotions: Array.isArray(promotions) ? promotions : [],
+        schoolOrders: Array.isArray(schoolOrders) ? schoolOrders : [],
+        customers: Array.isArray(activeCustomers) ? activeCustomers : [],
+        finance: finance || { totalRevenue: 0, netProfit: 0, pendingPayout: 0, availableBalance: 0, recentTransactions: [] },
+        reviews: Array.isArray(reviews) ? reviews : [],
+        notifications: Array.isArray(notifications) ? notifications : [],
+        shippingPartners: Array.isArray(shippingPartners) ? shippingPartners : [],
         settings,
         // Product actions
         addProduct,
