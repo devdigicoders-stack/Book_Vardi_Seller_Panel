@@ -60,6 +60,7 @@ export default function SchoolOrdersTab() {
 
   // Self-Delivery Dispatch Modal State (Only Self Delivery allowed for bulk orders)
   const [dispatchModalOrder, setDispatchModalOrder] = useState(null);
+  const [dispatchStatus, setDispatchStatus] = useState('out for delivery');
   const [riderName, setRiderName] = useState('');
   const [riderPhone, setRiderPhone] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
@@ -81,6 +82,7 @@ export default function SchoolOrdersTab() {
   const [formData, setFormData] = useState({
     schoolName: '',
     contactPerson: '',
+    designation: 'Partner Merchant / Seller',
     contactPhone: '',
     contactEmail: '',
     requirementSummary: '',
@@ -106,43 +108,58 @@ export default function SchoolOrdersTab() {
     const cleanSellerPhone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
     const cleanSellerStore = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
 
-    return schoolOrders.filter((req) => {
+    const safeSchoolOrders = Array.isArray(schoolOrders) ? schoolOrders : [];
+    return safeSchoolOrders.filter((req) => {
       const assignedSellerId = req.sellerId ? String(typeof req.sellerId === 'object' ? (req.sellerId._id || req.sellerId.id) : req.sellerId) : '';
-      const isAssigned = Boolean(assignedSellerId && (assignedSellerId === currentSellerId || sellerCandidateIds.includes(assignedSellerId)));
-      const isInvited = Array.isArray(req.invitedSellerIds) && req.invitedSellerIds.some(
+      const isAssignedToMe = Boolean(assignedSellerId && (assignedSellerId === currentSellerId || sellerCandidateIds.includes(assignedSellerId)));
+      const isAssignedToAnother = Boolean(assignedSellerId && !isAssignedToMe);
+
+      const isInvitedToMe = Array.isArray(req.invitedSellerIds) && req.invitedSellerIds.some(
         s => {
           const sId = String(typeof s === 'object' ? (s._id || s.id) : s);
           return sId === currentSellerId || sellerCandidateIds.includes(sId);
         }
       );
-      const isBroadcast = req.assignmentMode === 'broadcast';
-      const hasSellerQuote = Array.isArray(req.quotations) && req.quotations.some(
+
+      const hasMySellerQuote = Array.isArray(req.quotations) && req.quotations.some(
         q => {
           const qSellerId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
           if (qSellerId && (qSellerId === currentSellerId || sellerCandidateIds.includes(qSellerId))) return true;
           if (cleanSellerPhone && String(q.sellerPhone || '').replace(/\D/g, '').slice(-10) === cleanSellerPhone) return true;
           if (cleanSellerStore && (q.sellerStoreName || q.sellerName || '').trim().toLowerCase() === cleanSellerStore) return true;
-          if (Array.isArray(req.quotations) && req.quotations.length === 1) return true;
           return false;
         }
       );
+
       const isWinningSeller = Boolean(req.acceptedQuoteId && req.quotations?.some(
         q => String(q._id || q.id) === String(req.acceptedQuoteId) && (
-          (currentSellerId && String(q.sellerId) === currentSellerId) ||
+          (currentSellerId && String(q.sellerId?._id || q.sellerId?.id || q.sellerId) === currentSellerId) ||
           sellerCandidateIds.includes(String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '')) ||
-          hasSellerQuote
+          (cleanSellerPhone && String(q.sellerPhone || '').replace(/\D/g, '').slice(-10) === cleanSellerPhone) ||
+          (cleanSellerStore && (q.sellerStoreName || q.sellerName || '').trim().toLowerCase() === cleanSellerStore)
         )
       ));
-      const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status);
 
-      // Access Control: Seller sees orders assigned to them, won by them, quoted by them, invited to, or broadcast
-      const hasAccess = isAssigned || isWinningSeller || hasSellerQuote || isInvited || isBroadcast || (req.assignmentMode && req.assignmentMode !== 'unassigned');
+      const isUnassignedBroadcast = (req.assignmentMode === 'broadcast' || !req.assignmentMode) &&
+        !assignedSellerId &&
+        !req.acceptedQuoteId &&
+        ['published', 'pending', 'quoted', 'unassigned', 'open', 'under_review'].includes(String(req.status || '').toLowerCase());
+
+      // STRICT ACCESS CONTROL RULES:
+      // A. If order is assigned/awarded to ANOTHER seller -> STRICT ACCESS DENIED
+      if (isAssignedToAnother && !isAssignedToMe) {
+        return false;
+      }
+
+      // B. Seller CAN see order IF:
+      // - Assigned to me OR won by me OR invited to me OR it's an unassigned open broadcast order OR I quoted on it before it was awarded
+      const hasAccess = isAssignedToMe || isWinningSeller || isInvitedToMe || isUnassignedBroadcast || (hasMySellerQuote && !isAssignedToAnother);
       if (!hasAccess) return false;
 
       // Channel Filter
       let channelMatch = true;
       if (channelFilter === 'Accepted') {
-        channelMatch = isAssigned || isWinningSeller || isAcceptedStatus;
+        channelMatch = isAssignedToMe || isWinningSeller;
       } else if (channelFilter === 'Direct') {
         channelMatch = req.assignmentMode === 'direct';
       } else if (channelFilter === 'Invited') {
@@ -252,14 +269,14 @@ export default function SchoolOrdersTab() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Available School RFQs</div>
-          <div className="text-2xl font-extrabold text-gray-900 mt-1">{schoolOrders.length}</div>
+          <div className="text-2xl font-extrabold text-gray-900 mt-1">{(schoolOrders || []).length}</div>
           <div className="text-[10px] text-teal-700 mt-0.5">Active bulk procurement opportunities</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Direct & Invited Orders</div>
           <div className="text-2xl font-extrabold text-blue-700 mt-1">
-            {schoolOrders.filter(s => s.assignmentMode === 'direct' || s.assignmentMode === 'selected').length}
+            {(schoolOrders || []).filter(s => s.assignmentMode === 'direct' || s.assignmentMode === 'selected').length}
           </div>
           <div className="text-[10px] text-gray-400 mt-0.5">Targeted vendor requisitions</div>
         </div>
@@ -267,7 +284,7 @@ export default function SchoolOrdersTab() {
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Accepted / Won RFQs</div>
           <div className="text-2xl font-extrabold text-emerald-700 mt-1">
-            {schoolOrders.filter(s => ['assigned', 'quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(s.status)).length}
+            {(schoolOrders || []).filter(s => ['assigned', 'quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(s.status)).length}
           </div>
           <div className="text-[10px] text-emerald-600 mt-0.5">Assigned & active fulfillment</div>
         </div>
@@ -949,6 +966,7 @@ export default function SchoolOrdersTab() {
                           <button
                             onClick={() => {
                               setDispatchModalOrder(req);
+                              setDispatchStatus(req.status || req.deliveryStatus || 'out for delivery');
                               setRiderName(req.deliveryDetails?.deliveryBoyName || '');
                               setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
                               setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
@@ -961,32 +979,23 @@ export default function SchoolOrdersTab() {
                           </button>
                         )}
 
-                        {/* 3. If Out for Delivery -> Update Logistics or Confirm Handover */}
+                        {/* 3. If Out for Delivery -> Update Logistics */}
                         {isOutForDelivery && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDispatchModalOrder(req);
-                                setRiderName(req.deliveryDetails?.deliveryBoyName || '');
-                                setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
-                                setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
-                                setDeliveryNotes(req.deliveryDetails?.notes || '');
-                              }}
-                              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold rounded-xl border border-amber-300 shadow-2xs transition-colors cursor-pointer"
-                            >
-                              <Truck size={14} className="text-amber-700" />
-                              <span>Update Logistics & Tracking</span>
-                            </button>
-
-                            <button
-                              onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'completed' })}
-                              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
-                            >
-                              <CheckCircle2 size={14} />
-                              <span>Confirm Handover & Completed</span>
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDispatchModalOrder(req);
+                              setDispatchStatus(req.status || req.deliveryStatus || 'out for delivery');
+                              setRiderName(req.deliveryDetails?.deliveryBoyName || '');
+                              setRiderPhone(req.deliveryDetails?.deliveryBoyPhone || '');
+                              setVehicleNumber(req.deliveryDetails?.vehicleNumber || '');
+                              setDeliveryNotes(req.deliveryDetails?.notes || '');
+                            }}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold rounded-xl border border-amber-300 shadow-2xs transition-colors cursor-pointer"
+                          >
+                            <Truck size={14} className="text-amber-700" />
+                            <span>Update Logistics & Tracking</span>
+                          </button>
                         )}
 
                         {/* 4. If Received or Completed */}
@@ -1276,7 +1285,7 @@ export default function SchoolOrdersTab() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-700">Contact Person</label>
                   <input
@@ -1284,8 +1293,22 @@ export default function SchoolOrdersTab() {
                     placeholder="Principal / Admin Officer"
                     value={formData.contactPerson}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Designation / Role</label>
+                  <select
+                    value={formData.designation || 'Partner Merchant / Seller'}
+                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
+                  >
+                    <option value="Partner Merchant / Seller">Partner Merchant / Seller / Distributor</option>
+                    <option value="Principal / Director">Principal / Director</option>
+                    <option value="Procurement Lead">Procurement Lead / Store Manager</option>
+                    <option value="Administrator">Administrator / Vice Principal</option>
+                    <option value="Teacher / Committee Lead">Teacher / Uniform Committee Lead</option>
+                  </select>
                 </div>
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-700">Phone</label>
@@ -1294,7 +1317,7 @@ export default function SchoolOrdersTab() {
                     placeholder="+91 98..."
                     value={formData.contactPhone}
                     onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
                   />
                 </div>
               </div>
@@ -1404,7 +1427,8 @@ export default function SchoolOrdersTab() {
 
                 const token = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
                 updateSchoolOrderStatus(dispatchModalOrder.id || dispatchModalOrder._id, {
-                  status: 'out for delivery',
+                  status: dispatchStatus || 'out for delivery',
+                  deliveryStatus: dispatchStatus || 'out for delivery',
                   deliveryDetails: {
                     deliveryBoyName: riderName.trim(),
                     deliveryBoyPhone: riderPhone.trim(),
@@ -1427,6 +1451,22 @@ export default function SchoolOrdersTab() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Delivery / Order Status *
+                  </label>
+                  <select
+                    value={dispatchStatus}
+                    onChange={(e) => setDispatchStatus(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-300 text-gray-800 font-bold focus:outline-none focus:border-teal-600 text-xs"
+                  >
+                    <option value="quote_accepted">Quote Accepted / In Preparation</option>
+                    <option value="in_production">In Production / Processing</option>
+                    <option value="out for delivery">Out for Delivery</option>
+                    <option value="delivered">Delivered & Completed</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
                     Delivery Partner Mode
                   </label>
                   <input
@@ -1436,7 +1476,9 @@ export default function SchoolOrdersTab() {
                     className="w-full px-3 py-2 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 font-bold cursor-not-allowed text-xs"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
                     Vehicle / Reg. Number
@@ -1447,6 +1489,19 @@ export default function SchoolOrdersTab() {
                     value={vehicleNumber}
                     onChange={(e) => setVehicleNumber(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 font-medium text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
+                    Special Dispatch Notes / Gate Instructions
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Deliver to Admin Block Gate 2..."
+                    value={deliveryNotes}
+                    onChange={(e) => setDeliveryNotes(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
                   />
                 </div>
               </div>
@@ -1479,19 +1534,6 @@ export default function SchoolOrdersTab() {
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-600 font-semibold text-xs"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-gray-700 uppercase tracking-wider text-[10px]">
-                  Special Dispatch Notes / Gate Instructions
-                </label>
-                <textarea
-                  rows="2"
-                  placeholder="e.g. Deliver to Admin Block Gate 2; cartons marked 1-10..."
-                  value={deliveryNotes}
-                  onChange={(e) => setDeliveryNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none text-xs"
-                />
               </div>
 
               {/* Generated Delivery Tracker Verification Link Preview */}
@@ -1568,7 +1610,8 @@ export default function SchoolOrdersTab() {
                     }
                     const token = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
                     updateSchoolOrderStatus(dispatchModalOrder.id || dispatchModalOrder._id, {
-                      status: dispatchModalOrder.status === 'packed' ? 'out for delivery' : (dispatchModalOrder.status || 'out for delivery'),
+                      status: dispatchStatus || 'out for delivery',
+                      deliveryStatus: dispatchStatus || 'out for delivery',
                       deliveryDetails: {
                         deliveryBoyName: riderName.trim(),
                         deliveryBoyPhone: riderPhone.trim(),
@@ -1629,6 +1672,9 @@ export default function SchoolOrdersTab() {
           onAcceptDirect={(orderId) => {
             acceptSchoolOrder(orderId);
             setPreviewOrder(null);
+          }}
+          onUpdateLogistics={(orderId, payload) => {
+            updateSchoolOrderStatus(orderId, payload);
           }}
         />
       )}

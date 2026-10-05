@@ -65,35 +65,38 @@ export function ToastProvider({ children }) {
       {/* Toast Render Container */}
       <div className="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 max-w-sm sm:max-w-md w-full px-4 pointer-events-none">
         {toasts.map((toast) => {
-          let bgStyle = 'bg-slate-900 border-slate-700 text-slate-100';
+          let containerStyle = 'bg-slate-900 border-l-4 border-l-sky-500 border-slate-700 text-white shadow-2xl';
+          let iconBg = 'bg-sky-500/20 text-sky-400';
           let IconComponent = Info;
-          let iconColor = 'text-sky-400';
 
           if (toast.type === 'success') {
-            bgStyle = 'bg-emerald-950/90 border-emerald-700/60 text-emerald-100';
+            containerStyle = 'bg-slate-900 border-l-4 border-l-emerald-500 border-slate-700 text-white shadow-2xl';
+            iconBg = 'bg-emerald-500/20 text-emerald-400';
             IconComponent = CheckCircle2;
-            iconColor = 'text-emerald-400';
           } else if (toast.type === 'error') {
-            bgStyle = 'bg-rose-950/90 border-rose-700/60 text-rose-100';
+            containerStyle = 'bg-slate-900 border-l-4 border-l-rose-500 border-slate-700 text-white shadow-2xl';
+            iconBg = 'bg-rose-500/20 text-rose-400';
             IconComponent = AlertCircle;
-            iconColor = 'text-rose-400';
           } else if (toast.type === 'warning') {
-            bgStyle = 'bg-amber-950/90 border-amber-700/60 text-amber-100';
+            containerStyle = 'bg-slate-900 border-l-4 border-l-amber-500 border-slate-700 text-white shadow-2xl';
+            iconBg = 'bg-amber-500/20 text-amber-400';
             IconComponent = AlertTriangle;
-            iconColor = 'text-amber-400';
           }
 
           return (
             <div
               key={toast.id}
-              className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-bottom-5 text-xs sm:text-sm font-medium ${bgStyle}`}
+              className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border transition-all duration-300 animate-in fade-in slide-in-from-bottom-5 text-xs sm:text-sm font-medium ${containerStyle}`}
               role="alert"
             >
-              <IconComponent className={`w-5 h-5 shrink-0 mt-0.5 ${iconColor}`} />
-              <div className="flex-1 leading-relaxed whitespace-pre-line">{toast.message}</div>
+              <div className={`p-1.5 rounded-lg shrink-0 flex items-center justify-center ${iconBg}`}>
+                <IconComponent className="w-5 h-5 shrink-0" />
+              </div>
+              <div className="flex-1 leading-relaxed whitespace-pre-line text-white font-medium">{toast.message}</div>
               <button
                 onClick={() => removeToast(toast.id)}
-                className="opacity-70 hover:opacity-100 p-0.5 rounded-md hover:bg-white/10 transition-colors shrink-0"
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0"
+                aria-label="Close notification"
               >
                 <X className="w-4 h-4" />
               </button>

@@ -269,6 +269,18 @@ export default function NegotiationTimelineDiv({
 }) {
   if (!quotation) return null;
 
+  const qIdStr = String(quotation._id || quotation.id || '');
+  const isApproved = useMemo(() => {
+    if (quotation.status === 'approved' || quotation.status === 'buyer_accepted' || quotation.status === 'seller_accepted') return true;
+    const acceptedIdStr = String(order?.acceptedQuoteId || order?.winningQuoteId || order?.acceptedQuote?._id || order?.acceptedQuote?.id || '');
+    if (acceptedIdStr && (acceptedIdStr === qIdStr || (quotation.sellerId && String(quotation.sellerId) === String(order?.sellerId)))) return true;
+    const ordStatusLower = String(order?.status || '').toLowerCase();
+    if (['assigned', 'accepted', 'approved', 'quote_accepted', 'buyer_accepted', 'seller_accepted', 'advance_paid', 'completed', 'delivered'].includes(ordStatusLower)) {
+      if (quotation.status !== 'rejected') return true;
+    }
+    return false;
+  }, [quotation, order, qIdStr]);
+
   // Extract all historical and synthesized rounds
   const allVersions = useMemo(() => {
     return extractAllQuotationVersions(quotation, order);
@@ -568,56 +580,65 @@ export default function NegotiationTimelineDiv({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Seller Actions */}
-              {userRole === 'seller' && (
+              {isApproved ? (
+                <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3.5 py-2 rounded-xl flex items-center gap-1.5 border border-emerald-200 shadow-2xs">
+                  <CheckCircle2 size={16} className="text-emerald-700" />
+                  <span>Approved & Winning Seller Quote</span>
+                </span>
+              ) : (
                 <>
-                  {quotation.negotiationStage === 'buyer_countered' && onAcceptCounterDemand && (
-                    <button
-                      type="button"
-                      onClick={() => onAcceptCounterDemand(order?.id || order?._id, quotation._id || quotation.id)}
-                      className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 size={14} />
-                      <span>Accept Buyer Counter (₹{Number(quotation.latestBuyerCounter?.targetBudget || activeVersion.quoteAmount).toLocaleString()})</span>
-                    </button>
+                  {/* Seller Actions */}
+                  {userRole === 'seller' && (
+                    <>
+                      {quotation.negotiationStage === 'buyer_countered' && onAcceptCounterDemand && (
+                        <button
+                          type="button"
+                          onClick={() => onAcceptCounterDemand(order?.id || order?._id, quotation._id || quotation.id)}
+                          className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 size={14} />
+                          <span>Accept Buyer Counter (₹{Number(quotation.latestBuyerCounter?.targetBudget || activeVersion.quoteAmount).toLocaleString()})</span>
+                        </button>
+                      )}
+
+                      {onOpenPitchRevise && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenPitchRevise(quotation)}
+                          className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Sparkles size={14} />
+                          <span>Revise Quotation Pitch</span>
+                        </button>
+                      )}
+                    </>
                   )}
 
-                  {onOpenPitchRevise && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenPitchRevise(quotation)}
-                      className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Sparkles size={14} />
-                      <span>Revise Quotation Pitch</span>
-                    </button>
-                  )}
-                </>
-              )}
+                  {/* Buyer Actions */}
+                  {userRole === 'consumer' && (
+                    <>
+                      {onOpenCounterDemand && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenCounterDemand(quotation)}
+                          className="px-3.5 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Clock size={14} />
+                          <span>Send Counter-Demand</span>
+                        </button>
+                      )}
 
-              {/* Buyer Actions */}
-              {userRole === 'consumer' && quotation.status !== 'approved' && (
-                <>
-                  {onOpenCounterDemand && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenCounterDemand(quotation)}
-                      className="px-3.5 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Clock size={14} />
-                      <span>Send Counter-Demand</span>
-                    </button>
-                  )}
-
-                  {onApproveQuote && (
-                    <button
-                      type="button"
-                      onClick={() => onApproveQuote(order?.id || order?._id, quotation._id || quotation.id)}
-                      className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 size={14} />
-                      <span>Approve Winning Proposal</span>
-                    </button>
+                      {onApproveQuote && (
+                        <button
+                          type="button"
+                          onClick={() => onApproveQuote(order?.id || order?._id, quotation._id || quotation.id)}
+                          className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 size={14} />
+                          <span>Approve Winning Proposal</span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </>
               )}

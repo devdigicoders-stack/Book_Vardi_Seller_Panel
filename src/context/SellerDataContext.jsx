@@ -29,6 +29,7 @@ import {
   reviseSchoolQuoteApi,
   fetchPromotionsApi,
   createPromotionApi,
+  updatePromotionApi,
   deletePromotionApi,
   togglePromotionStatusApi,
   fetchSellerWalletApi,
@@ -346,10 +347,6 @@ export const SellerDataProvider = ({ children }) => {
     try {
       const savedSync = localStorage.getItem('bv_sync_school_orders');
       if (savedSync) return JSON.parse(savedSync);
-      const savedAdmin = localStorage.getItem('admin_school_orders');
-      if (savedAdmin) return JSON.parse(savedAdmin);
-      const savedCust = localStorage.getItem('bv_customer_bulk_orders');
-      if (savedCust) return JSON.parse(savedCust);
       return [];
     } catch {
       return [];
@@ -732,36 +729,8 @@ export const SellerDataProvider = ({ children }) => {
 
         if (schoolRes.status === 'fulfilled' && Array.isArray(schoolRes.value)) {
           const apiList = schoolRes.value;
-          let localList = [];
-          try {
-            const raw = localStorage.getItem('bv_sync_school_orders') || localStorage.getItem('admin_school_orders') || localStorage.getItem('bv_customer_bulk_orders');
-            if (raw) localList = JSON.parse(raw);
-          } catch {}
-          const merged = [...apiList];
-          if (Array.isArray(localList)) {
-            localList.forEach(l => {
-              const idx = merged.findIndex(m => String(m.id || m._id || m.referenceId) === String(l.id || l._id || l.referenceId));
-              if (idx === -1) {
-                merged.push(l);
-              } else {
-                const serverOrder = merged[idx];
-                merged[idx] = {
-                  ...l,
-                  ...serverOrder,
-                  status: serverOrder.status || l.status,
-                  deliveryDetails: { ...l.deliveryDetails, ...serverOrder.deliveryDetails },
-                  quotations: (Array.isArray(serverOrder.quotations) && serverOrder.quotations.length > 0)
-                    ? serverOrder.quotations
-                    : (l.quotations || []),
-                  latestBuyerCounter: serverOrder.latestBuyerCounter || l.latestBuyerCounter,
-                  negotiationStage: serverOrder.negotiationStage || l.negotiationStage,
-                  currentVersion: serverOrder.currentVersion || l.currentVersion
-                };
-              }
-            });
-          }
-          setSchoolOrders(merged);
-          try { localStorage.setItem('bv_sync_school_orders', JSON.stringify(merged)); } catch {}
+          setSchoolOrders(apiList);
+          try { localStorage.setItem('bv_sync_school_orders', JSON.stringify(apiList)); } catch {}
         }
 
         if (promosRes.status === 'fulfilled' && Array.isArray(promosRes.value)) {
@@ -1648,31 +1617,43 @@ export const SellerDataProvider = ({ children }) => {
     checkPermission();
     const strId = String(id);
     setOrders(prev => {
-      const updated = prev.map(o => (String(o.id || o._id) === strId ? { ...o, ...updates } : o));
+      const updated = prev.map(o => (
+        String(o.id) === strId || String(o._id) === strId || String(o.orderId) === strId
+          ? { ...o, ...updates }
+          : o
+      ));
       return updated;
     });
   };
 
   const updateOrderStatus = async (id, status, details = {}) => {
     checkPermission();
-    editOrder(id, { status, ...details });
+    editOrder(id, { status, overallStatus: status, ...details });
     try {
       const res = await updateOrderStatusApi(id, status, details);
-      if (res && res.order) {
-        editOrder(id, { ...res.order, status: res.order.status || status });
+      if (res && (res.order || res.success)) {
+        const updatedOrder = res.order || {};
+        const finalStatus = updatedOrder.status || updatedOrder.overallStatus || status;
+        editOrder(id, { ...updatedOrder, status: finalStatus, overallStatus: finalStatus });
+        showToast(`Order #${id} status updated to ${finalStatus}`);
+      } else if (res && (res.success === false || res.message)) {
+        showToast(`⚠️ ${res.message || 'Failed to update order status'}`);
+        handleOrderSync();
+        return res;
+      } else {
+        showToast(`Order #${id} status updated to ${status}`);
       }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: { orderId: id, status, ...details } }));
         localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
       }
-      showToast(`Order #${id} status updated to ${status}`);
       return res;
     } catch (err) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: { orderId: id, status, ...details } }));
         localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
       }
-      showToast(`Order #${id} status updated locally.`);
+      showToast(`Order #${id} status updated.`);
       return null;
     }
   };
@@ -1734,20 +1715,34 @@ export const SellerDataProvider = ({ children }) => {
       throw new Error('Validation failed: Discount value must be greater than 0.');
     }
 
+    const scopeVal = promo.applicableScope || promo.scope || (promo.specificProductId ? 'specific_product' : (promo.specificKitId ? 'specific_kit' : 'storewide'));
+
     const newPromo = {
-      id: Date.now(),
+      id: promo.id || Date.now(),
+      _id: promo._id || promo.id || Date.now(),
       code: promo.code.trim().toUpperCase(),
       title: promo.title || promo.code.trim().toUpperCase(),
       discountType: promo.discountType || 'percentage',
       discountValue: discountVal,
-      minOrderValue: Number(promo.minOrderValue) || 499,
-      maxDiscount: Number(promo.maxDiscount) || 300,
-      validFrom: promo.validFrom || new Date().toISOString().split('T')[0],
-      validUntil: promo.validUntil || '2026-12-31',
-      usageLimit: Number(promo.usageLimit) || 500,
-      usageCount: 0,
+      minOrderValue: Number(promo.minOrderValue ?? promo.minOrderAmount ?? 499),
+      minOrderAmount: Number(promo.minOrderValue ?? promo.minOrderAmount ?? 499),
+      maxDiscount: Number(promo.maxDiscount ?? 0),
+      validFrom: promo.validFrom || promo.startDate || new Date().toISOString().split('T')[0],
+      validUntil: promo.validUntil || promo.endDate || '2026-12-31',
+      usageLimit: Number(promo.usageLimit ?? promo.limit ?? promo.maxRedemptions ?? 0),
+      usageCount: Number(promo.usageCount || 0),
       status: promo.status || 'active',
-      scope: promo.scope || (promo.specificProductId ? 'product' : 'storewide')
+      scope: scopeVal,
+      applicableScope: scopeVal,
+      specificProductId: promo.specificProductId || null,
+      specificProductName: promo.specificProductName || null,
+      specificProductSku: promo.specificProductSku || null,
+      specificProductImage: promo.specificProductImage || null,
+      specificKitId: promo.specificKitId || null,
+      specificKitTitle: promo.specificKitTitle || null,
+      specificKitImage: promo.specificKitImage || null,
+      applicableProducts: promo.applicableProducts || (promo.specificProductId ? [String(promo.specificProductId)] : []),
+      applicableKits: promo.applicableKits || (promo.specificKitId ? [String(promo.specificKitId)] : [])
     };
 
     setPromotions(prev => {
@@ -1755,17 +1750,30 @@ export const SellerDataProvider = ({ children }) => {
       return updated;
     });
 
-    createPromotionApi(newPromo).catch(() => {});
+    createPromotionApi(newPromo).then(res => {
+      if (res && res.offer) {
+        setPromotions(prev => prev.map(p => (p.id === newPromo.id ? { ...p, ...res.offer, id: res.offer._id || p.id } : p)));
+      }
+    }).catch(() => {});
     return newPromo;
   };
 
   const editPromotion = (id, updates) => {
     checkPermission();
+    const strId = String(id);
+    const scopeVal = updates.applicableScope || updates.scope;
+    const cleanUpdates = {
+      ...updates,
+      ...(scopeVal ? { scope: scopeVal, applicableScope: scopeVal } : {})
+    };
     setPromotions(prev => {
-      const updated = prev.map(p => (p.id === id ? { ...p, ...updates } : p));
+      const updated = prev.map(p => (String(p.id || p._id) === strId ? { ...p, ...cleanUpdates } : p));
       return updated;
     });
+    updatePromotionApi(id, cleanUpdates).catch(() => {});
   };
+
+  const updatePromotion = editPromotion;
 
   const deletePromotion = (id) => {
     checkPermission();
@@ -2034,26 +2042,37 @@ export const SellerDataProvider = ({ children }) => {
     }
   };
 
-  const updateSchoolOrderStatus = async (id, { status, deliveryDetails = {} }) => {
+  const updateSchoolOrderStatus = async (id, payload = {}) => {
     checkPermission();
     const currentSellerId = String(sellerUser?.id || sellerUser?._id || '');
+
+    const status = payload?.status || payload?.deliveryStatus;
+    const incomingDetails = payload?.deliveryDetails || payload?.selfDeliveryDetails || (typeof payload === 'object' ? payload : {});
 
     setSchoolOrders(prev => {
       const updatedList = prev.map(s => {
         if (String(s.id || s._id) === String(id) || String(s.referenceId) === String(id)) {
           const existingDetails = s.deliveryDetails || {};
-          const isOutForDelivery = status === 'out for delivery' || status === 'out_for_delivery';
-          const isReceived = status === 'received' || status === 'delivered';
+          const newStatus = status || s.status || 'quote_accepted';
+          const isOutForDelivery = newStatus === 'out for delivery' || newStatus === 'out_for_delivery';
+          const isReceived = newStatus === 'received' || newStatus === 'delivered';
+
+          const riderName = incomingDetails.deliveryBoyName || incomingDetails.deliveryPersonName || existingDetails.deliveryBoyName || existingDetails.deliveryPersonName || '';
+          const riderPhone = incomingDetails.deliveryBoyPhone || incomingDetails.deliveryPersonPhone || existingDetails.deliveryBoyPhone || existingDetails.deliveryPersonPhone || '';
+          const vehicleNum = incomingDetails.vehicleNumber || existingDetails.vehicleNumber || '';
+          const trackingToken = incomingDetails.deliveryPartnerToken || incomingDetails.trackingId || existingDetails.deliveryPartnerToken || existingDetails.trackingId || `BV-SLF-${s.referenceId || id}`;
 
           const mergedDetails = {
             ...existingDetails,
-            ...deliveryDetails,
-            deliveryBoyName: deliveryDetails.deliveryBoyName || existingDetails.deliveryBoyName || '',
-            deliveryBoyPhone: deliveryDetails.deliveryBoyPhone || existingDetails.deliveryBoyPhone || '',
-            vehicleNumber: deliveryDetails.vehicleNumber || existingDetails.vehicleNumber || '',
-            trackingId: deliveryDetails.trackingId || existingDetails.trackingId || `BV-SLF-${s.referenceId || id}`,
-            trackingUrl: deliveryDetails.trackingUrl || existingDetails.trackingUrl || `/#delivery-partner?token=BV-SLF-${s.referenceId || id}`,
-            deliveryPartnerToken: deliveryDetails.deliveryPartnerToken || existingDetails.deliveryPartnerToken || `BV-SLF-${s.referenceId || id}`,
+            ...incomingDetails,
+            deliveryBoyName: riderName,
+            deliveryPersonName: riderName,
+            deliveryBoyPhone: riderPhone,
+            deliveryPersonPhone: riderPhone,
+            vehicleNumber: vehicleNum,
+            trackingId: trackingToken,
+            deliveryPartnerToken: trackingToken,
+            trackingUrl: `/#delivery-partner?token=${trackingToken}`,
             dispatchedAt: isOutForDelivery ? (existingDetails.dispatchedAt || new Date().toISOString()) : existingDetails.dispatchedAt,
             deliveredAt: isReceived ? new Date().toISOString() : existingDetails.deliveredAt,
             deliveryMode: 'self_delivery'
@@ -2061,7 +2080,8 @@ export const SellerDataProvider = ({ children }) => {
 
           return {
             ...s,
-            status,
+            status: newStatus,
+            deliveryStatus: newStatus,
             deliveryMode: 'self_delivery',
             deliveryDetails: mergedDetails,
             sellerId: s.sellerId || currentSellerId
@@ -2089,7 +2109,7 @@ export const SellerDataProvider = ({ children }) => {
       } catch (e) {}
 
       window.dispatchEvent(new CustomEvent('bv_school_orders_updated', {
-        detail: { orderId: id, status, deliveryDetails }
+        detail: { orderId: id, status, deliveryDetails: incomingDetails }
       }));
       window.dispatchEvent(new Event('storage'));
 
@@ -2097,12 +2117,13 @@ export const SellerDataProvider = ({ children }) => {
     });
 
     try {
-      const res = await updateSchoolOrderStatusApi(id, status, deliveryDetails);
+      const targetStatus = status || 'quote_accepted';
+      const res = await updateSchoolOrderStatusApi(id, targetStatus, incomingDetails);
       if (res?.success) {
-        showToast(`School bulk order status updated to ${status.replace(/_/g, ' ')}!`);
+        showToast(`School bulk order status updated!`);
       } else {
-        await updateSchoolOrderApi(id, { status, deliveryMode: 'self_delivery', deliveryDetails });
-        showToast(`School bulk order status updated to ${status.replace(/_/g, ' ')}!`);
+        await updateSchoolOrderApi(id, { status: targetStatus, deliveryMode: 'self_delivery', deliveryDetails: incomingDetails });
+        showToast(`School bulk order status updated!`);
       }
     } catch (e) {
       console.warn('Backend update bulk order status fallback:', e);
@@ -2350,17 +2371,17 @@ export const SellerDataProvider = ({ children }) => {
         isLoadingProducts,
         isLoadingKits,
         isLoadingSellerData,
-        // State
-        products,
-        kits,
-        orders,
-        promotions,
-        schoolOrders,
-        customers: activeCustomers,
-        finance,
-        reviews,
-        notifications,
-        shippingPartners,
+        // State (Guaranteed Array Safety)
+        products: Array.isArray(products) ? products : [],
+        kits: Array.isArray(kits) ? kits : [],
+        orders: Array.isArray(orders) ? orders : [],
+        promotions: Array.isArray(promotions) ? promotions : [],
+        schoolOrders: Array.isArray(schoolOrders) ? schoolOrders : [],
+        customers: Array.isArray(activeCustomers) ? activeCustomers : [],
+        finance: finance || { totalRevenue: 0, netProfit: 0, pendingPayout: 0, availableBalance: 0, recentTransactions: [] },
+        reviews: Array.isArray(reviews) ? reviews : [],
+        notifications: Array.isArray(notifications) ? notifications : [],
+        shippingPartners: Array.isArray(shippingPartners) ? shippingPartners : [],
         settings,
         // Product actions
         addProduct,
@@ -2386,6 +2407,7 @@ export const SellerDataProvider = ({ children }) => {
         // Promo actions
         addPromotion,
         editPromotion,
+        updatePromotion,
         deletePromotion,
         togglePromotionStatus,
         // School Order actions
