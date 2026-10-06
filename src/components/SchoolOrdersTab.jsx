@@ -140,10 +140,10 @@ export default function SchoolOrdersTab() {
         )
       ));
 
-      const isUnassignedBroadcast = (req.assignmentMode === 'broadcast' || !req.assignmentMode) &&
+      const isUnassignedBroadcast = (req.assignmentMode === 'broadcast' || req.isGlobalRfq || req.isGlobal || req.isPublic) &&
         !assignedSellerId &&
         !req.acceptedQuoteId &&
-        ['published', 'pending', 'quoted', 'unassigned', 'open', 'under_review'].includes(String(req.status || '').toLowerCase());
+        !['completed', 'fulfilled', 'cancelled', 'rejected'].includes(String(req.status || '').toLowerCase());
 
       // STRICT ACCESS CONTROL RULES:
       // A. If order is assigned/awarded to ANOTHER seller -> STRICT ACCESS DENIED
@@ -870,7 +870,7 @@ export default function SchoolOrdersTab() {
                       Prepayment Pending
                     </span>
                   </div>
-                ) : (req.buyerAdvancePercentage || req.buyerAdvanceAmount || req.sellerAdvancePercentage || req.sellerAdvanceAmount || isPrepaymentPaid) ? (
+                ) : isPrepaymentPaid ? (
                   <div className="bg-emerald-50/70 border border-emerald-200/80 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
                       <DollarSign size={14} className="text-emerald-700 shrink-0" />

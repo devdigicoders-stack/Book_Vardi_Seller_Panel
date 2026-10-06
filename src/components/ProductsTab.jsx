@@ -999,7 +999,7 @@ export default function ProductsTab() {
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-extrabold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
                               <Layers size={14} className="text-teal-700" />
-                              <span>Product Variants Matrix & Detail Photos ({detailVariants.length})</span>
+                              <span>Product Variants & Detail Photos ({detailVariants.length})</span>
                             </span>
                             <button
                               type="button"
@@ -1062,7 +1062,6 @@ export default function ProductsTab() {
                                 <tr>
                                   <th className="px-3 py-2">Variant Value</th>
                                   <th className="px-3 py-2">Variant Photos</th>
-                                  <th className="px-3 py-2">Scale</th>
                                   <th className="px-3 py-2">Price (₹)</th>
                                   <th className="px-3 py-2">MRP (₹)</th>
                                   <th className="px-3 py-2">Stock</th>
@@ -1113,11 +1112,6 @@ export default function ProductsTab() {
                                         ) : (
                                           <span className="text-[10px] text-gray-400 italic">No photos</span>
                                         )}
-                                      </td>
-                                      <td className="px-3 py-2">
-                                        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] uppercase font-bold">
-                                          {v.measureScale || v.scaleUnit || 'size'}
-                                        </span>
                                       </td>
                                       <td className="px-3 py-2 font-extrabold text-gray-900">₹{v.price}</td>
                                       <td className="px-3 py-2 text-gray-400 line-through">₹{v.mrp || Math.round(v.price * 1.25)}</td>

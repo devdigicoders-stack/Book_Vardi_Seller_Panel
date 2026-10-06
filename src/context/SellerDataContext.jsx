@@ -16,6 +16,7 @@ import {
   updateStockApi,
   fetchSellerOrdersApi,
   updateOrderStatusApi,
+  updateSellerOrderItemStatusApi,
   updateReturnExchangeStatusApi,
   fetchSchoolOrdersApi,
   createSchoolOrderApi,
@@ -523,23 +524,28 @@ export const SellerDataProvider = ({ children }) => {
 
   const normalizeOrderList = (ordersList) => {
     if (!Array.isArray(ordersList)) return [];
-    return ordersList.map(o => ({
-      ...o,
-      id: String(o.id || o._id || o.orderId || ''),
-      _id: o._id || o.id,
-      orderId: o.orderId || o.id || o._id,
-      shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
-        ? [
-            o.shippingAddress.name || o.shippingAddress.fullName,
-            o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address,
-            o.shippingAddress.colony || o.shippingAddress.landmark,
-            o.shippingAddress.city,
-            o.shippingAddress.state,
-            o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null,
-            o.shippingAddress.phone ? `(Phone: ${o.shippingAddress.phone})` : null
-          ].filter(Boolean).join(', ')
-        : (o.shippingAddress || 'Store / Counter Pickup')
-    }));
+    return ordersList.map(o => {
+      const resolvedStatus = o.status || o.overallStatus || (o.items && o.items[0]?.status) || 'Pending';
+      return {
+        ...o,
+        id: String(o.id || o._id || o.orderId || ''),
+        _id: o._id || o.id,
+        orderId: o.orderId || o.id || o._id,
+        status: resolvedStatus,
+        overallStatus: resolvedStatus,
+        shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
+          ? [
+              o.shippingAddress.name || o.shippingAddress.fullName,
+              o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address,
+              o.shippingAddress.colony || o.shippingAddress.landmark,
+              o.shippingAddress.city,
+              o.shippingAddress.state,
+              o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null,
+              o.shippingAddress.phone ? `(Phone: ${o.shippingAddress.phone})` : null
+            ].filter(Boolean).join(', ')
+          : (o.shippingAddress || 'Store / Counter Pickup')
+      };
+    });
   };
 
   // Real-time synchronization of orders for seller panel
@@ -1617,11 +1623,25 @@ export const SellerDataProvider = ({ children }) => {
     checkPermission();
     const strId = String(id);
     setOrders(prev => {
-      const updated = prev.map(o => (
-        String(o.id) === strId || String(o._id) === strId || String(o.orderId) === strId
-          ? { ...o, ...updates }
-          : o
-      ));
+      const updated = prev.map(o => {
+        if (String(o.id) === strId || String(o._id) === strId || String(o.orderId) === strId) {
+          const newStatus = updates.status || updates.overallStatus || o.status;
+          const updatedItems = Array.isArray(o.items)
+            ? o.items.map(item => ({ ...item, status: newStatus }))
+            : o.items;
+          return {
+            ...o,
+            ...updates,
+            status: newStatus,
+            overallStatus: newStatus,
+            items: updatedItems
+          };
+        }
+        return o;
+      });
+      try {
+        localStorage.setItem('bv_seller_orders', JSON.stringify(updated));
+      } catch (e) {}
       return updated;
     });
   };
@@ -1634,7 +1654,7 @@ export const SellerDataProvider = ({ children }) => {
       if (res && (res.order || res.success)) {
         const updatedOrder = res.order || {};
         const finalStatus = updatedOrder.status || updatedOrder.overallStatus || status;
-        editOrder(id, { ...updatedOrder, status: finalStatus, overallStatus: finalStatus });
+        editOrder(id, { ...updatedOrder, status: finalStatus, overallStatus: finalStatus, ...details });
         showToast(`Order #${id} status updated to ${finalStatus}`);
       } else if (res && (res.success === false || res.message)) {
         showToast(`⚠️ ${res.message || 'Failed to update order status'}`);
@@ -1653,7 +1673,37 @@ export const SellerDataProvider = ({ children }) => {
         window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: { orderId: id, status, ...details } }));
         localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
       }
-      showToast(`Order #${id} status updated.`);
+      showToast(`Order #${id} status updated to ${status}`);
+      return null;
+    }
+  };
+
+  const updateOrderItemStatus = async (orderId, itemId, status, details = {}) => {
+    checkPermission();
+    try {
+      const res = await updateSellerOrderItemStatusApi(orderId, itemId, status, details);
+      if (res && (res.order || res.success)) {
+        const updatedOrder = res.order || {};
+        editOrder(orderId, updatedOrder);
+        showToast(res.message || `Item status updated to ${status}`);
+      } else if (res && (res.success === false || res.message)) {
+        showToast(`⚠️ ${res.message || 'Failed to update item status'}`);
+        handleOrderSync();
+        return res;
+      } else {
+        showToast(`Item status updated to ${status}`);
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: { orderId, itemId, status, ...details } }));
+        localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+      }
+      return res;
+    } catch (err) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: { orderId, itemId, status, ...details } }));
+        localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+      }
+      showToast(`Item status updated to ${status}`);
       return null;
     }
   };
@@ -2401,6 +2451,7 @@ export const SellerDataProvider = ({ children }) => {
         addOrder,
         editOrder,
         updateOrderStatus,
+        updateOrderItemStatus,
         updateReturnExchangeStatus,
         deleteOrder,
         downloadSellerInvoice,
