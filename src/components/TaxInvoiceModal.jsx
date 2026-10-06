@@ -26,8 +26,50 @@ export function getProductGstRate(item) {
 export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
 
-  const orderStatus = String(order.status || order.overallStatus || '').toLowerCase();
-  const confirmed = orderStatus === 'confirmed' || orderStatus === 'shipped' || orderStatus === 'out for delivery' || orderStatus === 'out_for_delivery' || orderStatus === 'delivered' || orderStatus === 'processing' || order.paymentStatus === 'paid' || order.paymentStatus === 'Paid';
+  const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+  const normStatus = rawStatus.replace(/[\s-]+/g, '_');
+
+  const isPendingUnconfirmed = !normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus);
+
+  const isConfirmedAndOnward = [
+    'confirmed',
+    'quote_accepted',
+    'buyer_accepted',
+    'seller_accepted',
+    'processing',
+    'production',
+    'packed',
+    'packed_and_sealed',
+    'shipped',
+    'dispatched',
+    'in_transit',
+    'out_for_delivery',
+    'delivered',
+    'completed',
+    'delivered_to_customer',
+    'order_delivered',
+    'return_requested',
+    'returned',
+    'exchange_requested',
+    'exchanged',
+    'return_approved',
+    'exchange_approved',
+    'refund_requested',
+    'refunded',
+    'cancelled',
+    'canceled'
+  ].includes(normStatus) || (!isPendingUnconfirmed && normStatus.length > 0);
+
+  const hasConfirmedItem = Array.isArray(order.items) && order.items.some(it => {
+    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    return itStatus && !['pending', 'placed', 'unconfirmed'].includes(itStatus);
+  });
+
+  const isPaid = String(order.paymentStatus || '').toLowerCase() === 'paid' ||
+    String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
+    Number(order.advancePaidAmount || 0) > 0;
+
+  const confirmed = isConfirmedAndOnward || hasConfirmedItem || isPaid;
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
@@ -57,7 +99,26 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   let totalTaxAmount = 0;
 
   const itemBreakdowns = items.map((item) => {
-    const qty = Number(item.quantity || 1);
+    const isUnstitched = Boolean(
+      item.isMeterBased ||
+      item.unit === 'meter' ||
+      item.unit === 'm' ||
+      item.productId?.isMeterBased ||
+      item.productId?.unit === 'meter' ||
+      item.productId?.unit === 'm' ||
+      String(item.category || '').toLowerCase().includes('unstitched') ||
+      String(item.category || '').toLowerCase().includes('unstiched') ||
+      String(item.subCategory || '').toLowerCase().includes('unstitched') ||
+      String(item.subCategory || '').toLowerCase().includes('unstiched') ||
+      String(item.name || '').toLowerCase().includes('unstitched') ||
+      String(item.name || '').toLowerCase().includes('unstiched') ||
+      String(item.productName || '').toLowerCase().includes('unstitched') ||
+      String(item.productName || '').toLowerCase().includes('unstiched') ||
+      (Number(item.quantity || 1) % 1 !== 0)
+    );
+    const rawQty = Number(item.quantity || 1);
+    const displayQty = isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
+    const qty = rawQty;
     const unitPrice = Number(item.price || 0);
     const grossPrice = unitPrice * qty;
     const rate = getProductGstRate(item);
@@ -81,7 +142,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
 
     return {
       ...item,
-      qty,
+      qty: displayQty,
+      rawQty,
       unitPrice,
       grossPrice,
       rate,
@@ -179,6 +241,20 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     return 'BookVardi Verified Seller';
   };
 
+  const resolveSeller = () => {
+    const primaryName = getItemSellerName(items[0]);
+    const primaryGst = order.sellerDetails?.gstNumber || order.sellerDetails?.gst || order.sellerGst || order.items?.[0]?.sellerDetails?.gstNumber || items[0]?.sellerDetails?.gstNumber || items[0]?.gstNumber || items[0]?.sellerGst || '';
+    const primaryCity = order.sellerDetails?.city || order.sellerDetails?.address || order.sellerCity || order.items?.[0]?.sellerDetails?.city || items[0]?.sellerDetails?.city || 'Lucknow, Uttar Pradesh';
+    
+    return {
+      storeName: primaryName || 'BookVardi Verified Seller',
+      gstNumber: (primaryGst && primaryGst !== '09AAACB1234F1Z9') ? primaryGst : 'Exempt / N/A',
+      city: primaryCity
+    };
+  };
+
+  const resolvedSeller = resolveSeller();
+
   // Helper to resolve dynamic seller commission rate
   const getSellerCommissionRate = () => {
     if (order.commissionRate !== undefined && order.commissionRate !== null && !isNaN(Number(order.commissionRate))) {
@@ -241,8 +317,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const sellerPayout = Math.round((grandTotal - marketplaceCommission) * 100) / 100;
 
   // Logistics tracking resolution: strictly visible when product is Out for Delivery & partner decided
-  const normStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
-  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
+  const logisticsStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
+  const isOut = logisticsStatus === 'out for delivery' || logisticsStatus === 'delivered';
   const isSelf = String(order.deliveryMode || order.deliveryType || '').toLowerCase().includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPersonName);
   const isThirdParty = String(order.deliveryMode || order.deliveryType || '').toLowerCase().includes('third') || Boolean(order.courierName || order.thirdPartyDetails?.courierName);
   const hasPartner = isSelf || isThirdParty || Boolean(order.courierName || order.selfDeliveryDetails?.deliveryPersonName);
@@ -345,64 +421,28 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
             </div>
           </div>
 
-          {/* Customer & Shipping Information */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-gray-50 p-4 rounded-xl border border-gray-200">
-            <div>
-              <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Billed To (Customer)</span>
-              <p className="font-extrabold text-gray-900">{typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || 'Customer')}</p>
-              <p className="text-gray-600 mt-0.5">{formattedAddressStr}</p>
-              <p className="text-gray-500 mt-1">Phone: {typeof order.customerPhone === 'object' ? (order.customerPhone?.phone || 'N/A') : (order.customerPhone || order.customer?.phone || 'N/A')}</p>
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Order Details</span>
-              <p className="text-gray-700">Order ID: <strong className="font-mono text-gray-900">#{order.id}</strong></p>
-              <p className="text-gray-700">Payment Method: <strong className="text-gray-900">{order.paymentMethod || 'Online UPI'}</strong></p>
-              <p className="text-gray-700">School/Institution: <strong>{order.school || 'General Retail'}</strong></p>
-            </div>
-          </div>
-
-          {/* Dispatch & Live Delivery Tracking Details */}
-          {hasTracking ? (
-            <div className="p-3.5 bg-teal-50/80 rounded-xl border border-teal-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-black text-teal-800 flex items-center gap-1.5">
-                  <Truck size={14} className="text-teal-700" /> Dispatch & Delivery Tracking Details
-                </span>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-700">
-                  <div>
-                    Delivery Mode: <strong className="text-gray-900">{deliveryPartnerDisplay}</strong>
-                  </div>
-                  <div>
-                    Tracking ID / AWB: <strong className="font-mono text-teal-950 font-bold bg-white px-2 py-0.5 rounded border border-teal-200">{trackingNumberDisplay || 'Not Assigned'}</strong>
-                  </div>
+          {/* Seller & Customer Information */}
+          {(() => {
+            const primarySellerName = resolvedSeller.storeName;
+            const primarySellerGst = resolvedSeller.gstNumber;
+            const primarySellerCity = resolvedSeller.city;
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <div>
+                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Sold By (Merchant / Seller)</span>
+                  <p className="font-extrabold text-gray-900 text-sm">{primarySellerName}</p>
+                  <p className="text-gray-600 mt-0.5">Location / City: {primarySellerCity}</p>
+                  <p className="text-gray-700 font-mono font-bold mt-1">GSTIN: {primarySellerGst}</p>
                 </div>
-                {trackingLinkDisplay && (
-                  <div className="text-[10px] text-gray-500 font-mono break-all pt-0.5">
-                    Live Tracking URL: <a href={trackingLinkDisplay} target="_blank" rel="noreferrer" className="text-teal-700 hover:underline">{trackingLinkDisplay}</a>
-                  </div>
-                )}
+                <div>
+                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Billed To (Customer)</span>
+                  <p className="font-extrabold text-gray-900 text-sm">{typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || 'Customer')}</p>
+                  <p className="text-gray-600 mt-0.5">{formattedAddressStr}</p>
+                  <p className="text-gray-500 mt-1">Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId}</strong> | Payment: <strong>{order.paymentMethod || 'Online UPI'}</strong></p>
+                </div>
               </div>
-              {trackingLinkDisplay && (
-                <a
-                  href={trackingLinkDisplay}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-800 hover:bg-teal-900 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 print:hidden"
-                >
-                  <span>Track Shipment</span>
-                  <ExternalLink size={12} />
-                </a>
-              )}
-            </div>
-          ) : (
-            <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 text-[11px] text-gray-500 flex flex-wrap items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5">
-                <Truck size={13} className="text-gray-400" />
-                Logistics Tracking ID: <strong className="text-amber-800 font-mono font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Not Assigned</strong>
-              </span>
-              <span className="text-[10px] text-gray-400 italic">Official Tracking ID is dynamically generated when delivery partner is assigned</span>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Itemized Table */}
           <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
@@ -494,9 +534,25 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                 </div>
               )}
               <div className="border-t-2 border-gray-300 pt-1.5 flex justify-between items-center text-xs font-black text-gray-900">
-                <span>Grand Total:</span>
+                <div>
+                  <span className="block">Grand Total:</span>
+                  <span className="text-[10px] text-gray-400 font-normal block">(Inclusive of all taxes & GST)</span>
+                </div>
                 <span className="font-mono text-sm text-gray-900">₹{grandTotal.toFixed(2)}</span>
               </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="border-t border-gray-200 pt-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-gray-500">
+            <div>
+              <p className="font-semibold text-gray-700">Book Vardi Seller Fulfillment Desk</p>
+              <p className="text-[10px] text-gray-400">Official Partner Merchant Tax Invoice • support@bookvardi.com</p>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider block">Authorized Signatory</span>
+              <span className="font-bold text-gray-900 text-xs block">{resolvedSeller.storeName}</span>
+              <span className="text-[10px] font-mono text-gray-500 block">GSTIN: {resolvedSeller.gstNumber || 'Exempt / N/A'}</span>
             </div>
           </div>
 

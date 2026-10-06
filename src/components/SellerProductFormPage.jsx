@@ -32,179 +32,16 @@ import { fetchSchoolsApi, fetchCategoriesApi } from '../utils/api';
 import { CATEGORY_STRUCTURE, normalizeCategory, getSubCategories } from '../constants/categories';
 
 // Universal Category Form Configuration Schema Matrix
-export const CATEGORY_FORM_SCHEMA = {
-  // 1. NCERT & Books
-  ncert: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['book_sets', 'piece_count', 'packaging']
-  },
-  practice_books: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['book_sets', 'piece_count', 'packaging']
-  },
-  drawing_books: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['book_sets', 'piece_count', 'packaging']
-  },
-
-  // 2. Notebooks & Stationery
-  notebooks: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'kg', 'custom'],
-    allowedPresets: ['piece_count', 'weight_custom', 'packaging', 'book_sets']
-  },
-  stationery: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['piece_count', 'packaging']
-  },
-  writing: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['piece_count', 'packaging']
-  },
-  drawing: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['piece_count', 'packaging']
-  },
-  bottles: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: false,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['piece_count', 'packaging']
-  },
-  bags: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: true,
-    allowedScales: ['count', 'box', 'custom'],
-    allowedPresets: ['piece_count', 'packaging']
-  },
-
-  // 3. Shoes & Socks
-  shoes: {
-    showMeterCalculation: false,
-    showSizeChart: false,
-    showGender: true,
-    allowedScales: ['size', 'count', 'custom'],
-    allowedPresets: ['standard', 'piece_count']
-  },
-
-  // 4. Uniforms & Clothing
-  uniforms: {
-    showMeterCalculation: true,
-    showSizeChart: true,
-    showGender: true,
-    allowedScales: ['size', 'meter', 'count', 'custom'],
-    allowedPresets: ['standard', 'uniform_waist', 'meters_custom', 'piece_count']
-  },
-  rain_winter: {
-    showMeterCalculation: true,
-    showSizeChart: true,
-    showGender: true,
-    allowedScales: ['size', 'meter', 'count', 'custom'],
-    allowedPresets: ['standard', 'uniform_waist', 'meters_custom']
-  },
-  sports: {
-    showMeterCalculation: true,
-    showSizeChart: true,
-    showGender: true,
-    allowedScales: ['size', 'meter', 'count', 'custom'],
-    allowedPresets: ['standard', 'uniform_waist', 'meters_custom']
-  }
-};
-
 export function getCategorySchema(categoryKey) {
   const normCat = normalizeCategory(categoryKey);
   const cat = normCat.toLowerCase();
-  if (cat.includes('uniform')) return CATEGORY_FORM_SCHEMA['uniforms'] || CATEGORY_FORM_SCHEMA['uniform'];
-  if (cat.includes('book')) return CATEGORY_FORM_SCHEMA['ncert'] || CATEGORY_FORM_SCHEMA['books'];
-  if (cat.includes('notebook') || cat.includes('stationery') || cat.includes('stationary')) return CATEGORY_FORM_SCHEMA['notebooks'] || CATEGORY_FORM_SCHEMA['stationery'];
-  if (cat.includes('footwear') || cat.includes('shoe')) return CATEGORY_FORM_SCHEMA['shoes'];
-  if (cat.includes('bag') || cat.includes('kit')) return CATEGORY_FORM_SCHEMA['bags'];
-
-  return CATEGORY_FORM_SCHEMA[cat] || {
-    showMeterCalculation: true,
-    showSizeChart: true,
-    showGender: true,
-    allowedScales: ['size', 'count', 'meter', 'kg', 'box', 'custom'],
-    allowedPresets: ['standard', 'uniform_waist', 'weight_custom', 'piece_count', 'meters_custom', 'book_sets', 'packaging']
+  const isApparel = cat.includes('uniform') || cat.includes('rain') || cat.includes('sport') || cat.includes('blazer') || cat.includes('cloth') || cat.includes('apparel');
+  return {
+    showMeterCalculation: isApparel,
+    showSizeChart: isApparel,
+    showGender: isApparel || cat.includes('shoe') || cat.includes('footwear') || cat.includes('bag')
   };
 }
-
-// Sizing & Scale Presets with Base Variant Values (250g, 3pcs, 3metre, 2.5m, etc.)
-const SIZE_PRESETS = [
-  {
-    id: 'standard',
-    label: 'Apparel Standard (S - XXL)',
-    scale: 'size',
-    sizes: ['S', 'M', 'L', 'XL', 'XXL']
-  },
-  {
-    id: 'uniform_waist',
-    label: 'Uniform Waist / Chest (26 - 38)',
-    scale: 'size',
-    sizes: ['26', '28', '30', '32', '34', '36', '38']
-  },
-  {
-    id: 'weight_custom',
-    label: 'Weight Units (250g, 500g, 1kg, 2kg)',
-    scale: 'kg',
-    sizes: ['250g', '500g', '1kg', '2kg', '5kg']
-  },
-  {
-    id: 'piece_count',
-    label: 'Piece Count (1pc, 3pcs, 6pcs, 12pcs)',
-    scale: 'count',
-    sizes: ['1pc', '3pcs', '6pcs', '12pcs']
-  },
-  {
-    id: 'meters_custom',
-    label: 'Fabric Length (1m, 1.8m, 2.5m, 3m, 5m)',
-    scale: 'meter',
-    sizes: ['1m', '1.8m', '2.5m', '3m', '5m']
-  },
-  {
-    id: 'book_sets',
-    label: 'Books & Counts (Single / Sets)',
-    scale: 'count',
-    sizes: ['1 Book', 'Set of 3 Books', 'Set of 5 Books', 'Set of 10 Books']
-  },
-  {
-    id: 'packaging',
-    label: 'Boxes & Bulk Packs',
-    scale: 'box',
-    sizes: ['1 Piece', 'Pack of 10', '1 Box (50 Pcs)', '1 Carton']
-  }
-];
-
-const MEASURE_SCALES = [
-  { id: 'size', label: 'Clothes & Shoes (Size: S, M, XL, 32)', defaultUnit: 'Size', placeholder: 'e.g. S, M, L, XL, 32, UK 8' },
-  { id: 'count', label: 'Pieces & Count (3pcs, 6pcs, Set of 5)', defaultUnit: 'Pcs', placeholder: 'e.g. 1pc, 3pcs, 6pcs, Pack of 10' },
-  { id: 'meter', label: 'Fabric & Materials (2.5m, 3m, 3metre)', defaultUnit: 'Meter', placeholder: 'e.g. 1m, 1.8m, 2.5m, 3m, 3metre' },
-  { id: 'kg', label: 'Weight & Mass (250g, 500g, 1kg)', defaultUnit: 'Kg', placeholder: 'e.g. 250g, 500g, 1kg, 2kg, 5kg' },
-  { id: 'box', label: 'Packaging (Box / Carton / Pieces)', defaultUnit: 'Box', placeholder: 'e.g. 1 Box (50 Pcs), 1 Carton, 1 Piece' },
-  { id: 'custom', label: 'Custom Base Variant (250g, 3pcs, 3metre)', defaultUnit: 'Unit', placeholder: 'e.g. 250g, 3pcs, 3metre, 2.5m' }
-];
 
 const CATEGORIES = [
   { id: 'uniforms', label: 'Uniforms & Blazers' },
@@ -218,12 +55,33 @@ const CATEGORIES = [
 ];
 
 export const GRADE_OPTIONS = [
-  'Nursery', 'LKG', 'UKG',
+  'Pre-Nursery', 'Nursery', 'LKG', 'UKG',
   'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
   'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
   'Class 11', 'Class 12',
   'Class 1-5', 'Class 6-10', 'Class 11-12', 'All Grades'
 ];
+
+export const AGE_OPTIONS = [
+  '0-2 Years',
+  '3-5 Years',
+  '6-8 Years',
+  '9-12 Years',
+  '13-16 Years',
+  '16+ Years',
+  'All Ages'
+];
+
+export const APPAREL_SIZES = ['S', 'M', 'L', 'XL', 'XXL', '26', '28', '30', '32', '34', '36', '38'];
+export const SHOE_SIZES = ['Size 6', 'Size 7', 'Size 8', 'Size 9', 'Size 10', 'Size 11'];
+
+export function getCategoryUnitType(categoryKey) {
+  const cat = (categoryKey || '').toLowerCase();
+  if (cat.includes('footwear') || cat.includes('shoe') || cat.includes('sock')) return 'footwear';
+  if (cat.includes('book') || cat.includes('ncert') || cat.includes('practice') || cat.includes('drawing')) return 'books';
+  if (cat.includes('uniform') || cat.includes('blazer') || cat.includes('shirt') || cat.includes('pant') || cat.includes('apparel') || cat.includes('rain') || cat.includes('sport')) return 'apparel';
+  return 'general'; // Notebooks, stationery, bags, kits
+}
 
 export function parseBool(val, defaultVal = true) {
   if (val === undefined || val === null) return defaultVal;
@@ -298,11 +156,42 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     }
   });
 
-  // Dynamic Category Form Schema (Hides meter calculations/kg/size-charts for NCERT books & non-apparel)
+  // Dynamic Category Form Schema & Unit Type (Apparel, Footwear, Books, General)
   const categorySchema = getCategorySchema(formData.category);
+  const categoryUnitType = getCategoryUnitType(formData.category);
+
+  const toggleCategorySizeVariant = (sz, scaleName = 'size') => {
+    const existingIndex = sizeVariants.findIndex(v => String(v.size || v.measureValue).toLowerCase() === String(sz).toLowerCase());
+    const defaultPrice = formData.price || '499';
+    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+    const defaultStock = formData.stockQuantity || '25';
+    const defaultImage = formData.images[0] || formData.image || '';
+
+    if (existingIndex > -1) {
+      setSizeVariants(prev => prev.filter((_, i) => i !== existingIndex));
+    } else {
+      const newV = {
+        size: sz,
+        measureScale: scaleName,
+        measureValue: sz,
+        unit: scaleName.toUpperCase(),
+        price: defaultPrice,
+        mrp: defaultMrp,
+        stock: defaultStock,
+        stockQuantity: defaultStock,
+        image: defaultImage,
+        images: defaultImage ? [defaultImage] : [],
+        sku: formData.sku ? `${formData.sku}-${sz}` : `SKU-${sz}`
+      };
+      setSizeVariants(prev => [...prev, newV]);
+    }
+  };
 
   // Multi-Select Grade State
   const [selectedGrades, setSelectedGrades] = useState([]);
+
+  // Multi-Select Age State
+  const [selectedAges, setSelectedAges] = useState([]);
 
   // Variants & Measuring Scales
   const [sizeVariants, setSizeVariants] = useState([]);
@@ -378,6 +267,14 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         ? gradeStr.split(',').map(s => s.trim()).filter(Boolean)
         : (Array.isArray(gradeStr) ? gradeStr : []);
       setSelectedGrades(initialGrades);
+
+      const ageStr = product.ageGroup || product.ages || '';
+      const initialAges = Array.isArray(product.ages) && product.ages.length > 0
+        ? product.ages
+        : (typeof ageStr === 'string'
+          ? ageStr.split(',').map(s => s.trim()).filter(Boolean)
+          : []);
+      setSelectedAges(initialAges);
 
       const parsedGst = product.gst !== undefined && product.gst !== null
         ? String(product.gst)
@@ -545,6 +442,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         }
       });
       setSelectedGrades([]);
+      setSelectedAges([]);
       setSizeVariants([]);
       setKitData({
         title: '',
@@ -739,15 +637,18 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         const finalImages = dedupeImages(rawImages);
 
         const formattedClassGrade = selectedGrades.length > 0 ? selectedGrades.join(', ') : (formData.classGrade || '');
+        const formattedAgeGroup = selectedAges.length > 0 ? selectedAges.join(', ') : (formData.ageGroup || formData.ages || '');
 
         const paymentAllowedStr = formData.paymentMethodAllowed || 'Both';
         const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
           ? ['Online'] 
           : (paymentAllowedStr === 'COD_Only' ? ['COD'] : ['COD', 'Online']);
 
-        const parsedAges = typeof formData.ages === 'string'
-          ? formData.ages.split(',').map(s => s.trim()).filter(Boolean)
-          : (Array.isArray(formData.ages) ? formData.ages : []);
+        const parsedAges = selectedAges.length > 0
+          ? selectedAges
+          : (typeof formData.ages === 'string'
+            ? formData.ages.split(',').map(s => s.trim()).filter(Boolean)
+            : (Array.isArray(formData.ages) ? formData.ages : []));
 
         const parsedColors = typeof formData.colors === 'string'
           ? formData.colors.split(',').map(s => s.trim()).filter(Boolean)
@@ -764,7 +665,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           schoolName: formData.schoolName || '',
           schoolCode: formData.schoolCode || '',
           classGrade: formattedClassGrade,
-          ageGroup: formData.ageGroup || '',
+          ageGroup: formattedAgeGroup,
           ages: parsedAges,
           colors: parsedColors,
           material: formData.material || '',
@@ -1019,7 +920,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         {entryType === 'single' ? (
           [
             { id: 'general', label: '1. General Details & Base Photos', icon: Tag },
-            { id: 'variants', label: `2. Scale Variants Matrix (${sizeVariants.length})`, icon: Layers },
+            { id: 'variants', label: `2. Category Size & Stock Matrix (${sizeVariants.length})`, icon: Layers },
             { id: 'payment', label: '3. Allowed Payment Methods', icon: CreditCard }
           ].map(tab => {
             const Icon = tab.icon;
@@ -1341,8 +1242,83 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   )}
                 </div>
 
-                {/* Age Group, Colors, Tags & Gender */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                {/* Age Group Selection (Multi-Selectable) */}
+                <div className="space-y-2 bg-indigo-50/40 p-4 rounded-2xl border border-indigo-200/70">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <label className="block text-xs font-extrabold text-indigo-950 uppercase tracking-wider">
+                        Age Group Selection (Select Multiple if Applicable) *
+                      </label>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Click pills to select one or multiple target age groups for this product item.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAges(['3-5 Years', '6-8 Years'])}
+                        className="px-2.5 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded-lg border border-indigo-300 text-[11px] cursor-pointer shadow-2xs"
+                      >
+                        + Junior (3-8 Yrs)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAges(['9-12 Years', '13-16 Years', '16+ Years'])}
+                        className="px-2.5 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded-lg border border-indigo-300 text-[11px] cursor-pointer shadow-2xs"
+                      >
+                        + Senior (9-16+ Yrs)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAges([])}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 text-[11px] cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {AGE_OPTIONS.map(age => {
+                      const isSelected = selectedAges.includes(age);
+                      return (
+                        <button
+                          key={age}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedAges(prev => prev.filter(a => a !== age));
+                            } else {
+                              setSelectedAges(prev => [...prev, age]);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                            isSelected
+                              ? 'bg-indigo-800 text-white border-indigo-900 shadow-2xs font-extrabold'
+                              : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/50'
+                          }`}
+                        >
+                          {isSelected && <span className="mr-1">✓</span>}
+                          {age}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedAges.length > 0 ? (
+                    <div className="text-[11px] text-indigo-950 font-bold bg-white p-2 rounded-xl border border-indigo-200 mt-2 flex items-center justify-between">
+                      <span>Selected Age Groups ({selectedAges.length}): <strong>{selectedAges.join(', ')}</strong></span>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-amber-800 font-semibold bg-amber-50 p-2 rounded-xl border border-amber-200 mt-2">
+                      ℹ️ No specific age group selected. Product will be marked as "All Ages / General".
+                    </div>
+                  )}
+                </div>
+
+                {/* Gender, Colors & Product Tags */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {categorySchema.showGender && (
                     <div>
                       <label className="block text-xs font-bold text-gray-700 mb-1">Target Gender *</label>
@@ -1358,21 +1334,6 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       </select>
                     </div>
                   )}
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Age Group *</label>
-                    <select
-                      value={formData.ageGroup || formData.ages}
-                      onChange={e => setFormData({ ...formData, ageGroup: e.target.value, ages: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                    >
-                      <option value="">-- Select Age Group --</option>
-                      <option value="3-5 Years">3-5 Years</option>
-                      <option value="6-8 Years">6-8 Years</option>
-                      <option value="9-12 Years">9-12 Years</option>
-                      <option value="13-16 Years">13-16 Years</option>
-                      <option value="16+ Years">16+ Years</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Available Colors</label>
                     <input
@@ -1406,77 +1367,374 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   />
                 </div>
 
-                {/* 1. Apparel Selling Unit Type: Ready-To-Wear (Pieces) vs Unstitched Cloth (Meters) (Only shown for Clothing/Fabric) */}
-                {categorySchema.showMeterCalculation && (
-                  <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-200/80 space-y-3">
-                    <label className="block text-xs font-bold text-teal-950 uppercase tracking-wider">
-                      Apparel Selling Unit & Pricing Calculation
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div
-                        onClick={() => setFormData({ ...formData, isMeterBased: false, unit: 'piece' })}
-                        className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
-                          !formData.isMeterBased
-                            ? 'border-brand-teal bg-white shadow-xs font-bold'
-                            : 'border-gray-200 bg-white/60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
-                          <span>👔 Ready-To-Wear / Stitched Item</span>
-                        </div>
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          Sold in <strong>Pieces (pcs)</strong> or standard sizes (S, M, L, XL, 32, 34). Base price is calculated per piece.
-                        </p>
-                      </div>
-
-                      <div
-                        onClick={() => setFormData({ ...formData, isMeterBased: true, unit: 'meter' })}
-                        className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
-                          formData.isMeterBased
-                            ? 'border-brand-teal bg-white shadow-xs font-bold'
-                            : 'border-gray-200 bg-white/60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
-                          <span>✂️ Unstitched Fabric / Not Ready-To-Wear</span>
-                        </div>
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          Customer orders cloth in <strong>Meters (e.g. 2.5m pant cloth)</strong>. Price calculated as <strong>{`{x} meters * 1-meter price`}</strong>.
-                        </p>
-                      </div>
+                {/* CATEGORY-DRIVEN UNIVERSAL UNIT & SIZING SYSTEM */}
+                <div className="p-4.5 rounded-2xl bg-teal-50/40 border border-teal-200/80 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
+                        Category Selling Unit & Sizing Configuration
+                      </label>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Automatically configured for category: <strong className="text-teal-900">{formData.category || 'General'}</strong>
+                      </p>
                     </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-teal-100 text-teal-900 text-[11px] font-black uppercase tracking-wider border border-teal-200">
+                      {categoryUnitType === 'apparel' && (formData.isMeterBased ? '✂️ Fabric Meters' : '👔 Apparel Sizes')}
+                      {categoryUnitType === 'footwear' && '👟 Indian Shoe Sizes'}
+                      {categoryUnitType === 'books' && '📚 Book Pieces'}
+                      {categoryUnitType === 'general' && '📦 Unit Pieces / Kit'}
+                    </span>
+                  </div>
 
-                    {formData.isMeterBased && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-teal-100">
-                        <div>
-                          <label className="block text-[11px] font-bold text-gray-700 mb-1">Minimum Meter Quantity (e.g. 0.5m or 1m)</label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={formData.minMeter}
-                            onChange={e => setFormData({ ...formData, minMeter: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
-                            placeholder="0.5"
-                          />
+                  {/* APPAREL UNIT SYSTEM */}
+                  {categoryUnitType === 'apparel' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div
+                          onClick={() => setFormData({ ...formData, isMeterBased: false, unit: 'piece' })}
+                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
+                            !formData.isMeterBased
+                              ? 'border-brand-teal bg-white shadow-xs font-bold'
+                              : 'border-gray-200 bg-white/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
+                            <span>👔 Stitched Item / Ready-To-Wear (Sizes S, M, L, 32...)</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            Sold in standard apparel sizes (S, M, L, XL, 26, 28, 30, 32, 34, 36, 38) with individual stock.
+                          </p>
                         </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-gray-700 mb-1">Meter Increment Step (e.g. 0.5m)</label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={formData.meterStep}
-                            onChange={e => setFormData({ ...formData, meterStep: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
-                            placeholder="0.5"
-                          />
-                        </div>
-                        <div className="sm:col-span-2 text-[11px] font-bold text-teal-900 bg-teal-100/80 p-2.5 rounded-lg border border-teal-200">
-                          💡 Price Calculation Formula: Customer Price = {`{x} Meters`} × 1-Meter Base Price. (Example: 2.5m Pant Cloth × ₹200/meter = ₹500 Total Price).
+
+                        <div
+                          onClick={() => setFormData({ ...formData, isMeterBased: true, unit: 'meter' })}
+                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
+                            formData.isMeterBased
+                              ? 'border-brand-teal bg-white shadow-xs font-bold'
+                              : 'border-gray-200 bg-white/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
+                            <span>✂️ Unstitched Fabric (Sold per Meter)</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            Customer orders cloth in <strong>Meters (e.g. 2.5m pant cloth)</strong>. Price calculated as <strong>{`{x} meters * ₹/meter`}</strong>.
+                          </p>
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {formData.isMeterBased ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-teal-100">
+                          <div>
+                            <label className="block text-[11px] font-bold text-gray-700 mb-1">Minimum Meter Quantity (e.g. 0.5m or 1m)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={formData.minMeter}
+                              onChange={e => setFormData({ ...formData, minMeter: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
+                              placeholder="0.5"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-gray-700 mb-1">Meter Increment Step (e.g. 0.5m)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={formData.meterStep}
+                              onChange={e => setFormData({ ...formData, meterStep: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium"
+                              placeholder="0.5"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        /* APPAREL SIZE SELECTION PILLS & INLINE TABLE */
+                        <div className="space-y-3 pt-2 border-t border-teal-100">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
+                                Select Available Apparel Sizes *
+                              </label>
+                              <p className="text-[11px] text-gray-500">
+                                Click size pills to toggle available stock options for this item.
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs font-bold">
+                              <button
+                                type="button"
+                                onClick={() => setSizeVariants(APPAREL_SIZES.slice(0, 5).map(sz => ({
+                                  size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
+                                  price: formData.price || '499', mrp: formData.originalPrice || '699',
+                                  stock: formData.stockQuantity || '25', stockQuantity: formData.stockQuantity || '25'
+                                })))}
+                                className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                              >
+                                + Standard (S - XXL)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSizeVariants(APPAREL_SIZES.slice(5).map(sz => ({
+                                  size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
+                                  price: formData.price || '499', mrp: formData.originalPrice || '699',
+                                  stock: formData.stockQuantity || '25', stockQuantity: formData.stockQuantity || '25'
+                                })))}
+                                className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                              >
+                                + Waist (26 - 38)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSizeVariants([])}
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 text-[11px] cursor-pointer"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {APPAREL_SIZES.map(sz => {
+                              const isSelected = sizeVariants.some(v => String(v.size || v.measureValue).toLowerCase() === sz.toLowerCase());
+                              return (
+                                <button
+                                  key={sz}
+                                  type="button"
+                                  onClick={() => toggleCategorySizeVariant(sz, 'size')}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                    isSelected
+                                      ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                                      : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                                  }`}
+                                >
+                                  {isSelected && <span className="mr-1">✓</span>}
+                                  {sz}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Inline Size Matrix Table */}
+                          {sizeVariants.length > 0 && (
+                            <div className="overflow-x-auto rounded-xl border border-teal-200 bg-white mt-2">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-teal-50/80 border-b border-teal-200 text-teal-950 font-bold uppercase text-[10px]">
+                                  <tr>
+                                    <th className="px-3 py-2.5">Apparel Size</th>
+                                    <th className="px-3 py-2.5">Price (₹)</th>
+                                    <th className="px-3 py-2.5">MRP (₹)</th>
+                                    <th className="px-3 py-2.5">Stock Units</th>
+                                    <th className="px-3 py-2.5 text-right">Remove</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-teal-100 font-medium">
+                                  {sizeVariants.map((v, idx) => (
+                                    <tr key={idx} className="hover:bg-teal-50/30">
+                                      <td className="px-3 py-2 font-extrabold text-teal-950">{v.size || v.measureValue}</td>
+                                      <td className="px-3 py-2">
+                                        <input
+                                          type="number"
+                                          value={v.price}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, price: val } : item));
+                                          }}
+                                          className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold"
+                                          placeholder="Price"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <input
+                                          type="number"
+                                          value={v.mrp}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, mrp: val } : item));
+                                          }}
+                                          className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-600"
+                                          placeholder="MRP"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <input
+                                          type="number"
+                                          value={v.stock}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, stock: val, stockQuantity: val } : item));
+                                          }}
+                                          className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-teal-900"
+                                          placeholder="Stock"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-2 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveVariant(idx)}
+                                          className="text-rose-600 hover:text-rose-800 text-xs font-bold p-1 cursor-pointer"
+                                        >
+                                          ✕
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* FOOTWEAR UNIT SYSTEM */}
+                  {categoryUnitType === 'footwear' && (
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
+                            Select Indian Shoe Sizes (UK/IND Standard) *
+                          </label>
+                          <p className="text-[11px] text-gray-500">
+                            Click shoe size pills to activate available stock options for footwear.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setSizeVariants(SHOE_SIZES.map(sz => ({
+                              size: sz, measureScale: 'size', measureValue: sz, unit: 'SHOE',
+                              price: formData.price || '599', mrp: formData.originalPrice || '799',
+                              stock: formData.stockQuantity || '20', stockQuantity: formData.stockQuantity || '20'
+                            })))}
+                            className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                          >
+                            + All Shoe Sizes (6 - 11)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSizeVariants([])}
+                            className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 text-[11px] cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {SHOE_SIZES.map(sz => {
+                          const isSelected = sizeVariants.some(v => String(v.size || v.measureValue).toLowerCase() === sz.toLowerCase());
+                          return (
+                            <button
+                              key={sz}
+                              type="button"
+                              onClick={() => toggleCategorySizeVariant(sz, 'size')}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                isSelected
+                                  ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                                  : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                              }`}
+                            >
+                              {isSelected && <span className="mr-1">✓</span>}
+                              {sz}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Inline Shoe Size Matrix Table */}
+                      {sizeVariants.length > 0 && (
+                        <div className="overflow-x-auto rounded-xl border border-teal-200 bg-white mt-2">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-teal-50/80 border-b border-teal-200 text-teal-950 font-bold uppercase text-[10px]">
+                              <tr>
+                                <th className="px-3 py-2.5">Shoe Size</th>
+                                <th className="px-3 py-2.5">Price (₹)</th>
+                                <th className="px-3 py-2.5">MRP (₹)</th>
+                                <th className="px-3 py-2.5">Stock Pairs</th>
+                                <th className="px-3 py-2.5 text-right">Remove</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-teal-100 font-medium">
+                              {sizeVariants.map((v, idx) => (
+                                <tr key={idx} className="hover:bg-teal-50/30">
+                                  <td className="px-3 py-2 font-extrabold text-teal-950">{v.size || v.measureValue}</td>
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="number"
+                                      value={v.price}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, price: val } : item));
+                                      }}
+                                      className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold"
+                                      placeholder="Price"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="number"
+                                      value={v.mrp}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, mrp: val } : item));
+                                      }}
+                                      className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-600"
+                                      placeholder="MRP"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="number"
+                                      value={v.stock}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, stock: val, stockQuantity: val } : item));
+                                      }}
+                                      className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-teal-900"
+                                      placeholder="Stock"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveVariant(idx)}
+                                      className="text-rose-600 hover:text-rose-800 text-xs font-bold p-1 cursor-pointer"
+                                    >
+                                      ✕
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* BOOKS UNIT SYSTEM */}
+                  {categoryUnitType === 'books' && (
+                    <div className="p-3 bg-white rounded-xl border border-teal-200 flex items-center justify-between text-xs">
+                      <span className="font-extrabold text-teal-950 flex items-center gap-2">
+                        <span>📚 Books Unit:</span>
+                        <span className="text-teal-800 font-bold">Individual Piece (Pcs)</span>
+                      </span>
+                      <span className="text-[11px] text-gray-500 font-medium">Base price and stock managed per book copy.</span>
+                    </div>
+                  )}
+
+                  {/* GENERAL / STATIONERY / BAGS / KITS UNIT SYSTEM */}
+                  {categoryUnitType === 'general' && (
+                    <div className="p-3 bg-white rounded-xl border border-teal-200 flex items-center justify-between text-xs">
+                      <span className="font-extrabold text-teal-950 flex items-center gap-2">
+                        <span>📦 Product Unit:</span>
+                        <span className="text-teal-800 font-bold">Pieces (Pcs) / Pack / Kit</span>
+                      </span>
+                      <span className="text-[11px] text-gray-500 font-medium">Standard unit count & inventory tracking.</span>
+                    </div>
+                  )}
+                </div>
 
                 {/* 2. Return & Exchange Policy Window */}
                 <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-4">
@@ -1704,10 +1962,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div>
                   <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                    <Layers className="text-brand-teal" size={18} /> Size & Measuring Scale Variants
+                    <Layers className="text-brand-teal" size={18} /> Size & Stock Variants
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Configure custom price, MRP, stock, and individual photos for every variant (Size, Count, Meter, Kg, Box).
+                    Configure price, MRP, stock, and individual photos for each variant size.
                   </p>
                 </div>
                 <button
@@ -1719,30 +1977,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 </button>
               </div>
 
-              {/* 1-Click Presets */}
-              <div className="p-4 rounded-xl bg-gray-50 border border-gray-200/80 space-y-2">
-                <span className="text-xs font-extrabold uppercase text-gray-700">1-Click Presets</span>
-                <div className="flex flex-wrap gap-2">
-                  {SIZE_PRESETS.filter(p => categorySchema.allowedPresets.includes(p.id)).map(preset => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => applySizePreset(preset)}
-                      className="px-3 py-1.5 bg-white hover:bg-brand-teal hover:text-white text-gray-700 text-xs font-bold rounded-lg border border-gray-200 transition-colors cursor-pointer"
-                    >
-                      + {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Variants Table */}
               {sizeVariants.length === 0 ? (
                 <div className="p-8 text-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 space-y-2">
                   <Boxes className="mx-auto text-gray-400" size={32} />
-                  <h4 className="text-sm font-bold text-gray-700">No Variants Configured</h4>
+                  <h4 className="text-sm font-bold text-gray-700">No Size Variants Active</h4>
                   <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                    Click the <strong>"+ Add Variant"</strong> button above to open the variant form and add custom size, count, or weight options.
+                    Select sizes from the size pills in <strong>General Information</strong> tab or click <strong>"+ Add Variant"</strong> above.
                   </p>
                   <button
                     type="button"
@@ -1799,8 +2040,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   <table className="w-full text-left text-xs">
                     <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px]">
                       <tr>
-                        <th className="px-3 py-3">Variant Value</th>
-                        <th className="px-3 py-3">Scale</th>
+                        <th className="px-3 py-3">Size / Variant</th>
                         <th className="px-3 py-3">Price (₹)</th>
                         <th className="px-3 py-3">MRP (₹)</th>
                         <th className="px-3 py-3">Stock</th>
@@ -1812,11 +2052,6 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       {sizeVariants.map((v, idx) => (
                         <tr key={idx} className="hover:bg-gray-50">
                           <td className="px-3 py-2.5 font-bold text-gray-900">{v.size || v.measureValue}</td>
-                          <td className="px-3 py-2.5">
-                            <span className="px-2 py-0.5 rounded bg-teal-50 text-brand-teal text-[10px] uppercase font-bold border border-teal-200">
-                              {v.measureScale || 'size'}
-                            </span>
-                          </td>
                           <td className="px-3 py-2.5 font-extrabold text-gray-900">₹{v.price}</td>
                           <td className="px-3 py-2.5 text-gray-500 line-through">₹{v.mrp}</td>
                           <td className="px-3 py-2.5">
@@ -2064,29 +2299,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
             <form onSubmit={handleSaveVariantModal} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Measuring Scale Category *</label>
-                <select
-                  value={variantForm.measureScale}
-                  onChange={e => {
-                    const sc = MEASURE_SCALES.find(s => s.id === e.target.value);
-                    setVariantForm({ ...variantForm, measureScale: e.target.value, unit: sc?.defaultUnit || 'Size' });
-                  }}
-                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none"
-                >
-                  {MEASURE_SCALES.filter(sc => categorySchema.allowedScales.includes(sc.id)).map(sc => (
-                    <option key={sc.id} value={sc.id}>{sc.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Base Variant Value *</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Variant Size / Label Name *</label>
                 <input
                   type="text"
                   required
-                  value={variantForm.measureValue}
+                  value={variantForm.measureValue || variantForm.size}
                   onChange={e => setVariantForm({ ...variantForm, measureValue: e.target.value, size: e.target.value })}
-                  placeholder={MEASURE_SCALES.find(s => s.id === variantForm.measureScale)?.placeholder || 'e.g. 250g, 3pcs, 3metre, 2.5m'}
+                  placeholder="e.g. S, XL, Size 8, Pack of 3"
                   className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none"
                 />
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">

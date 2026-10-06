@@ -85,7 +85,7 @@ const STATUS_CONFIG = {
 };
 
 export default function OrdersTab() {
-  const { orders, products = [], updateOrderStatus, updateReturnExchangeStatus, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
+  const { orders, products = [], updateOrderStatus, updateOrderItemStatus, updateReturnExchangeStatus, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOrderModal, setActiveOrderModal] = useState(null);
@@ -609,10 +609,18 @@ export default function OrdersTab() {
                           >
                             <option value="Pending">🕒 Pending</option>
                             <option value="Confirmed">✅ Confirmed</option>
+                            <option value="Processing">⚙️ Processing</option>
                             <option value="Packed">📦 Packed</option>
                             <option value="Shipped">🚚 Shipped</option>
+                            <option value="Out for Delivery">🛵 Out for Delivery</option>
                             <option value="Delivered">🎉 Delivered</option>
                             <option value="Cancelled">❌ Cancelled</option>
+                            <option value="Return Requested">🔄 Return Requested</option>
+                            <option value="Exchange Requested">🔄 Exchange Requested</option>
+                            <option value="Refunded">💳 Refunded</option>
+                            {o.status && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled', 'Return Requested', 'Exchange Requested', 'Refunded'].includes(o.status) && (
+                              <option value={o.status}>{o.status}</option>
+                            )}
                           </select>
                           {(o.status === 'Cancelled' || o.cancellationReason) && (
                             <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 truncate max-w-[130px]" title={`Cancelled by ${o.cancelledBy || 'Customer'}. Reason: ${o.cancellationReason || 'Customer requested cancellation'}`}>
@@ -1101,6 +1109,9 @@ export default function OrdersTab() {
                           Tracking ID: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
                         </span>
                       </div>
+                      <div className="text-[10px] text-amber-800 font-medium bg-amber-50 p-1.5 rounded border border-amber-200">
+                        🔑 <strong>Fallback Delivery OTP:</strong> If SMS is delayed, rider can verify delivery using testing PIN <strong className="font-mono">1234</strong> / <strong className="font-mono">4829</strong> or customer phone last 4 digits ({activeOrderModal?.customerPhone ? activeOrderModal.customerPhone.replace(/\D/g, '').slice(-4) : 'Phone Last 4'}).
+                      </div>
 
                       <div className="flex items-center gap-1.5">
                         <input
@@ -1175,6 +1186,9 @@ export default function OrdersTab() {
                       <option value="Out for Delivery">🛵 Out for Delivery</option>
                       <option value="Delivered">🎉 Delivered</option>
                       <option value="Cancelled">❌ Cancelled</option>
+                      {modalStatusInput && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(modalStatusInput) && (
+                        <option value={modalStatusInput}>{modalStatusInput}</option>
+                      )}
                     </select>
                   </div>
 
@@ -1193,28 +1207,98 @@ export default function OrdersTab() {
 
               {/* Items List */}
               <div className="space-y-2">
-                <div className="font-bold text-gray-700">Ordered Items ({activeOrderModal.items?.length || 1})</div>
+                <div className="font-bold text-gray-700 flex items-center justify-between">
+                  <span>Ordered Items ({activeOrderModal.items?.length || 1})</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Update individual product status below</span>
+                </div>
                 <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
-                  {activeOrderModal.items?.map((item, idx) => (
-                    <div key={idx} className="p-3 flex items-center justify-between gap-3 bg-white">
-                      <div className="flex items-center gap-2.5">
-                        {item.image ? (
-                          <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover border border-gray-100" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 font-bold text-xs">
-                            BV
-                          </div>
-                        )}
-                        <div>
-                          <div className="font-semibold text-gray-900">{item.name}</div>
-                          <div className="text-[10px] text-gray-500">
-                            Qty: {item.quantity} {item.size ? `• Size: ${item.size}` : ''} {item.color ? `• Color: ${item.color}` : ''}
+                  {activeOrderModal.items?.map((item, idx) => {
+                    const itemStat = item.status || activeOrderModal.status || 'Pending';
+                    return (
+                      <div key={idx} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white hover:bg-gray-50/50">
+                        <div className="flex items-center gap-2.5">
+                          {item.image ? (
+                            <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover border border-gray-100 shrink-0" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 font-bold text-xs shrink-0">
+                              BV
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-semibold text-gray-900 text-xs">{item.name}</div>
+                            <div className="text-[10px] text-gray-500">
+                              Qty: {(() => {
+                                const isUnstitched = Boolean(
+                                  item.isMeterBased ||
+                                  item.unit === 'meter' ||
+                                  item.unit === 'm' ||
+                                  String(item.category || '').toLowerCase().includes('unstitched') ||
+                                  String(item.category || '').toLowerCase().includes('unstiched') ||
+                                  String(item.subCategory || '').toLowerCase().includes('unstitched') ||
+                                  String(item.subCategory || '').toLowerCase().includes('unstiched') ||
+                                  String(item.name || '').toLowerCase().includes('unstitched') ||
+                                  String(item.name || '').toLowerCase().includes('unstiched') ||
+                                  (Number(item.quantity || 1) % 1 !== 0)
+                                );
+                                const rawQty = Number(item.quantity || 1);
+                                return isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
+                              })()} {item.size ? `• Size: ${item.size}` : ''} {item.color ? `• Color: ${item.color}` : ''}
+                            </div>
                           </div>
                         </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+                              itemStat === 'Delivered' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                              itemStat === 'Shipped' || itemStat === 'Out for Delivery' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                              itemStat === 'Packed' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
+                              itemStat === 'Confirmed' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                              itemStat === 'Cancelled' ? 'bg-rose-50 text-rose-800 border-rose-200' :
+                              'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              {itemStat}
+                            </span>
+                            <select
+                              value={itemStat}
+                              onChange={async (e) => {
+                                const newStatus = e.target.value;
+                                const itemIdToUpdate = item._id || item.id || idx;
+                                const res = await updateOrderItemStatus(activeOrderModal.id, itemIdToUpdate, newStatus);
+                                if (res && res.order) {
+                                  setActiveOrderModal(res.order);
+                                } else {
+                                  setActiveOrderModal(prev => {
+                                    if (!prev) return prev;
+                                    const nextItems = (prev.items || []).map((it, i) => (i === idx || it._id === item._id || it.id === item.id) ? { ...it, status: newStatus } : it);
+                                    const allSame = nextItems.every(it => it.status === newStatus);
+                                    return {
+                                      ...prev,
+                                      items: nextItems,
+                                      status: allSame ? newStatus : prev.status,
+                                      overallStatus: allSame ? newStatus : prev.overallStatus
+                                    };
+                                  });
+                                }
+                              }}
+                              className="text-[11px] font-bold px-2 py-1 rounded-lg border border-gray-300 bg-white hover:border-teal-600 focus:outline-none cursor-pointer"
+                              title="Update status for this specific product"
+                            >
+                              <option value="Pending">🕒 Pending</option>
+                              <option value="Confirmed">✅ Confirmed</option>
+                              <option value="Processing">⏳ Processing</option>
+                              <option value="Packed">📦 Packed</option>
+                              <option value="Shipped">🚚 Shipped</option>
+                              <option value="Out for Delivery">🛵 Out for Delivery</option>
+                              <option value="Delivered">🎉 Delivered</option>
+                              <option value="Cancelled">❌ Cancelled</option>
+                            </select>
+                          </div>
+                          <div className="font-bold text-gray-900 text-xs min-w-[50px] text-right">₹{(item.price * item.quantity)}</div>
+                        </div>
                       </div>
-                      <div className="font-bold text-gray-900">₹{(item.price * item.quantity)}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

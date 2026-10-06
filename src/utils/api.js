@@ -331,6 +331,22 @@ export const updateOrderStatusApi = async (orderId, status, details = {}) => {
   }
 };
 
+export const updateSellerOrderItemStatusApi = async (orderId, itemId, status, details = {}) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/items/${itemId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ status, ...details })
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
 export const updateReturnExchangeStatusApi = async (orderId, payload) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/return-exchange/status`, {
