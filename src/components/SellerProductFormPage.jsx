@@ -73,7 +73,17 @@ export const AGE_OPTIONS = [
 ];
 
 export const APPAREL_SIZES = ['S', 'M', 'L', 'XL', 'XXL', '26', '28', '30', '32', '34', '36', '38'];
-export const SHOE_SIZES = ['Size 6', 'Size 7', 'Size 8', 'Size 9', 'Size 10', 'Size 11'];
+export const KIDS_SHOE_SIZES = [
+  '1 Kids', '2 Kids', '3 Kids', '4 Kids', '5 Kids',
+  '6 Kids', '7 Kids', '8 Kids', '9 Kids', '10 Kids',
+  '11 Kids', '12 Kids', '13 Kids'
+];
+
+export const SENIOR_SHOE_SIZES = [
+  'Size 6', 'Size 7', 'Size 8', 'Size 9', 'Size 10', 'Size 11', 'Size 12', 'Size 13'
+];
+
+export const SHOE_SIZES = [...KIDS_SHOE_SIZES, ...SENIOR_SHOE_SIZES];
 
 export function getCategoryUnitType(categoryKey) {
   const cat = (categoryKey || '').toLowerCase();
@@ -161,7 +171,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   const categoryUnitType = getCategoryUnitType(formData.category);
 
   const toggleCategorySizeVariant = (sz, scaleName = 'size') => {
-    const existingIndex = sizeVariants.findIndex(v => String(v.size || v.measureValue).toLowerCase() === String(sz).toLowerCase());
+        const target = String(sz).toLowerCase().trim();
+        const targetNoPrefix = target.replace(/^size\s+/i, '');
+        const existingIndex = sizeVariants.findIndex(v => {
+          const s = String(v.size || v.measureValue || '').toLowerCase().trim();
+          const sNoPrefix = s.replace(/^size\s+/i, '');
+          return s === target || s === targetNoPrefix || sNoPrefix === targetNoPrefix;
+        });
     const defaultPrice = formData.price || '499';
     const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
     const defaultStock = formData.stockQuantity || '25';
@@ -1589,7 +1605,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
                   {/* FOOTWEAR UNIT SYSTEM */}
                   {categoryUnitType === 'footwear' && (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
@@ -1599,17 +1615,92 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                             Click shoe size pills to activate available stock options for footwear.
                           </p>
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                        <div className="flex items-center flex-wrap gap-1.5 text-xs font-bold">
                           <button
                             type="button"
-                            onClick={() => setSizeVariants(SHOE_SIZES.map(sz => ({
-                              size: sz, measureScale: 'size', measureValue: sz, unit: 'SHOE',
-                              price: formData.price || '599', mrp: formData.originalPrice || '799',
-                              stock: formData.stockQuantity || '20', stockQuantity: formData.stockQuantity || '20'
-                            })))}
+                            onClick={() => {
+                              const defaultPrice = formData.price || '599';
+                              const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 599) * 1.25).toString();
+                              const defaultStock = formData.stockQuantity || '20';
+                              const defaultImg = formData.images[0] || formData.image || '';
+                              const kidsVariants = KIDS_SHOE_SIZES.map(sz => {
+                                const target = sz.toLowerCase();
+                                const existing = sizeVariants.find(v => String(v.size || v.measureValue || '').toLowerCase().trim() === target);
+                                return existing || {
+                                  size: sz, measureScale: 'size', measureValue: sz, unit: 'SHOE',
+                                  price: defaultPrice, mrp: defaultMrp,
+                                  stock: defaultStock, stockQuantity: defaultStock,
+                                  image: defaultImg, images: defaultImg ? [defaultImg] : [],
+                                  sku: formData.sku ? `${formData.sku}-${sz}` : `SKU-${sz}`
+                                };
+                              });
+                              const nonKids = sizeVariants.filter(v => !KIDS_SHOE_SIZES.some(k => k.toLowerCase() === String(v.size || v.measureValue || '').toLowerCase().trim()));
+                              setSizeVariants([...nonKids, ...kidsVariants]);
+                            }}
                             className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
                           >
-                            + All Shoe Sizes (6 - 11)
+                            + All Kids (1 - 13 Kids)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const defaultPrice = formData.price || '599';
+                              const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 599) * 1.25).toString();
+                              const defaultStock = formData.stockQuantity || '20';
+                              const defaultImg = formData.images[0] || formData.image || '';
+                              const seniorVariants = SENIOR_SHOE_SIZES.map(sz => {
+                                const target = sz.toLowerCase();
+                                const targetNoPrefix = target.replace(/^size\s+/i, '');
+                                const existing = sizeVariants.find(v => {
+                                  const s = String(v.size || v.measureValue || '').toLowerCase().trim();
+                                  return s === target || s === targetNoPrefix;
+                                });
+                                return existing || {
+                                  size: sz, measureScale: 'size', measureValue: sz, unit: 'SHOE',
+                                  price: defaultPrice, mrp: defaultMrp,
+                                  stock: defaultStock, stockQuantity: defaultStock,
+                                  image: defaultImg, images: defaultImg ? [defaultImg] : [],
+                                  sku: formData.sku ? `${formData.sku}-${sz}` : `SKU-${sz}`
+                                };
+                              });
+                              const nonSenior = sizeVariants.filter(v => !SENIOR_SHOE_SIZES.some(s => {
+                                const st = s.toLowerCase();
+                                const stNoPrefix = st.replace(/^size\s+/i, '');
+                                const vt = String(v.size || v.measureValue || '').toLowerCase().trim();
+                                return vt === st || vt === stNoPrefix;
+                              }));
+                              setSizeVariants([...nonSenior, ...seniorVariants]);
+                            }}
+                            className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                          >
+                            + All Senior (6 - 13)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const defaultPrice = formData.price || '599';
+                              const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 599) * 1.25).toString();
+                              const defaultStock = formData.stockQuantity || '20';
+                              const defaultImg = formData.images[0] || formData.image || '';
+                              setSizeVariants(SHOE_SIZES.map(sz => {
+                                const target = sz.toLowerCase();
+                                const targetNoPrefix = target.replace(/^size\s+/i, '');
+                                const existing = sizeVariants.find(v => {
+                                  const s = String(v.size || v.measureValue || '').toLowerCase().trim();
+                                  return s === target || s === targetNoPrefix;
+                                });
+                                return existing || {
+                                  size: sz, measureScale: 'size', measureValue: sz, unit: 'SHOE',
+                                  price: defaultPrice, mrp: defaultMrp,
+                                  stock: defaultStock, stockQuantity: defaultStock,
+                                  image: defaultImg, images: defaultImg ? [defaultImg] : [],
+                                  sku: formData.sku ? `${formData.sku}-${sz}` : `SKU-${sz}`
+                                };
+                              }));
+                            }}
+                            className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                          >
+                            + All Shoe Sizes
                           </button>
                           <button
                             type="button"
@@ -1621,25 +1712,70 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-1.5">
-                        {SHOE_SIZES.map(sz => {
-                          const isSelected = sizeVariants.some(v => String(v.size || v.measureValue).toLowerCase() === sz.toLowerCase());
-                          return (
-                            <button
-                              key={sz}
-                              type="button"
-                              onClick={() => toggleCategorySizeVariant(sz, 'size')}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                                isSelected
-                                  ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
-                                  : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                              }`}
-                            >
-                              {isSelected && <span className="mr-1">✓</span>}
-                              {sz}
-                            </button>
-                          );
-                        })}
+                      {/* Kids Shoe Sizes Group */}
+                      <div className="p-3 bg-white/80 rounded-xl border border-teal-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-extrabold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>👶 Kids Shoe Sizes (1 - 13 Kids)</span>
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-medium">Nursery, KG & Primary School</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {KIDS_SHOE_SIZES.map(sz => {
+                            const target = sz.toLowerCase();
+                            const isSelected = sizeVariants.some(v => String(v.size || v.measureValue || '').toLowerCase().trim() === target);
+                            return (
+                              <button
+                                key={sz}
+                                type="button"
+                                onClick={() => toggleCategorySizeVariant(sz, 'size')}
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                                    : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                                }`}
+                              >
+                                {isSelected && <span className="mr-1">✓</span>}
+                                {sz}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Senior / Adult Shoe Sizes Group */}
+                      <div className="p-3 bg-white/80 rounded-xl border border-teal-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-extrabold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>👟 Senior / Adult Shoe Sizes (Size 6 - 13)</span>
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-medium">Middle, Secondary & Senior School</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SENIOR_SHOE_SIZES.map(sz => {
+                            const target = sz.toLowerCase();
+                            const targetNoPrefix = target.replace(/^size\s+/i, '');
+                            const isSelected = sizeVariants.some(v => {
+                              const s = String(v.size || v.measureValue || '').toLowerCase().trim();
+                              return s === target || s === targetNoPrefix;
+                            });
+                            return (
+                              <button
+                                key={sz}
+                                type="button"
+                                onClick={() => toggleCategorySizeVariant(sz, 'size')}
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                                    : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                                }`}
+                              >
+                                {isSelected && <span className="mr-1">✓</span>}
+                                {sz}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Inline Shoe Size Matrix Table */}

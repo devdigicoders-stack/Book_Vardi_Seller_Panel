@@ -26,6 +26,46 @@ import {
   loadRazorpayScript
 } from '../utils/api';
 
+export const isUnstitchedProduct = (item) => {
+  if (!item) return false;
+  const candStr = [
+    item.category,
+    item.subCategory,
+    item.name,
+    item.title,
+    item.unit,
+    item.size,
+    item.productId?.category,
+    item.productId?.subCategory,
+    item.productId?.name,
+    item.productId?.unit
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return Boolean(
+    item.isMeterBased ||
+    item.unit === 'meter' ||
+    item.unit === 'm' ||
+    item.productId?.isMeterBased ||
+    item.productId?.unit === 'meter' ||
+    item.productId?.unit === 'm' ||
+    candStr.includes('unstitched') ||
+    candStr.includes('unstiched') ||
+    candStr.includes('meter') ||
+    candStr.includes('cloth') ||
+    candStr.includes('fabric') ||
+    (Number(item.quantity || item.qty) % 1 !== 0)
+  );
+};
+
+export const formatItemQuantity = (item) => {
+  const rawQty = Number(item?.quantity ?? item?.qty ?? 1);
+  if (isNaN(rawQty)) return '1';
+  if (isUnstitchedProduct(item) || rawQty % 1 !== 0) {
+    return rawQty.toFixed(2);
+  }
+  return String(rawQty);
+};
+
 export default function DeliveryPartnerPage({ onNavigate }) {
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(true);
@@ -230,14 +270,37 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     }
   };
 
-  const isBulkPaid = Boolean(order?.isBulkOrder) && (order?.paymentStatus === 'paid' || order?.remainingPaymentStatus === 'paid');
-  const isOnlinePayment = !order?.isBulkOrder && (
-    !String(order?.paymentMethod || '').toUpperCase().includes('COD') &&
-    (order?.paymentStatus === 'paid' || order?.paymentStatus === 'Paid' || String(order?.paymentMethod || '').toLowerCase() !== 'cod')
+  const rawMethod = String(order?.paymentMethod || '').trim().toLowerCase();
+  const rawStatus = String(order?.paymentStatus || '').trim().toLowerCase();
+
+  const isCod = Boolean(
+    order?.isCod ||
+    rawMethod.includes('cod') ||
+    rawMethod.includes('cash')
   );
+
+  const isBulkPaid = Boolean(order?.isBulkOrder) && (
+    rawStatus === 'paid' ||
+    rawStatus === 'completed' ||
+    String(order?.remainingPaymentStatus || '').toLowerCase() === 'paid'
+  );
+
+  const isCashCollected = Boolean(
+    isCashVerifiedByExecutive ||
+    deliverySuccess ||
+    (order?.overallStatus === 'Delivered' && (rawStatus === 'paid' || rawStatus === 'completed'))
+  );
+
+  const isOnlinePaid = !order?.isBulkOrder && !isCod && (
+    rawStatus === 'paid' || rawStatus === 'completed'
+  );
+
   const isPaymentVerified = order?.isBulkOrder
     ? isBulkPaid
-    : (isOnlinePayment || isCashVerifiedByExecutive || order?.paymentStatus === 'paid' || order?.paymentStatus === 'Paid' || deliverySuccess);
+    : (isOnlinePaid || isCashCollected);
+
+  const totalAmountNum = Number(order?.totalAmount ?? order?.total ?? 0);
+  const formattedTotalAmount = totalAmountNum % 1 !== 0 ? totalAmountNum.toFixed(2) : totalAmountNum.toLocaleString('en-IN');
 
   const handleResendOtp = async () => {
     if (!token || resending || verifying || !order) return;
@@ -408,13 +471,43 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 </div>
                 <div className="text-right">
                   <span className="text-[10px] font-extrabold uppercase text-gray-400">Payment</span>
-                  <div className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
-                    order?.paymentMethod === 'COD' || order?.paymentStatus === 'pending'
-                      ? 'bg-amber-50 text-amber-900 border-amber-200'
-                      : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                  }`}>
-                    {order?.paymentMethod === 'COD' ? `COD: ₹${order?.totalAmount}` : 'Paid Online'}
-                  </div>
+                  {(() => {
+                    if (order?.isBulkOrder) {
+                      return (
+                        <div className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
+                          isBulkPaid ? 'bg-emerald-50 text-emerald-900 border-emerald-200' : 'bg-amber-50 text-amber-900 border-amber-200'
+                        }`}>
+                          {isBulkPaid ? 'Full Paid Online' : `Remaining: ₹${(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString('en-IN')}`}
+                        </div>
+                      );
+                    }
+                    if (isCod) {
+                      if (isCashCollected) {
+                        return (
+                          <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-900 border-emerald-200">
+                            ✅ Cash Collected: ₹{formattedTotalAmount}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-amber-50 text-amber-950 border-amber-300">
+                          💵 COD: ₹{formattedTotalAmount} (Collect Cash)
+                        </div>
+                      );
+                    }
+                    if (isOnlinePaid) {
+                      return (
+                        <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-900 border-emerald-200">
+                          💳 Paid Online
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-amber-50 text-amber-950 border-amber-300">
+                        ⏳ Payment Pending: ₹{formattedTotalAmount}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -467,17 +560,22 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               </div>
 
               <div className="divide-y divide-gray-100">
-                {order?.items?.map((item, idx) => (
-                  <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                    <div>
-                      <div className="font-extrabold text-gray-900">{item.name}</div>
-                      <div className="text-gray-500 text-[11px] font-medium">
-                        Qty: {item.quantity} {item.size ? `• Size: ${item.size}` : ''}
+                {order?.items?.map((item, idx) => {
+                  const itemQtyFormatted = formatItemQuantity(item);
+                  const itemTotal = Number(item.price || 0) * Number(item.quantity || 1);
+                  const formattedItemPrice = itemTotal % 1 !== 0 ? itemTotal.toFixed(2) : itemTotal.toLocaleString('en-IN');
+                  return (
+                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="font-extrabold text-gray-900">{item.name}</div>
+                        <div className="text-gray-500 text-[11px] font-medium">
+                          Qty: {itemQtyFormatted} {item.size ? `• Size: ${item.size}` : ''}
+                        </div>
                       </div>
+                      <div className="font-bold text-gray-900">₹{formattedItemPrice}</div>
                     </div>
-                    <div className="font-bold text-gray-900">₹{item.price * item.quantity}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="pt-3 border-t border-gray-200 space-y-1.5 text-xs text-gray-700 font-medium">
@@ -488,36 +586,46 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <div className="flex justify-between items-center text-gray-600">
                   <span>Items Subtotal:</span>
                   <span className="font-semibold text-gray-900 font-mono">
-                    ₹{Number(order?.subtotal || order?.items?.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0) || 0).toLocaleString()}
+                    ₹{(() => {
+                      const sub = Number(order?.subtotal || order?.items?.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0) || 0);
+                      return sub % 1 !== 0 ? sub.toFixed(2) : sub.toLocaleString('en-IN');
+                    })()}
                   </span>
                 </div>
 
                 <div className="flex justify-between items-center text-gray-600">
                   <span>Delivery Charge:</span>
                   <span className="font-semibold text-gray-900 font-mono">
-                    {(order?.shippingFee !== undefined ? order.shippingFee : (order?.shippingCost !== undefined ? order.shippingCost : 0)) > 0
-                      ? `₹${Number(order?.shippingFee !== undefined ? order.shippingFee : order?.shippingCost).toLocaleString()}`
-                      : 'FREE Delivery'}
+                    {(() => {
+                      const fee = Number(order?.shippingFee !== undefined ? order.shippingFee : (order?.shippingCost !== undefined ? order.shippingCost : 0));
+                      return fee > 0 ? `₹${fee % 1 !== 0 ? fee.toFixed(2) : fee.toLocaleString('en-IN')}` : 'FREE Delivery';
+                    })()}
                   </span>
                 </div>
 
                 {Boolean(order?.discount || order?.discountAmount) && Number(order?.discount || order?.discountAmount) > 0 && (
                   <div className="flex justify-between items-center text-emerald-700 font-semibold">
                     <span>Coupon / Savings Discount:</span>
-                    <span className="font-mono">-₹{Number(order?.discount || order?.discountAmount).toLocaleString()}</span>
+                    <span className="font-mono">-₹{(() => {
+                      const d = Number(order?.discount || order?.discountAmount);
+                      return d % 1 !== 0 ? d.toFixed(2) : d.toLocaleString('en-IN');
+                    })()}</span>
                   </div>
                 )}
 
                 {Boolean(order?.gst || order?.taxAmount) && Number(order?.gst || order?.taxAmount) > 0 && (
                   <div className="flex justify-between items-center text-gray-600">
                     <span>Estimated GST / Taxes:</span>
-                    <span className="font-semibold text-gray-900 font-mono">₹{Number(order?.gst || order?.taxAmount).toLocaleString()}</span>
+                    <span className="font-semibold text-gray-900 font-mono">₹{(() => {
+                      const g = Number(order?.gst || order?.taxAmount);
+                      return g % 1 !== 0 ? g.toFixed(2) : g.toLocaleString('en-IN');
+                    })()}</span>
                   </div>
                 )}
 
                 <div className="pt-2 border-t border-gray-100 flex justify-between items-center font-extrabold text-sm text-gray-900">
                   <span>Total Collection Amount:</span>
-                  <span className="text-teal-900 font-black text-base font-mono">₹{Number(order?.totalAmount || order?.total || 0).toLocaleString()}</span>
+                  <span className="text-teal-900 font-black text-base font-mono">₹{formattedTotalAmount}</span>
                 </div>
               </div>
             </div>
@@ -534,11 +642,11 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                           <DollarSign size={18} className="text-amber-300" /> Remaining Balance Due
                         </span>
                         <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
-                          ₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}
+                          ₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString('en-IN')}
                         </span>
                       </div>
                       <p className="text-[11px] text-teal-100 font-medium">
-                        🔒 No cash accepted for School Bulk Delivery. The remaining balance of <strong className="text-amber-300">₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}</strong> must be paid online via Razorpay (UPI / Dynamic QR) to unlock OTP verification.
+                        🔒 No cash accepted for School Bulk Delivery. The remaining balance of <strong className="text-amber-300">₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString('en-IN')}</strong> must be paid online via Razorpay (UPI / Dynamic QR) to unlock OTP verification.
                       </p>
                       <button
                         type="button"
@@ -566,31 +674,31 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     </div>
                   )
                 ) : (
-                  (String(order?.paymentMethod || '').toUpperCase().includes('COD') || (order?.paymentStatus !== 'paid' && order?.paymentStatus !== 'Paid')) ? (
-                    !isCashVerifiedByExecutive ? (
+                  (isCod || !isOnlinePaid) ? (
+                    !isCashCollected ? (
                       <div className="p-4 bg-gradient-to-r from-amber-600 to-amber-700 text-white rounded-2xl shadow-md space-y-2.5">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
                             <DollarSign size={18} className="text-amber-200" /> Collect Cash on Delivery (COD)
                           </span>
                           <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
-                            ₹{order?.totalAmount || 0}
+                            ₹{formattedTotalAmount}
                           </span>
                         </div>
                         <p className="text-[11px] text-amber-100 font-medium">
-                          ⚠️ Please collect exactly <strong className="text-white">₹{order?.totalAmount || 0}</strong> cash from customer. Click below to verify cash receipt to activate OTP dispatch & delivery completion.
+                          ⚠️ Please collect exactly <strong className="text-white">₹{formattedTotalAmount}</strong> cash from customer. Click below to verify cash receipt to activate OTP dispatch & delivery completion.
                         </p>
                         <button
                           type="button"
                           onClick={() => {
                             setIsCashVerifiedByExecutive(true);
-                            setResendMsg(`💵 Cash payment of ₹${order?.totalAmount || 0} marked as collected & verified by executive!`);
+                            setResendMsg(`💵 Cash payment of ₹${formattedTotalAmount} marked as collected & verified by executive!`);
                             setTimeout(() => setResendMsg(''), 4000);
                           }}
                           className="w-full py-2.5 bg-white hover:bg-amber-50 text-amber-950 font-black text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <CheckCircle size={16} className="text-emerald-600" />
-                          <span>Confirm Cash Payment of ₹{order?.totalAmount || 0} Collected</span>
+                          <span>Confirm Cash Payment of ₹{formattedTotalAmount} Collected</span>
                         </button>
                       </div>
                     ) : (
@@ -604,7 +712,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                           </span>
                         </div>
                         <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md shrink-0">
-                          ₹{order?.totalAmount || 0} Cash Verified
+                          ₹{formattedTotalAmount} Cash Verified
                         </span>
                       </div>
                     )
