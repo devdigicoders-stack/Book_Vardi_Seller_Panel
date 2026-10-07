@@ -526,11 +526,25 @@ export const SellerDataProvider = ({ children }) => {
     if (!Array.isArray(ordersList)) return [];
     return ordersList.map(o => {
       const resolvedStatus = o.status || o.overallStatus || (o.items && o.items[0]?.status) || 'Pending';
+      let resolvedDate = o.date;
+      if (o.createdAt) {
+        try {
+          resolvedDate = new Date(o.createdAt).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            timeZone: 'Asia/Kolkata'
+          });
+        } catch (e) {
+          resolvedDate = o.date;
+        }
+      }
       return {
         ...o,
         id: String(o.id || o._id || o.orderId || ''),
         _id: o._id || o.id,
         orderId: o.orderId || o.id || o._id,
+        date: resolvedDate || o.date,
         status: resolvedStatus,
         overallStatus: resolvedStatus,
         shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
