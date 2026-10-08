@@ -27,11 +27,13 @@ import {
   Key,
   Check,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
+import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
 
 // Helper to generate dynamic tracking ID based on courier name
 export const generateDynamicTrackingId = (courierName) => {
@@ -85,7 +87,7 @@ const STATUS_CONFIG = {
 };
 
 export default function OrdersTab() {
-  const { orders, products = [], updateOrderStatus, updateOrderItemStatus, updateReturnExchangeStatus, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
+  const { orders, products = [], updateOrderStatus, updateOrderItemStatus, updateReturnExchangeStatus, resendDeliveryBoyWhatsApp, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOrderModal, setActiveOrderModal] = useState(null);
@@ -110,6 +112,11 @@ export default function OrdersTab() {
   const [modalVehicleNumber, setModalVehicleNumber] = useState('');
   const [modalSelfDeliveryToken, setModalSelfDeliveryToken] = useState('');
 
+  // Automated WhatsApp dispatch tracking state
+  const [isSavingDelivery, setIsSavingDelivery] = useState(false);
+  const [isResendingWhatsApp, setIsResendingWhatsApp] = useState(false);
+  const [whatsappDispatchResult, setWhatsappDispatchResult] = useState(null);
+
   // Sync active modal input values when activeOrderModal opens
   useEffect(() => {
     if (activeOrderModal) {
@@ -125,6 +132,17 @@ export default function OrdersTab() {
       setModalDriverPhone(activeOrderModal.selfDeliveryDetails?.deliveryPersonPhone || '');
       setModalVehicleNumber(activeOrderModal.selfDeliveryDetails?.vehicleNumber || '');
       setModalSelfDeliveryToken(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`);
+      
+      if (activeOrderModal.selfDeliveryDetails?.whatsappStatus) {
+        setWhatsappDispatchResult({
+          success: true,
+          messageId: activeOrderModal.selfDeliveryDetails.whatsappMessageId,
+          sentTo: activeOrderModal.selfDeliveryDetails.whatsappSentTo,
+          sentAt: activeOrderModal.selfDeliveryDetails.whatsappSentAt
+        });
+      } else {
+        setWhatsappDispatchResult(null);
+      }
     }
   }, [activeOrderModal]);
 
@@ -226,7 +244,9 @@ export default function OrdersTab() {
   };
 
   const handleModalSaveStatus = async () => {
-    if (activeOrderModal) {
+    if (!activeOrderModal) return;
+    setIsSavingDelivery(true);
+    try {
       let finalAwb = '';
       let tokenVal = '';
       let trackingLink = '';
@@ -234,14 +254,17 @@ export default function OrdersTab() {
       if (deliveryModeInput === 'self_delivery') {
         if (!modalDriverName.trim()) {
           alert('⚠️ Please enter Driver / Delivery Person Name.');
+          setIsSavingDelivery(false);
           return;
         }
         if (!modalDriverPhone.trim()) {
           alert('⚠️ Please enter Driver Phone Number.');
+          setIsSavingDelivery(false);
           return;
         }
         if (!modalVehicleNumber.trim()) {
           alert('⚠️ Please enter Vehicle Number (e.g. UP32 AB 1234).');
+          setIsSavingDelivery(false);
           return;
         }
         tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
@@ -251,6 +274,7 @@ export default function OrdersTab() {
       } else if (deliveryModeInput === 'third_party') {
         if (!modalCourierInput.trim()) {
           alert('⚠️ Please select or enter Courier Partner Name.');
+          setIsSavingDelivery(false);
           return;
         }
         finalAwb = modalTrackingInput.trim() || generateDynamicTrackingId(modalCourierInput);
@@ -298,8 +322,38 @@ export default function OrdersTab() {
           : undefined
       };
 
+      // If self-delivery, prepare WhatsApp URL and open tab immediately on click to prevent pop-up blocker
+      let waUrl = '';
+      if (deliveryModeInput === 'self_delivery' && modalDriverPhone.trim()) {
+        const waMsg = generateRiderWhatsAppMessage({
+          order: activeOrderModal,
+          driverName: modalDriverName.trim(),
+          vehicleNumber: modalVehicleNumber.trim(),
+          trackingLink
+        });
+        waUrl = buildRiderWhatsAppUrl({ phone: modalDriverPhone, message: waMsg });
+        if (waUrl) {
+          try {
+            window.open(waUrl, '_blank', 'noopener,noreferrer');
+          } catch (e) {
+            console.warn('Could not open WhatsApp tab automatically:', e);
+          }
+        }
+      }
+
       const res = await updateOrderStatus(activeOrderModal.id, modalStatusInput, details);
       const serverSelfDetails = res?.order?.selfDeliveryDetails || details.selfDeliveryDetails || activeOrderModal.selfDeliveryDetails;
+
+      if (res?.whatsappDispatch) {
+        setWhatsappDispatchResult(res.whatsappDispatch);
+      } else if (serverSelfDetails?.whatsappStatus) {
+        setWhatsappDispatchResult({
+          success: true,
+          messageId: serverSelfDetails.whatsappMessageId,
+          sentTo: serverSelfDetails.whatsappSentTo,
+          sentAt: serverSelfDetails.whatsappSentAt
+        });
+      }
 
       setActiveOrderModal(prev => prev ? {
         ...prev,
@@ -313,7 +367,42 @@ export default function OrdersTab() {
         selfDeliveryDetails: serverSelfDetails
       } : null);
 
-      alert(`✅ Order #${activeOrderModal.id} status and delivery details saved successfully!`);
+      if (deliveryModeInput === 'self_delivery') {
+        alert(`✅ Order #${activeOrderModal.id} delivery details saved successfully!\n\n📲 WhatsApp has been opened in a new tab to send instructions & tracking link to ${modalDriverPhone}.\nReview and click Send in WhatsApp!`);
+      } else {
+        alert(`✅ Order #${activeOrderModal.id} status and delivery details saved successfully!`);
+      }
+    } finally {
+      setIsSavingDelivery(false);
+    }
+  };
+
+  const handleResendDeliveryWhatsApp = async () => {
+    if (!activeOrderModal?.id || !modalDriverPhone.trim()) {
+      alert('⚠️ No delivery partner phone number found to send WhatsApp message.');
+      return;
+    }
+    const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
+    const tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${activeOrderModal.id}`).trim();
+    const trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+
+    const waMsg = generateRiderWhatsAppMessage({
+      order: activeOrderModal,
+      driverName: modalDriverName.trim(),
+      vehicleNumber: modalVehicleNumber.trim(),
+      trackingLink
+    });
+    const waUrl = buildRiderWhatsAppUrl({ phone: modalDriverPhone, message: waMsg });
+    if (waUrl) {
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    }
+    setIsResendingWhatsApp(true);
+    try {
+      await resendDeliveryBoyWhatsApp(activeOrderModal.id);
+    } catch (err) {
+      console.warn('Backend resend log:', err);
+    } finally {
+      setIsResendingWhatsApp(false);
     }
   };
 
@@ -534,13 +623,13 @@ export default function OrdersTab() {
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((o) => {
+                filteredOrders.map((o, idx) => {
                   const conf = STATUS_CONFIG[o.status] || STATUS_CONFIG.Pending;
                   const Icon = conf.icon;
                   const isChecked = selectedOrderIds.includes(o.id);
 
                   return (
-                    <tr key={o.id} className={`hover:bg-gray-50/70 transition-colors ${isChecked ? 'bg-teal-50/30' : ''}`}>
+                    <tr key={o.id || o._id || o.orderId || (`ord-${idx}`)} className={`hover:bg-gray-50/70 transition-colors ${isChecked ? 'bg-teal-50/30' : ''}`}>
                       
                       {/* Checkbox */}
                       <td className="py-3.5 px-3 text-center">
@@ -772,6 +861,58 @@ export default function OrdersTab() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {Boolean(activeOrderModal.returnRequest?.type === 'exchange' || String(activeOrderModal.status).toLowerCase().includes('exchange')) && (
+                      <div className="col-span-1 sm:col-span-2 p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-teal-50 border border-purple-200 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <span className="font-extrabold text-xs uppercase tracking-wider text-purple-900 flex items-center gap-1.5">
+                            <span>🔄</span> Exchange Items & Financial Action
+                          </span>
+                          {activeOrderModal.returnRequest?.priceAdjustmentType === 'extra_payment' && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-amber-200 text-amber-950 border border-amber-300">
+                              💰 Collect Extra: +₹{activeOrderModal.returnRequest.priceDifference}
+                            </span>
+                          )}
+                          {activeOrderModal.returnRequest?.priceAdjustmentType === 'partial_refund' && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-emerald-200 text-emerald-950 border border-emerald-300">
+                              💸 Refund Customer: ₹{Math.abs(activeOrderModal.returnRequest.priceDifference)}
+                            </span>
+                          )}
+                          {activeOrderModal.returnRequest?.priceAdjustmentType === 'none' && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase bg-blue-200 text-blue-950 border border-blue-300">
+                              ⚖️ Equal Value (₹0)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="bg-white p-2.5 rounded-lg border border-purple-100">
+                            <span className="text-[10px] font-bold uppercase text-purple-600 block">Original Item to Collect:</span>
+                            <strong className="text-gray-900">{activeOrderModal.returnRequest?.itemName || activeOrderModal.items?.[0]?.name}</strong>
+                            <div className="text-[11px] text-gray-600 mt-0.5 font-mono">
+                              Spec: {activeOrderModal.items?.[0]?.size ? `Size ${activeOrderModal.items?.[0]?.size}` : (activeOrderModal.returnRequest?.isMeterBased ? `${activeOrderModal.items?.[0]?.quantity}m` : 'Base Item')} • Price: ₹{activeOrderModal.returnRequest?.originalItemPrice || activeOrderModal.items?.[0]?.price}
+                            </div>
+                          </div>
+
+                          <div className="bg-white p-2.5 rounded-lg border border-purple-100">
+                            <span className="text-[10px] font-bold uppercase text-indigo-600 block">Replacement Item to Send:</span>
+                            <strong className="text-gray-900">{activeOrderModal.returnRequest?.itemName || activeOrderModal.items?.[0]?.name}</strong>
+                            <div className="text-[11px] text-indigo-900 font-extrabold mt-0.5 font-mono">
+                              Requested: {activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength} Meter(s)` : (activeOrderModal.returnRequest?.exchangeSize || 'Replacement')} • Price: ₹{activeOrderModal.returnRequest?.replacementItemPrice || activeOrderModal.returnRequest?.originalItemPrice || activeOrderModal.items?.[0]?.price}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] rounded-lg p-2 bg-white/80 border border-purple-100 font-semibold text-purple-950">
+                          {activeOrderModal.returnRequest?.priceAdjustmentType === 'extra_payment' ? (
+                            <span>⚠️ <strong>Delivery Boy Instruction:</strong> Rider must collect <strong>₹{activeOrderModal.returnRequest.priceDifference} in cash or UPI</strong> from the customer before completing exchange delivery.</span>
+                          ) : activeOrderModal.returnRequest?.priceAdjustmentType === 'partial_refund' ? (
+                            <span>✅ <strong>Delivery Boy Instruction:</strong> Rider collects <strong>₹0</strong>. Partial refund of ₹{Math.abs(activeOrderModal.returnRequest.priceDifference)} is paid directly to customer's account.</span>
+                          ) : (
+                            <span>✅ <strong>Delivery Boy Instruction:</strong> Rider collects <strong>₹0</strong> (Equal price exchange).</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
                       <p><strong>Request Type:</strong> <span className="font-bold text-gray-900 capitalize">{activeOrderModal.returnRequest?.requestType || activeOrderModal.returnRequest?.type || (String(activeOrderModal.status).toLowerCase().includes('exchange') ? 'Exchange' : 'Return')}</span></p>
                       {activeOrderModal.returnRequest?.reason && (
@@ -780,8 +921,33 @@ export default function OrdersTab() {
                       {activeOrderModal.returnRequest?.comment && (
                         <p><strong>Comments:</strong> <span className="text-gray-800 italic">"{activeOrderModal.returnRequest.comment}"</span></p>
                       )}
-                      {activeOrderModal.returnRequest?.exchangeSize && (
-                        <p><strong>Requested Size:</strong> <span className="font-extrabold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">{activeOrderModal.returnRequest.exchangeSize}</span></p>
+                      {(activeOrderModal.returnRequest?.exchangeSize || activeOrderModal.returnRequest?.exchangeLength) && (
+                        <p>
+                          <strong>
+                            {activeOrderModal.returnRequest?.isMeterBased || activeOrderModal.returnRequest?.exchangeLength
+                              ? 'Requested Length:'
+                              : String(activeOrderModal.returnRequest.exchangeSize || '').toLowerCase().includes('kids')
+                              ? 'Requested Shoe Size:'
+                              : String(activeOrderModal.returnRequest.exchangeSize || '').toLowerCase().includes('line') || String(activeOrderModal.returnRequest.exchangeSize || '').toLowerCase().includes('pack') || String(activeOrderModal.returnRequest.exchangeSize || '').toLowerCase().includes('class') || String(activeOrderModal.returnRequest.exchangeSize || '').toLowerCase().includes('replacement')
+                              ? 'Requested Variant:'
+                              : 'Requested Size:'}
+                          </strong>{' '}
+                          <span className="font-extrabold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                            {activeOrderModal.returnRequest?.exchangeLength
+                              ? `${activeOrderModal.returnRequest.exchangeLength} Meter(s)`
+                              : activeOrderModal.returnRequest?.exchangeSize}
+                          </span>
+                          {activeOrderModal.returnRequest?.priceAdjustmentType === 'extra_payment' && (
+                            <span className="ml-1 text-[11px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                              +₹{activeOrderModal.returnRequest.priceDifference} Extra
+                            </span>
+                          )}
+                          {activeOrderModal.returnRequest?.priceAdjustmentType === 'partial_refund' && (
+                            <span className="ml-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
+                              ₹{Math.abs(activeOrderModal.returnRequest.priceDifference)} Refund
+                            </span>
+                          )}
+                        </p>
                       )}
                       {activeOrderModal.returnRequest?.exchangeColor && (
                         <p><strong>Requested Color:</strong> <span className="font-bold text-gray-900">{activeOrderModal.returnRequest.exchangeColor}</span></p>
@@ -1144,18 +1310,41 @@ export default function OrdersTab() {
                         </button>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        {modalDriverPhone && (
-                          <a
-                            href={`https://wa.me/91${modalDriverPhone.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hello ${modalDriverName || 'Delivery Partner'}, here is your BookVardi delivery executive link for Order #${activeOrderModal.id}:\n${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`)}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                          >
-                            <MessageSquare size={13} /> Share Link via WhatsApp to Driver
-                          </a>
-                        )}
+                      {/* Manual WhatsApp Rider Dispatch Action & Status */}
+                      {modalDriverPhone && (
+                        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl space-y-2 text-xs">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                              <div>
+                                <div className="font-extrabold text-emerald-950 flex items-center gap-1.5">
+                                  <MessageSquare size={13} className="text-emerald-700" />
+                                  <span>WhatsApp Rider Dispatch (Direct Web / App)</span>
+                                  <span className="bg-emerald-200/80 text-emerald-900 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold">READY</span>
+                                </div>
+                                <div className="text-[10px] text-emerald-700 font-mono mt-0.5">
+                                  Target Rider: +91 {modalDriverPhone.replace(/\D/g, '').slice(-10)}
+                                </div>
+                              </div>
+                            </div>
 
+                            <button
+                              type="button"
+                              disabled={isResendingWhatsApp}
+                              onClick={handleResendDeliveryWhatsApp}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                            >
+                              <MessageSquare size={13} />
+                              <span>📲 Open WhatsApp to Send to Rider</span>
+                            </button>
+                          </div>
+                          <div className="text-[10px] text-emerald-800 bg-white/70 p-1.5 rounded border border-emerald-200">
+                            💡 <strong>Direct Send:</strong> Clicking <em>"Save Delivery Partner Details"</em> opens WhatsApp in a new tab with pre-filled instructions & tracking link. Simply click <strong>Send</strong> in WhatsApp Web/App!
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
                         <button
                           type="button"
                           onClick={handleRegenerateFreshDeliveryLink}
@@ -1166,6 +1355,22 @@ export default function OrdersTab() {
                         </button>
                       </div>
                     </div>
+                  </div>
+                )}
+                {/* Exchange Rider Assignment Note */}
+                {Boolean(activeOrderModal.returnRequest?.type === 'exchange' || String(activeOrderModal.status).toLowerCase().includes('exchange')) && (
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-purple-950 text-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base shrink-0">🔄</span>
+                      <span>
+                        <strong>Exchange Delivery Note:</strong> Rider will be automatically instructed to pick up the old item and deliver the replacement ({activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength}m` : (activeOrderModal.returnRequest?.exchangeSize || 'Requested item')}).
+                      </span>
+                    </div>
+                    <span className="font-mono font-extrabold text-[11px] px-2 py-0.5 rounded-md bg-purple-200 text-purple-950 shrink-0">
+                      {activeOrderModal.returnRequest?.priceAdjustmentType === 'extra_payment'
+                        ? `Collect +₹${activeOrderModal.returnRequest.priceDifference}`
+                        : 'Collect ₹0'}
+                    </span>
                   </div>
                 )}
 
@@ -1195,10 +1400,18 @@ export default function OrdersTab() {
                   <div className="flex items-end">
                     <button
                       type="button"
+                      disabled={isSavingDelivery}
                       onClick={handleModalSaveStatus}
-                      className="w-full py-2 bg-teal-800 hover:bg-teal-900 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer text-xs"
+                      className="w-full py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer text-xs disabled:opacity-60 flex items-center justify-center gap-2"
                     >
-                      Save & Update Order
+                      {isSavingDelivery ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          <span>Saving & Dispatching WhatsApp...</span>
+                        </>
+                      ) : (
+                        <span>Save Delivery Partner & Tracking Details</span>
+                      )}
                     </button>
                   </div>
                 </div>
