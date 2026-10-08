@@ -624,14 +624,24 @@ export const SellerDataProvider = ({ children }) => {
           });
         }
       }).catch(() => {});
+
+      fetchSchoolOrdersApi().then(schoolList => {
+        if (Array.isArray(schoolList)) {
+          setSchoolOrders(schoolList);
+          try {
+            localStorage.setItem('bv_sync_school_orders', JSON.stringify(schoolList));
+          } catch (e) {}
+        }
+      }).catch(() => {});
     };
 
     handleOrderSync();
 
     window.addEventListener('bv_orders_updated', handleOrderSync);
+    window.addEventListener('bv_school_orders_updated', handleOrderSync);
     window.addEventListener('focus', handleOrderSync);
     const storageHandler = (e) => {
-      if (e.key === 'bv_order_sync_timestamp' || e.key === 'admin_orders' || e.key === 'bv_seller_orders') {
+      if (e.key === 'bv_order_sync_timestamp' || e.key === 'admin_orders' || e.key === 'bv_seller_orders' || e.key === 'bv_sync_school_orders') {
         handleOrderSync();
       }
     };
@@ -1320,6 +1330,18 @@ export const SellerDataProvider = ({ children }) => {
     return createdProduct;
   };
 
+  const isProductOwnedByMe = (p) => {
+    if (!p) return false;
+    const myId = String(sellerUser?.id || sellerUser?._id || '');
+    const myStoreName = String(sellerUser?.storeName || '').trim().toLowerCase();
+    const pSellerId = String(p.sellerId || p.seller || p.ownerId || p.userId || (p.seller && (p.seller._id || p.seller.id)) || '');
+    if (myId && pSellerId && pSellerId === myId) return true;
+    const pStore = String(p.storeName || p.sellerName || p.vendor || p.seller?.storeName || p.seller?.name || '').trim().toLowerCase();
+    if (myStoreName && pStore && (pStore === myStoreName || pStore.includes(myStoreName) || myStoreName.includes(pStore))) return true;
+    if (!pSellerId && !pStore) return true;
+    return false;
+  };
+
   const editProduct = (id, updates) => {
     checkPermission();
     const strId = String(id);
@@ -1331,6 +1353,10 @@ export const SellerDataProvider = ({ children }) => {
     }
 
     const isMatch = (p) => String(p.id) === strId || String(p._id) === strId || p.id == id || p._id == id;
+    const target = products.find(p => isMatch(p));
+    if (target && !isProductOwnedByMe(target)) {
+      throw new Error('Unauthorized: This product is listed by another seller and cannot be modified.');
+    }
 
     setProducts(prev => {
       const updated = prev.map(p => {
@@ -1402,6 +1428,10 @@ export const SellerDataProvider = ({ children }) => {
     const target = products.find(p => String(p.id || p._id) === strId);
     if (!target) return;
 
+    if (!isProductOwnedByMe(target)) {
+      throw new Error('Unauthorized: This product is listed by another seller and cannot be modified.');
+    }
+
     const currentQty = Number(target.stockQuantity ?? target.stock ?? 0);
     const isCurrentlyActive = Boolean(target.inStock) && currentQty > 0;
 
@@ -1431,6 +1461,10 @@ export const SellerDataProvider = ({ children }) => {
   const deleteProduct = (id) => {
     checkPermission();
     const strId = String(id);
+    const target = products.find(p => String(p.id || p._id) === strId);
+    if (target && !isProductOwnedByMe(target)) {
+      throw new Error('Unauthorized: This product is listed by another seller and cannot be deleted.');
+    }
     setProducts(prev => {
       const updated = prev.filter(p => String(p.id || p._id) !== strId);
       return updated;
@@ -1613,6 +1647,10 @@ export const SellerDataProvider = ({ children }) => {
   const updateVariantStock = (id, updatedSizeVariants) => {
     checkPermission();
     const strId = String(id);
+    const target = products.find(p => String(p.id || p._id) === strId || p.id == id || p._id == id);
+    if (target && !isProductOwnedByMe(target)) {
+      throw new Error('Unauthorized: This product is listed by another seller and cannot be modified.');
+    }
 
     if (Array.isArray(updatedSizeVariants)) {
       const totalVariantStock = updatedSizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stockQuantity ?? v.stock ?? 0)), 0);
@@ -1694,10 +1732,38 @@ export const SellerDataProvider = ({ children }) => {
     setOrders(prev => {
       const updated = prev.map(o => {
         if (String(o.id) === strId || String(o._id) === strId || String(o.orderId) === strId) {
-          const resolvedStatus = newStatus || o.status || o.overallStatus;
+          const candidateIds = [
+            sellerUser?.id,
+            sellerUser?._id,
+            sellerUser?.merchantId,
+            sellerUser?.sellerId,
+            typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+            typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+            typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+          ].filter(Boolean).map(String);
+          const cleanSellerPhone = String(sellerUser?.phone || sellerUser?.sellerPhone || '').replace(/\D/g, '').slice(-10);
+          const cleanSellerStore = String(sellerUser?.storeName || sellerUser?.businessName || sellerUser?.name || '').trim().toLowerCase();
+
+          const isItemBelongingToMe = (item) => {
+            if (!item) return false;
+            if (!sellerUser || Object.keys(sellerUser).length === 0) return true;
+            const itemSellerId = String(item.sellerId?._id || item.sellerId?.id || item.sellerId || item.sellerDetails?.sellerId || item.sellerDetails?._id || '').trim();
+            if (itemSellerId && candidateIds.includes(itemSellerId)) return true;
+            const itemPhone = String(item.sellerPhone || item.sellerDetails?.phone || '').replace(/\D/g, '').slice(-10);
+            if (cleanSellerPhone && itemPhone && itemPhone === cleanSellerPhone) return true;
+            const itemStore = String(item.storeName || item.sellerStoreName || item.sellerName || item.sellerDetails?.storeName || '').trim().toLowerCase();
+            if (cleanSellerStore && itemStore && (cleanSellerStore === itemStore || cleanSellerStore.includes(itemStore) || itemStore.includes(cleanSellerStore))) return true;
+            if (!itemSellerId && !itemPhone && !itemStore) return true;
+            return false;
+          };
+
+          const resolvedStatus = newStatus || updates.status || updates.overallStatus || o.status || o.overallStatus || 'Pending';
+
           const updatedItems = Array.isArray(updates.items)
             ? updates.items
-            : (Array.isArray(o.items) ? o.items.map(item => ({ ...item, status: resolvedStatus })) : o.items);
+            : (Array.isArray(o.items)
+              ? o.items.map(item => isItemBelongingToMe(item) ? { ...item, status: resolvedStatus } : item)
+              : o.items);
           return {
             ...o,
             ...updates,
@@ -1982,17 +2048,56 @@ export const SellerDataProvider = ({ children }) => {
 
   const acceptSchoolOrder = async (id) => {
     checkPermission();
-    setSchoolOrders(prev => prev.map(s => {
-      if (String(s.id || s._id) === String(id)) {
-        return { ...s, status: 'assigned' };
-      }
-      return s;
-    }));
+    const currentSellerId = sellerUser?.id || sellerUser?._id || '';
+    setSchoolOrders(prev => {
+      const updatedList = prev.map(s => {
+        if (String(s.id || s._id) === String(id) || String(s.referenceId) === String(id)) {
+          const budgetVal = Number(s.overallBudget || s.targetBudgetPerKit || s.estimatedBudget || 0);
+          return {
+            ...s,
+            status: 'accepted',
+            acceptanceMode: 'target_budget',
+            acceptedAtTargetBudget: true,
+            acceptedPrice: budgetVal > 0 ? budgetVal : s.acceptedPrice,
+            sellerId: currentSellerId || s.sellerId
+          };
+        }
+        return s;
+      });
+
+      try {
+        localStorage.setItem('bv_sync_school_orders', JSON.stringify(updatedList));
+        ['bv_customer_bulk_orders', 'admin_school_orders'].forEach(k => {
+          try {
+            const list = JSON.parse(localStorage.getItem(k) || '[]');
+            const idx = list.findIndex(o => String(o.id || o._id) === String(id) || (o.referenceId && String(o.referenceId) === String(id)));
+            if (idx !== -1) {
+              list[idx] = { ...list[idx], status: 'accepted', sellerId: currentSellerId, acceptanceMode: 'target_budget', acceptedAtTargetBudget: true };
+              localStorage.setItem(k, JSON.stringify(list));
+            }
+          } catch (e) {}
+        });
+        window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+
+      return updatedList;
+    });
 
     try {
       const res = await acceptSchoolOrderApi(id);
       if (res?.success) {
-        showToast('You have accepted this school bulk order!');
+        if (res.order) {
+          setSchoolOrders(prev => {
+            const merged = prev.map(s => (String(s.id || s._id) === String(id) || String(s.referenceId) === String(id)) ? { ...s, ...res.order } : s);
+            try {
+              localStorage.setItem('bv_sync_school_orders', JSON.stringify(merged));
+              window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+            } catch (e) {}
+            return merged;
+          });
+        }
+        showToast('🎯 You have accepted this school bulk order at target budget!');
       }
     } catch (e) {
       console.warn('Backend accept school order fallback:', e);
@@ -2528,6 +2633,7 @@ export const SellerDataProvider = ({ children }) => {
         shippingPartners: Array.isArray(shippingPartners) ? shippingPartners : [],
         settings,
         // Product actions
+        isProductOwnedByMe,
         addProduct,
         editProduct,
         toggleProductStatus,
