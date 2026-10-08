@@ -60,6 +60,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     'canceled'
   ].includes(normStatus) || (!isPendingUnconfirmed && normStatus.length > 0);
 
+  const hasPendingProduct = isPendingUnconfirmed || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
+    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
+  }));
+
   const hasConfirmedItem = Array.isArray(order.items) && order.items.some(it => {
     const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
     return itStatus && !['pending', 'placed', 'unconfirmed'].includes(itStatus);
@@ -69,7 +74,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
     Number(order.advancePaidAmount || 0) > 0;
 
-  const confirmed = isConfirmedAndOnward || hasConfirmedItem || isPaid;
+  const confirmed = !hasPendingProduct && (isConfirmedAndOnward || hasConfirmedItem);
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
