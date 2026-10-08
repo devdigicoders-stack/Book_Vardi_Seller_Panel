@@ -14,7 +14,8 @@ import {
   AlertCircle,
   ChevronUp,
   SlidersHorizontal,
-  Scale
+  Scale,
+  XCircle
 } from 'lucide-react';
 
 /**
@@ -269,17 +270,47 @@ export default function NegotiationTimelineDiv({
 }) {
   if (!quotation) return null;
 
-  const qIdStr = String(quotation._id || quotation.id || '');
-  const isApproved = useMemo(() => {
-    if (quotation.status === 'approved' || quotation.status === 'buyer_accepted' || quotation.status === 'seller_accepted') return true;
-    const acceptedIdStr = String(order?.acceptedQuoteId || order?.winningQuoteId || order?.acceptedQuote?._id || order?.acceptedQuote?.id || '');
-    if (acceptedIdStr && (acceptedIdStr === qIdStr || (quotation.sellerId && String(quotation.sellerId) === String(order?.sellerId)))) return true;
-    const ordStatusLower = String(order?.status || '').toLowerCase();
-    if (['assigned', 'accepted', 'approved', 'quote_accepted', 'buyer_accepted', 'seller_accepted', 'advance_paid', 'completed', 'delivered'].includes(ordStatusLower)) {
-      if (quotation.status !== 'rejected') return true;
+  const getCleanId = (val) => {
+    if (!val) return '';
+    if (typeof val === 'object') {
+      if (val._id) return String(val._id);
+      if (val.id) return String(val.id);
+      if (typeof val.toString === 'function') {
+        const str = val.toString();
+        if (str !== '[object Object]') return str;
+      }
     }
+    return String(val);
+  };
+
+  const qIdStr = getCleanId(quotation?._id || quotation?.id);
+  const acceptedIdStr = getCleanId(order?.acceptedQuoteId || order?.winningQuoteId || order?.acceptedQuote?._id || order?.acceptedQuote?.id);
+  const sellerIdStr = getCleanId(order?.sellerId);
+  const quoteSellerIdStr = getCleanId(quotation?.sellerId);
+
+  const isWinner = useMemo(() => {
+    if (quotation.status === 'rejected' || quotation.negotiationStage === 'rejected') return false;
+    if (sellerIdStr && quoteSellerIdStr && sellerIdStr === quoteSellerIdStr) return true;
+    if (acceptedIdStr && acceptedIdStr === qIdStr) return true;
+    if (quotation.status === 'approved' || quotation.negotiationStage === 'approved') return true;
     return false;
-  }, [quotation, order, qIdStr]);
+  }, [quotation, sellerIdStr, quoteSellerIdStr, acceptedIdStr, qIdStr]);
+
+  const hasAwardedWinner = useMemo(() => {
+    const ordStatusLower = String(order?.status || '').toLowerCase();
+    const isOrderAwarded = ['assigned', 'accepted', 'approved', 'quote_accepted', 'advance_paid', 'in_production', 'processing', 'packed', 'out_for_delivery', 'out for delivery', 'delivered', 'completed', 'received'].includes(ordStatusLower);
+    return isOrderAwarded || Boolean(acceptedIdStr) || Boolean(sellerIdStr);
+  }, [order, acceptedIdStr, sellerIdStr]);
+
+  const isRejected = useMemo(() => {
+    if (quotation.status === 'rejected' || quotation.negotiationStage === 'rejected') return true;
+    if (hasAwardedWinner && !isWinner) return true;
+    return false;
+  }, [quotation, hasAwardedWinner, isWinner]);
+
+  const isApproved = useMemo(() => {
+    return isWinner && !isRejected;
+  }, [isWinner, isRejected]);
 
   // Extract all historical and synthesized rounds
   const allVersions = useMemo(() => {
@@ -584,6 +615,11 @@ export default function NegotiationTimelineDiv({
                 <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3.5 py-2 rounded-xl flex items-center gap-1.5 border border-emerald-200 shadow-2xs">
                   <CheckCircle2 size={16} className="text-emerald-700" />
                   <span>Approved & Winning Seller Quote</span>
+                </span>
+              ) : isRejected ? (
+                <span className="text-xs font-extrabold text-rose-800 bg-rose-50 px-3.5 py-2 rounded-xl flex items-center gap-1.5 border border-rose-200 shadow-2xs">
+                  <XCircle size={16} className="text-rose-600" />
+                  <span>Quotation Rejected / Outbid</span>
                 </span>
               ) : (
                 <>

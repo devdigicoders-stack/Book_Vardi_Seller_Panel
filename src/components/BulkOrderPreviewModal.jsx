@@ -27,7 +27,8 @@ import {
   Lock,
   Printer,
   Percent,
-  SlidersHorizontal
+  SlidersHorizontal,
+  XCircle
 } from 'lucide-react';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import PartialAdvanceReceiptModal from './PartialAdvanceReceiptModal';
@@ -330,26 +331,86 @@ export default function BulkOrderPreviewModal({
 
   const winningQuote = useMemo(() => {
     if (!order) return null;
+    const getCleanId = (val) => {
+      if (!val) return '';
+      if (typeof val === 'object') {
+        if (val._id) return String(val._id);
+        if (val.id) return String(val.id);
+        if (typeof val.toString === 'function') {
+          const str = val.toString();
+          if (str !== '[object Object]') return str;
+        }
+      }
+      return String(val);
+    };
+
     if (Array.isArray(order.quotations) && order.quotations.length > 0) {
+      const orderSellerId = getCleanId(order.sellerId);
+      const acceptedQuoteId = getCleanId(order.acceptedQuoteId || order.winningQuoteId);
+
+      // 1. Match assigned non-rejected seller quote
+      if (orderSellerId) {
+        const bySeller = order.quotations.find(q =>
+          getCleanId(q.sellerId) === orderSellerId &&
+          q.status !== 'rejected' && q.negotiationStage !== 'rejected'
+        );
+        if (bySeller) return bySeller;
+      }
+
+      // 2. Match acceptedQuoteId
+      if (acceptedQuoteId) {
+        const match = order.quotations.find(q =>
+          getCleanId(q._id || q.id) === acceptedQuoteId &&
+          q.status !== 'rejected' && q.negotiationStage !== 'rejected'
+        );
+        if (match) return match;
+      }
+
+      // 3. Match quote with approved status
       const found = order.quotations.find(q =>
-        q.status === 'approved' ||
-        q.status === 'buyer_accepted' ||
-        q.status === 'seller_accepted' ||
-        q.negotiationStage === 'buyer_accepted_quote' ||
-        q.negotiationStage === 'seller_accepted_counter' ||
-        String(q._id) === String(order.acceptedQuoteId) ||
-        String(q.id) === String(order.acceptedQuoteId)
+        q.status !== 'rejected' &&
+        q.negotiationStage !== 'rejected' &&
+        (q.status === 'approved' || q.negotiationStage === 'approved')
       );
       if (found) return found;
-      if (order.status === 'quote_accepted') {
-        return existingSellerQuote;
-      }
     }
-    if (order.status === 'quote_accepted' && existingSellerQuote) {
-      return existingSellerQuote;
+
+    // 4. If order is assigned specifically to this seller
+    const assignedSellerId = getCleanId(order.sellerId);
+    const isAssignedToThisSeller = assignedSellerId && (
+      assignedSellerId === currentSellerId ||
+      sellerCandidateIds.includes(assignedSellerId)
+    );
+    if (isAssignedToThisSeller && existingSellerQuote?.status !== 'rejected' && existingSellerQuote?.negotiationStage !== 'rejected' && ['quote_accepted', 'accepted', 'confirmed', 'packed', 'out for delivery', 'delivered', 'completed'].includes(order.status)) {
+      return existingSellerQuote || null;
     }
     return null;
-  }, [order, existingSellerQuote]);
+  }, [order, existingSellerQuote, currentSellerId, sellerCandidateIds]);
+
+  const isMyQuoteWon = useMemo(() => {
+    if (!order) return false;
+    if (existingSellerQuote?.status === 'rejected' || existingSellerQuote?.negotiationStage === 'rejected') return false;
+    if (winningQuote && isMyQuote(winningQuote)) return true;
+    if (order.acceptedQuoteId && existingSellerQuote && String(existingSellerQuote._id || existingSellerQuote.id) === String(order.acceptedQuoteId)) return true;
+    return false;
+  }, [order, winningQuote, existingSellerQuote]);
+
+  const assignedSellerIdStr = useMemo(() => {
+    return String(order?.sellerId?._id || order?.sellerId?.id || order?.sellerId || '').trim();
+  }, [order?.sellerId]);
+
+  const isAssignedToThisSeller = useMemo(() => {
+    return Boolean(assignedSellerIdStr && (assignedSellerIdStr === currentSellerId || sellerCandidateIds.includes(assignedSellerIdStr)));
+  }, [assignedSellerIdStr, currentSellerId, sellerCandidateIds]);
+
+  const isRequisitionLockedToOther = useMemo(() => {
+    if (!order || userRole !== 'seller') return false;
+    if (existingSellerQuote?.status === 'rejected' || existingSellerQuote?.negotiationStage === 'rejected') return true;
+    if (order.acceptedQuoteId && !isMyQuoteWon) return true;
+    if (assignedSellerIdStr && !isAssignedToThisSeller) return true;
+    if (['quote_accepted', 'accepted', 'confirmed'].includes(order.status) && !isMyQuoteWon && !isAssignedToThisSeller) return true;
+    return false;
+  }, [order, userRole, existingSellerQuote, isMyQuoteWon, assignedSellerIdStr, isAssignedToThisSeller]);
 
   // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
   const normStatus = String(order?.deliveryStatus || order?.status || '').toLowerCase().replace(/_/g, ' ');
@@ -714,7 +775,7 @@ export default function BulkOrderPreviewModal({
             </button>
 
             {/* Seller Proposal Form Tab */}
-            {userRole === 'seller' && (
+            {userRole === 'seller' && !isRequisitionLockedToOther && (
               <button
                 onClick={() => setModalSubTab('submit_quote')}
                 className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -837,31 +898,36 @@ export default function BulkOrderPreviewModal({
               {(() => {
                 const assignedId = order.sellerId ? (typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : '';
                 const isAcceptedToMe = Boolean(
-                  (order.status === 'quote_accepted' || winningQuote) && (
-                    userRole === 'admin' ||
-                    (winningQuote && isMyQuote(winningQuote)) ||
-                    (currentSellerId && String(winningQuote?.sellerId) === String(currentSellerId)) ||
-                    (winningQuote && sellerCandidateIds.includes(String(winningQuote?.sellerId))) ||
-                    (assignedId && (String(assignedId) === String(currentSellerId) || sellerCandidateIds.includes(String(assignedId)))) ||
-                    (userRole === 'seller' && Array.isArray(order?.quotations) && order.quotations.length === 1 && (order?.status === 'quote_accepted' || winningQuote?.status === 'approved'))
-                  )
-                );
-                const isAcceptedOtherSeller = Boolean(
-                  (order.status === 'quote_accepted' || winningQuote) &&
-                  assignedId &&
-                  !sellerCandidateIds.includes(String(assignedId)) &&
-                  String(assignedId) !== String(currentSellerId) &&
-                  !isAcceptedToMe
+                  userRole === 'admin' ||
+                  isMyQuoteWon ||
+                  (isAssignedToThisSeller && !order.acceptedQuoteId) ||
+                  (isAssignedToThisSeller && isMyQuoteWon)
                 );
 
-                if (isAcceptedOtherSeller && userRole === 'seller' && existingSellerQuote) {
+                const isQuoteRejected = Boolean(
+                  existingSellerQuote?.status === 'rejected' ||
+                  existingSellerQuote?.negotiationStage === 'rejected' ||
+                  (order.acceptedQuoteId && existingSellerQuote && (String(existingSellerQuote._id || existingSellerQuote.id) !== String(order.acceptedQuoteId)))
+                );
+
+                const isAcceptedOtherSeller = Boolean(
+                  !isAcceptedToMe && (
+                    isQuoteRejected ||
+                    isRequisitionLockedToOther ||
+                    (assignedId && !sellerCandidateIds.includes(String(assignedId)) && String(assignedId) !== String(currentSellerId)) ||
+                    (order.acceptedQuoteId && !isMyQuoteWon) ||
+                    ['quote_accepted', 'accepted', 'confirmed', 'packed', 'out for delivery', 'delivered', 'completed'].includes(order.status)
+                  )
+                );
+
+                if ((isAcceptedOtherSeller || isQuoteRejected) && userRole === 'seller') {
                   return (
-                    <div className="bg-amber-50 border border-amber-300 text-amber-950 p-4.5 rounded-2xl shadow-xs space-y-1.5">
-                      <div className="font-extrabold text-xs uppercase tracking-wider text-amber-900 flex items-center gap-2">
-                        <AlertCircle size={16} className="text-amber-700" /> Requisition Awarded to Another Vendor
+                    <div className="bg-rose-50 border-2 border-rose-300 text-rose-950 p-5 rounded-2xl shadow-xs space-y-2">
+                      <div className="font-extrabold text-sm uppercase tracking-wider text-rose-900 flex items-center gap-2">
+                        <AlertCircle size={18} className="text-rose-700" /> Requisition Awarded to Another Vendor • Quotation Rejected
                       </div>
-                      <p className="text-xs text-amber-900 font-medium leading-relaxed">
-                        The customer has selected and accepted another proposal for this bulk requisition. All vendor proposals remain strictly private. Thank you for submitting your quotation!
+                      <p className="text-xs text-rose-900 font-medium leading-relaxed">
+                        The buyer has reviewed all vendor proposals, selected another vendor's quotation, and confirmed this requisition. Your quotation has been closed as not selected. All competitive vendor proposals remain strictly confidential. Thank you for participating!
                       </p>
                     </div>
                   );
@@ -1607,8 +1673,29 @@ export default function BulkOrderPreviewModal({
                 ) : (
                   <div className="space-y-4">
                     {visibleQuotations.map(quote => {
-                    const qId = quote._id || quote.id;
-                    const isApproved = quote.status === 'approved' || String(order.acceptedQuoteId) === String(qId);
+                    const getCleanId = (val) => {
+                      if (!val) return '';
+                      if (typeof val === 'object') {
+                        if (val._id) return String(val._id);
+                        if (val.id) return String(val.id);
+                        if (typeof val.toString === 'function') {
+                          const str = val.toString();
+                          if (str !== '[object Object]') return str;
+                        }
+                      }
+                      return String(val);
+                    };
+
+                    const qId = getCleanId(quote._id || quote.id);
+                    const isWinner = Boolean(
+                      winningQuote && (getCleanId(winningQuote._id || winningQuote.id) === qId)
+                    );
+                    const isRejected = (
+                      quote.status === 'rejected' ||
+                      quote.negotiationStage === 'rejected' ||
+                      Boolean(winningQuote && !isWinner)
+                    );
+                    const isApproved = isWinner && !isRejected;
                     const isCurrentSellerQuote = isMyQuote(quote) || (currentSellerId && String(quote.sellerId) === String(currentSellerId));
                     const hasItemPrices = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0;
 
@@ -1616,7 +1703,9 @@ export default function BulkOrderPreviewModal({
                       <div
                         key={qId}
                         className={`p-4 sm:p-5 rounded-2xl border transition-all space-y-3.5 ${
-                          isApproved ? 'bg-emerald-50/80 border-emerald-300 shadow-xs' : 'bg-white border-gray-200 hover:border-purple-300'
+                          isApproved ? 'bg-emerald-50/80 border-emerald-300 shadow-xs' :
+                          isRejected ? 'bg-slate-50/70 border-slate-200 text-slate-500 opacity-80' :
+                          'bg-white border-gray-200 hover:border-purple-300'
                         }`}
                       >
                         {/* Header Row: Vendor Info & Total Quote */}
@@ -1627,6 +1716,11 @@ export default function BulkOrderPreviewModal({
                               {isApproved && (
                                 <span className="bg-emerald-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
                                   Winning Proposal
+                                </span>
+                              )}
+                              {isRejected && (
+                                <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <XCircle size={10} className="text-rose-600" /> Quotation Rejected / Outbid
                                 </span>
                               )}
                             </div>
@@ -1685,6 +1779,21 @@ export default function BulkOrderPreviewModal({
                             </div>
                           </div>
                         </div>
+
+                        {/* Notice Banner: Quotation Rejected / Outbid */}
+                        {isRejected && (
+                          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-rose-900 shadow-2xs">
+                            <XCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                            <div>
+                              <div className="font-extrabold text-[11px] uppercase tracking-wider text-rose-800">
+                                Quotation Proposal Not Selected
+                              </div>
+                              <p className="mt-0.5 text-rose-900">
+                                This quotation proposal was not selected for procurement. The requisition has been awarded to <strong>{winningQuote?.sellerStoreName || winningQuote?.sellerName || order.acceptedSellerName || "another vendor"}</strong>.
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Active Buyer Counter-Demand Info Card */}
                         {quote.latestBuyerCounter && (Number(quote.latestBuyerCounter.targetBudget) > 0 || quote.latestBuyerCounter.notes) && (
@@ -1878,6 +1987,7 @@ export default function BulkOrderPreviewModal({
                           const advTerms = quote.prepaymentTerms || quote.sellerAdvanceTerms || '';
                           const remainingBal = Math.max(0, Number(quote.quoteAmount) - advAmt);
 
+                          if (!isApproved || isRejected) return null;
                           if (advPct <= 0 && advAmt <= 0 && !advTerms) return null;
 
                           return (
@@ -1948,6 +2058,10 @@ export default function BulkOrderPreviewModal({
                             <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-200">
                               <CheckCircle2 size={14} /> Approved & Winning Seller Quote
                             </span>
+                          ) : isRejected ? (
+                            <span className="text-xs font-extrabold text-rose-800 bg-rose-50 px-3 py-1 rounded-full flex items-center gap-1 border border-rose-200">
+                              <XCircle size={14} className="text-rose-600" /> Quotation Rejected / Outbid
+                            </span>
                           ) : (
                             <div className="flex items-center gap-2">
                               <span className="text-[11px] text-gray-500 font-semibold">
@@ -1974,7 +2088,7 @@ export default function BulkOrderPreviewModal({
                               </button>
                             )}
 
-                            {userRole === 'seller' && !isApproved && isCurrentSellerQuote && (
+                            {userRole === 'seller' && !isApproved && !isRejected && isCurrentSellerQuote && (
                               <>
                                 {quote.negotiationStage === 'buyer_countered' ? (
                                   <button

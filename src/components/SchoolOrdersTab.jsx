@@ -132,7 +132,8 @@ export default function SchoolOrdersTab() {
       );
 
       const isWinningSeller = Boolean(req.acceptedQuoteId && req.quotations?.some(
-        q => String(q._id || q.id) === String(req.acceptedQuoteId) && (
+        q => String(q._id || q.id) === String(req.acceptedQuoteId) &&
+        q.status !== 'rejected' && q.negotiationStage !== 'rejected' && (
           (currentSellerId && String(q.sellerId?._id || q.sellerId?.id || q.sellerId) === currentSellerId) ||
           sellerCandidateIds.includes(String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '')) ||
           (cleanSellerPhone && String(q.sellerPhone || '').replace(/\D/g, '').slice(-10) === cleanSellerPhone) ||
@@ -163,7 +164,7 @@ export default function SchoolOrdersTab() {
       let channelMatch = true;
       if (channelFilter === 'Accepted') {
         const isAcceptedOrder = ['quote_accepted', 'accepted', 'seller_accepted_counter', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status) || req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget;
-        channelMatch = isAssignedToMe || isWinningSeller || isAcceptedOrder;
+        channelMatch = (isAssignedToMe || isWinningSeller) && isAcceptedOrder;
       } else if (channelFilter === 'Direct') {
         channelMatch = req.assignmentMode === 'direct';
       } else if (channelFilter === 'Invited') {
@@ -247,6 +248,44 @@ export default function SchoolOrdersTab() {
     setIsAddModalOpen(false);
   };
 
+  const wonOrdersCount = useMemo(() => {
+    const candidateIds = [
+      sellerUser?.id,
+      sellerUser?._id,
+      sellerUser?.merchantId,
+      typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+    ].filter(Boolean).map(String);
+    const currId = String(sellerUser?.id || sellerUser?._id || candidateIds[0] || '');
+    const phone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
+    const store = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
+
+    return (schoolOrders || []).filter(s => {
+      const isAcceptedStatus = ['assigned', 'quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(s.status);
+      if (!isAcceptedStatus) return false;
+
+      const assignedId = s.sellerId ? String(typeof s.sellerId === 'object' ? (s.sellerId._id || s.sellerId.id) : s.sellerId) : '';
+      const isAssigned = Boolean(assignedId && (assignedId === currId || candidateIds.includes(assignedId)));
+
+      const myQuote = Array.isArray(s.quotations) ? s.quotations.find(q => {
+        const qId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
+        if (qId && candidateIds.includes(qId)) return true;
+        if (phone && String(q.sellerPhone || '').replace(/\D/g, '').slice(-10) === phone) return true;
+        if (store && (q.sellerStoreName || q.sellerName || '').trim().toLowerCase() === store) return true;
+        return false;
+      }) : null;
+
+      if (myQuote && (myQuote.status === 'rejected' || myQuote.negotiationStage === 'rejected')) {
+        return false;
+      }
+
+      const isWon = Boolean(s.acceptedQuoteId && myQuote && String(myQuote._id || myQuote.id) === String(s.acceptedQuoteId));
+
+      return isAssigned || isWon;
+    }).length;
+  }, [schoolOrders, sellerUser]);
+
   return (
     <div className="space-y-6">
       
@@ -288,7 +327,7 @@ export default function SchoolOrdersTab() {
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Accepted / Won RFQs</div>
           <div className="text-2xl font-extrabold text-emerald-700 mt-1">
-            {(schoolOrders || []).filter(s => ['assigned', 'quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(s.status)).length}
+            {wonOrdersCount}
           </div>
           <div className="text-[10px] text-emerald-600 mt-0.5">Assigned & active fulfillment</div>
         </div>
@@ -377,14 +416,20 @@ export default function SchoolOrdersTab() {
             const hasSellerQuote = Boolean(myQuote);
 
             const assignedSellerId = req.sellerId ? (typeof req.sellerId === 'object' ? (req.sellerId._id || req.sellerId.id) : req.sellerId) : '';
+            const isAssignedToMeCandidate = Boolean(assignedSellerId && sellerCandidateIds.includes(String(assignedSellerId)));
 
-            const isWinningSeller = Boolean(req.acceptedQuoteId && myQuote && (
-              String(myQuote._id || myQuote.id) === String(req.acceptedQuoteId)
-            ));
+            const isMyQuoteRejected = Boolean(myQuote && (myQuote.status === 'rejected' || myQuote.negotiationStage === 'rejected'));
+            const isWinningSeller = Boolean(
+              !isMyQuoteRejected &&
+              req.acceptedQuoteId &&
+              myQuote &&
+              String(myQuote._id || myQuote.id) === String(req.acceptedQuoteId) &&
+              (isAssignedToMeCandidate || !assignedSellerId || String(assignedSellerId) === String(myQuote.sellerId))
+            );
 
             const isBroadcast = req.assignmentMode === 'broadcast' || req.isGlobalRfq || req.isGlobal || req.isPublic || !req.assignmentMode || req.assignmentMode === 'unassigned' || req.assignmentMode === 'open';
-            const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
-            const isAssignedToMe = (assignedSellerId && sellerCandidateIds.includes(String(assignedSellerId))) || isWinningSeller;
+            const isAcceptedStatus = ['quote_accepted', 'accepted', 'confirmed', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
+            const isAssignedToMe = !isMyQuoteRejected && (isAssignedToMeCandidate || isWinningSeller);
             const isTargetBudgetAccepted = req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget;
 
             const isPacked = req.status === 'packed';
@@ -396,14 +441,18 @@ export default function SchoolOrdersTab() {
             const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
             const isPrepaymentPending = advRequired && !isPrepaymentPaid;
 
-            // An order is locked to another seller ONLY if prepayment is confirmed, or if it was a private direct order assigned to someone else
-            const isLockedToOther = !isAssignedToMe && (isPrepaymentPaid || (req.assignmentMode === 'direct' && !isBroadcast && Boolean(assignedSellerId)));
+            const isOutbidOrRejected = isMyQuoteRejected || Boolean(
+              (isAcceptedStatus || req.acceptedQuoteId || assignedSellerId) && !isAssignedToMe && Boolean(assignedSellerId || req.acceptedQuoteId)
+            );
+
+            // An order is locked to another seller if prepayment is confirmed, or if it was awarded to another vendor, or if it was a private direct order assigned to someone else
+            const isLockedToOther = !isAssignedToMe && (isPrepaymentPaid || isOutbidOrRejected || (req.assignmentMode === 'direct' && !isBroadcast && Boolean(assignedSellerId)));
             const isAcceptedOther = !isAssignedToMe && Boolean(assignedSellerId);
 
             const budgetVal = req.acceptedPrice || req.overallBudget || req.targetBudgetPerKit || req.estimatedBudget || myQuote?.quoteAmount || 0;
 
             let cardColorClass = 'bg-white border-gray-100 hover:border-teal-200 shadow-xs';
-            if (isLockedToOther) {
+            if (isOutbidOrRejected || isLockedToOther) {
               cardColorClass = 'bg-gray-100/90 border-gray-200 text-gray-500 opacity-75 shadow-none';
             } else if (isCompleted || isReceived) {
               cardColorClass = 'bg-gray-50/80 border-gray-200 hover:border-gray-300 shadow-xs';
@@ -476,7 +525,9 @@ export default function SchoolOrdersTab() {
 
                   <div className="flex items-center gap-2">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                      isLockedToOther
+                      isOutbidOrRejected
+                        ? 'bg-rose-50 text-rose-800 border-rose-200 font-extrabold'
+                        : isLockedToOther
                         ? 'bg-gray-200 text-gray-700 border-gray-300'
                         : isCompleted
                         ? 'bg-emerald-100 text-emerald-950 border-emerald-400 font-black'
@@ -498,7 +549,8 @@ export default function SchoolOrdersTab() {
                         ? 'bg-purple-50 text-purple-800 border-purple-200'
                         : 'bg-teal-50 text-teal-800 border-teal-200'
                     }`}>
-                      {isLockedToOther ? '🔒 Awarded to Another Vendor (Prepayment Confirmed)' :
+                      {isOutbidOrRejected ? '❌ Quotation Rejected (Awarded to Another Vendor)' :
+                       isLockedToOther ? '🔒 Awarded to Another Vendor (Prepayment Confirmed)' :
                        isCompleted ? '🎉 Order Completed & Paid (UPI)' :
                        isReceived ? '✅ Consignment Delivered & Received' :
                        isOutForDelivery ? '🚚 Out for Delivery (Store Fleet)' :
@@ -636,7 +688,7 @@ export default function SchoolOrdersTab() {
                     )}
 
                     {/* Financial & Settlement Breakdown for Accepted / Dispatched / Fulfilled orders */}
-                    {myQuote && (
+                    {myQuote && (isAssignedToMe || isWinningSeller) && !isOutbidOrRejected && (
                       <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-2">
                         <div>
                           <span className="text-[10px] font-bold uppercase text-gray-500 block">Total Quotation Value</span>
@@ -676,6 +728,17 @@ export default function SchoolOrdersTab() {
                         </div>
                       </div>
                     )}
+                    {isOutbidOrRejected && myQuote && (
+                      <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs mt-2 text-rose-950">
+                        <div className="flex items-center gap-2">
+                          <XCircle size={15} className="text-rose-600 shrink-0" />
+                          <span>Your Pitch of <strong>₹{Number(myQuote.quoteAmount || 0).toLocaleString()}</strong> was not selected. Requisition awarded to another vendor.</span>
+                        </div>
+                        <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-rose-200 text-rose-900 shrink-0">
+                          Quotation Closed
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -709,7 +772,7 @@ export default function SchoolOrdersTab() {
                 </div>
 
                 {/* Active Buyer Counter-Demand Alert Card on Order Card */}
-                {myQuote && (myQuote.negotiationStage === 'buyer_countered' || (myQuote.latestBuyerCounter && (Number(myQuote.latestBuyerCounter.targetBudget) > 0 || myQuote.latestBuyerCounter.notes))) && (
+                {myQuote && !isOutbidOrRejected && (myQuote.negotiationStage === 'buyer_countered' || (myQuote.latestBuyerCounter && (Number(myQuote.latestBuyerCounter.targetBudget) > 0 || myQuote.latestBuyerCounter.notes))) && (
                   <div className="p-4 bg-linear-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl space-y-2.5 shadow-xs animate-in fade-in">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
                       <div className="flex items-center gap-2">
@@ -800,7 +863,7 @@ export default function SchoolOrdersTab() {
                 )}
 
                 {/* Seller Quote Banner if already submitted */}
-                {myQuote && (
+                {myQuote && !isOutbidOrRejected && (
                   <div className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
                     isAssignedToMe
                       ? (isPrepaymentPending ? 'bg-amber-50/90 border-amber-300 text-amber-950 font-bold' : 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold')
@@ -845,7 +908,7 @@ export default function SchoolOrdersTab() {
                     'delivered'
                   ].includes(String(req.status || '').toLowerCase());
 
-                  if (!isAdvancedOrder && (req.status === 'buyer_accepted' || myQuote?.status === 'buyer_accepted')) {
+                  if (!isOutbidOrRejected && !isAdvancedOrder && (req.status === 'buyer_accepted' || myQuote?.status === 'buyer_accepted')) {
                     return (
                       <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
                         <div className="flex items-center gap-2">
@@ -871,7 +934,7 @@ export default function SchoolOrdersTab() {
                     );
                   }
 
-                  if (!isAdvancedOrder && (req.status === 'seller_accepted_counter' || myQuote?.status === 'seller_accepted')) {
+                  if (!isOutbidOrRejected && !isAdvancedOrder && (req.status === 'seller_accepted_counter' || myQuote?.status === 'seller_accepted')) {
                     return (
                       <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-950 font-bold">
                         <span className="flex items-center gap-1.5">
@@ -888,7 +951,7 @@ export default function SchoolOrdersTab() {
                   return null;
                 })()}
 
-                {isPrepaymentPending ? (
+                {(isPrepaymentPending && isAssignedToMe && !isOutbidOrRejected) ? (
                   <div className="bg-amber-50 border-2 border-amber-300 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
                     <div className="flex items-center gap-2">
                       <AlertCircle size={15} className="text-amber-700 shrink-0" />
@@ -905,7 +968,7 @@ export default function SchoolOrdersTab() {
                       Prepayment Pending
                     </span>
                   </div>
-                ) : isPrepaymentPaid ? (
+                ) : (isPrepaymentPaid && isAssignedToMe && !isOutbidOrRejected) ? (
                   <div className="bg-emerald-50/70 border border-emerald-200/80 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
                       <DollarSign size={14} className="text-emerald-700 shrink-0" />
@@ -959,16 +1022,18 @@ export default function SchoolOrdersTab() {
                   </button>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setPreviewOrder(req);
-                        setInitialPreviewTab('specs');
-                      }}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-purple-200"
-                    >
-                      <Eye size={14} />
-                      <span>View Expanded Details</span>
-                    </button>
+                    {!isOutbidOrRejected && (
+                      <button
+                        onClick={() => {
+                          setPreviewOrder(req);
+                          setInitialPreviewTab('specs');
+                        }}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold rounded-xl transition-colors cursor-pointer border border-purple-200"
+                      >
+                        <Eye size={14} />
+                        <span>View Expanded Details</span>
+                      </button>
+                    )}
 
                     {/* Order Processing Buttons for Seller on Accepted Orders */}
                     {isAssignedToMe && (

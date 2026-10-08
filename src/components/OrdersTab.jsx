@@ -28,7 +28,8 @@ import {
   Check,
   ShieldCheck,
   RefreshCw,
-  Loader2
+  Loader2,
+  Lock
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import TaxInvoiceModal from './TaxInvoiceModal';
@@ -834,13 +835,30 @@ export default function OrdersTab() {
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsInvoiceModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 font-bold rounded-xl transition-colors cursor-pointer text-xs"
-                  title="View & Print GST Tax Invoice & Packing Slip"
-                >
-                  <FileText size={14} /> Tax Invoice & Label
-                </button>
+                {(() => {
+                  const modalStatus = String(activeOrderModal.status || '').toLowerCase().trim();
+                  const isPending = modalStatus === 'pending' || modalStatus === 'placed' || modalStatus === 'unconfirmed';
+                  const hasPendingItem = Array.isArray(activeOrderModal.items) && activeOrderModal.items.some(it => {
+                    const itStatus = String(it.status || '').toLowerCase().trim();
+                    return !itStatus || itStatus === 'pending' || itStatus === 'placed' || itStatus === 'unconfirmed';
+                  });
+                  const isLocked = isPending || hasPendingItem;
+
+                  return (
+                    <button
+                      onClick={() => setIsInvoiceModalOpen(true)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs ${
+                        isLocked
+                          ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
+                      }`}
+                      title={isLocked ? "Invoice locked while order/product status is pending confirmation" : "View & Print GST Tax Invoice & Packing Slip"}
+                    >
+                      {isLocked ? <Lock size={14} /> : <FileText size={14} />}
+                      <span>{isLocked ? 'Invoice Locked (Pending)' : 'Tax Invoice & Label'}</span>
+                    </button>
+                  );
+                })()}
 
                 <button
                   onClick={() => setActiveOrderModal(null)}
@@ -1311,9 +1329,33 @@ export default function OrdersTab() {
                           Tracking ID: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
                         </span>
                       </div>
-                      <div className="text-[10px] text-amber-800 font-medium bg-amber-50 p-1.5 rounded border border-amber-200">
-                        🔑 <strong>Fallback Delivery OTP:</strong> If SMS is delayed, rider can verify delivery using testing PIN <strong className="font-mono">1234</strong> / <strong className="font-mono">4829</strong> or customer phone last 4 digits ({activeOrderModal?.customerPhone ? activeOrderModal.customerPhone.replace(/\D/g, '').slice(-4) : 'Phone Last 4'}).
-                      </div>
+                      {(() => {
+                        const orderOtp = activeOrderModal?.deliveryOtp ||
+                          activeOrderModal?.selfDeliveryDetails?.deliveryOtp ||
+                          activeOrderModal?.items?.[0]?.deliveryOtp ||
+                          activeOrderModal?.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
+                          '';
+                        return (
+                          <div className="text-[11px] text-emerald-900 font-medium bg-emerald-50 p-2 rounded-xl border border-emerald-200 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold flex items-center gap-1 text-emerald-800">
+                                🔐 <strong>Order Delivery Handover OTP:</strong>
+                              </span>
+                              {orderOtp ? (
+                                <span className="font-mono text-xs font-black bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-950 tracking-widest shadow-2xs">
+                                  {orderOtp}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-500 font-mono">Shared on delivery dispatch</span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-gray-600 flex items-center justify-between">
+                              <span>Customer presents this 4-digit OTP at doorstep.</span>
+                              <span className="text-gray-400 font-mono">(Fallback PIN: 1234 / 4829)</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div className="flex items-center gap-1.5">
                         <input
