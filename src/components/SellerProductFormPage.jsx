@@ -74,13 +74,14 @@ export const AGE_OPTIONS = [
 
 export const APPAREL_SIZES = ['S', 'M', 'L', 'XL', 'XXL', '26', '28', '30', '32', '34', '36', '38'];
 export const KIDS_SHOE_SIZES = [
-  '1 Kids', '2 Kids', '3 Kids', '4 Kids', '5 Kids',
   '6 Kids', '7 Kids', '8 Kids', '9 Kids', '10 Kids',
   '11 Kids', '12 Kids', '13 Kids'
 ];
 
 export const SENIOR_SHOE_SIZES = [
-  'Size 6', 'Size 7', 'Size 8', 'Size 9', 'Size 10', 'Size 11', 'Size 12', 'Size 13'
+  'Size 1', 'Size 2', 'Size 3', 'Size 4', 'Size 5',
+  'Size 6', 'Size 7', 'Size 8', 'Size 9', 'Size 10',
+  'Size 11', 'Size 12', 'Size 13'
 ];
 
 export const SHOE_SIZES = [...KIDS_SHOE_SIZES, ...SENIOR_SHOE_SIZES];
@@ -1639,7 +1640,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                             }}
                             className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
                           >
-                            + All Kids (1 - 13 Kids)
+                            + All Kids (6 - 13 Kids)
                           </button>
                           <button
                             type="button"
@@ -1673,7 +1674,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                             }}
                             className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
                           >
-                            + All Senior (6 - 13)
+                            + All Senior / Adults (1 - 13)
                           </button>
                           <button
                             type="button"
@@ -1716,7 +1717,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       <div className="p-3 bg-white/80 rounded-xl border border-teal-100 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-extrabold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>👶 Kids Shoe Sizes (1 - 13 Kids)</span>
+                            <span>👶 Kids Shoe Sizes (6 - 13 Kids)</span>
                           </span>
                           <span className="text-[10px] text-gray-500 font-medium">Nursery, KG & Primary School</span>
                         </div>
@@ -1747,9 +1748,9 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       <div className="p-3 bg-white/80 rounded-xl border border-teal-100 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-extrabold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>👟 Senior / Adult Shoe Sizes (Size 6 - 13)</span>
+                            <span>👟 Senior / Adult Shoe Sizes (Size 1 - 13)</span>
                           </span>
-                          <span className="text-[10px] text-gray-500 font-medium">Middle, Secondary & Senior School</span>
+                          <span className="text-[10px] text-gray-500 font-medium">Middle, Secondary, Senior School & Adults</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {SENIOR_SHOE_SIZES.map(sz => {

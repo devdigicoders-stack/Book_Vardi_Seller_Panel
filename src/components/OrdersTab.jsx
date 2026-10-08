@@ -157,9 +157,45 @@ export default function OrdersTab() {
     price: 0,
     quantity: 1,
     size: 'M',
-    availableSizes: [],
+    availableSizes: ['S', 'M', 'L', 'XL'],
     shippingAddress: ''
   });
+
+  const isItemBelongingToCurrentSeller = (item) => {
+    if (!item) return false;
+    if (!sellerUser || Object.keys(sellerUser).length === 0) return true;
+
+    const candidateIds = [
+      sellerUser.id,
+      sellerUser._id,
+      sellerUser.merchantId,
+      sellerUser.sellerId,
+      typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+    ].filter(Boolean).map(String);
+
+    const cleanSellerPhone = String(sellerUser.phone || sellerUser.sellerPhone || '').replace(/\D/g, '').slice(-10);
+    const cleanSellerStore = String(sellerUser.storeName || sellerUser.businessName || sellerUser.name || '').trim().toLowerCase();
+
+    const itemSellerId = String(item.sellerId?._id || item.sellerId?.id || item.sellerId || item.sellerDetails?.sellerId || item.sellerDetails?._id || '').trim();
+    if (itemSellerId && candidateIds.includes(itemSellerId)) return true;
+
+    const itemPhone = String(item.sellerPhone || item.sellerDetails?.phone || '').replace(/\D/g, '').slice(-10);
+    if (cleanSellerPhone && itemPhone && itemPhone === cleanSellerPhone) return true;
+
+    const itemStore = String(item.storeName || item.sellerStoreName || item.sellerName || item.sellerDetails?.storeName || '').trim().toLowerCase();
+    if (cleanSellerStore && itemStore && (cleanSellerStore === itemStore || cleanSellerStore.includes(itemStore) || itemStore.includes(cleanSellerStore))) return true;
+
+    const itemProdId = String(item.productId?._id || item.productId || item.id || item._id || '');
+    if (itemProdId && Array.isArray(products) && products.some(p => String(p._id || p.id) === itemProdId)) {
+      return true;
+    }
+
+    if (itemSellerId || itemStore) return false;
+
+    return true;
+  };
 
   const hasActiveReturnRequest = (order) => {
     if (!order) return false;
@@ -1422,13 +1458,25 @@ export default function OrdersTab() {
               <div className="space-y-2">
                 <div className="font-bold text-gray-700 flex items-center justify-between">
                   <span>Ordered Items ({activeOrderModal.items?.length || 1})</span>
-                  <span className="text-[10px] text-gray-500 font-normal">Update individual product status below</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Manage individual product fulfillment</span>
                 </div>
+
+                {/* Multi-Vendor Order Notice Banner */}
+                {Array.isArray(activeOrderModal.items) && activeOrderModal.items.some(it => !isItemBelongingToCurrentSeller(it)) && (
+                  <div className="p-2.5 bg-blue-50/70 border border-blue-200 text-blue-900 rounded-xl text-xs flex items-center gap-2">
+                    <Package size={15} className="text-blue-600 shrink-0" />
+                    <span><strong>Multi-Vendor Order:</strong> You are managing fulfillment for your store's products. Products from other sellers are strictly read-only.</span>
+                  </div>
+                )}
+
                 <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
                   {activeOrderModal.items?.map((item, idx) => {
+                    const isMyItem = isItemBelongingToCurrentSeller(item);
                     const itemStat = item.status || activeOrderModal.status || 'Pending';
+                    const storeNameAttribution = item.storeName || item.sellerStoreName || item.sellerName || item.sellerDetails?.storeName || 'Other Verified Seller';
+
                     return (
-                      <div key={idx} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white hover:bg-gray-50/50">
+                      <div key={idx} className={`p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isMyItem ? 'bg-white hover:bg-gray-50/50' : 'bg-gray-50/60'}`}>
                         <div className="flex items-center gap-2.5">
                           {item.image ? (
                             <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover border border-gray-100 shrink-0" />
@@ -1457,6 +1505,12 @@ export default function OrdersTab() {
                                 return isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
                               })()} {item.size ? `• Size: ${item.size}` : ''} {item.color ? `• Color: ${item.color}` : ''}
                             </div>
+                            {!isMyItem && (
+                              <div className="text-[10px] text-teal-800 font-bold flex items-center gap-1 mt-0.5">
+                                <Store size={11} className="text-teal-600" />
+                                <span>Sold by: {storeNameAttribution} (Read-Only)</span>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -1472,40 +1526,46 @@ export default function OrdersTab() {
                             }`}>
                               {itemStat}
                             </span>
-                            <select
-                              value={itemStat}
-                              onChange={async (e) => {
-                                const newStatus = e.target.value;
-                                const itemIdToUpdate = item._id || item.id || idx;
-                                const res = await updateOrderItemStatus(activeOrderModal.id, itemIdToUpdate, newStatus);
-                                if (res && res.order) {
-                                  setActiveOrderModal(res.order);
-                                } else {
-                                  setActiveOrderModal(prev => {
-                                    if (!prev) return prev;
-                                    const nextItems = (prev.items || []).map((it, i) => (i === idx || it._id === item._id || it.id === item.id) ? { ...it, status: newStatus } : it);
-                                    const allSame = nextItems.every(it => it.status === newStatus);
-                                    return {
-                                      ...prev,
-                                      items: nextItems,
-                                      status: allSame ? newStatus : prev.status,
-                                      overallStatus: allSame ? newStatus : prev.overallStatus
-                                    };
-                                  });
-                                }
-                              }}
-                              className="text-[11px] font-bold px-2 py-1 rounded-lg border border-gray-300 bg-white hover:border-teal-600 focus:outline-none cursor-pointer"
-                              title="Update status for this specific product"
-                            >
-                              <option value="Pending">🕒 Pending</option>
-                              <option value="Confirmed">✅ Confirmed</option>
-                              <option value="Processing">⏳ Processing</option>
-                              <option value="Packed">📦 Packed</option>
-                              <option value="Shipped">🚚 Shipped</option>
-                              <option value="Out for Delivery">🛵 Out for Delivery</option>
-                              <option value="Delivered">🎉 Delivered</option>
-                              <option value="Cancelled">❌ Cancelled</option>
-                            </select>
+                            {isMyItem ? (
+                              <select
+                                value={itemStat}
+                                onChange={async (e) => {
+                                  const newStatus = e.target.value;
+                                  const itemIdToUpdate = item._id || item.id || idx;
+                                  const res = await updateOrderItemStatus(activeOrderModal.id, itemIdToUpdate, newStatus);
+                                  if (res && res.order) {
+                                    setActiveOrderModal(res.order);
+                                  } else {
+                                    setActiveOrderModal(prev => {
+                                      if (!prev) return prev;
+                                      const nextItems = (prev.items || []).map((it, i) => (i === idx || it._id === item._id || it.id === item.id) ? { ...it, status: newStatus } : it);
+                                      const allSame = nextItems.every(it => it.status === newStatus);
+                                      return {
+                                        ...prev,
+                                        items: nextItems,
+                                        status: allSame ? newStatus : prev.status,
+                                        overallStatus: allSame ? newStatus : prev.overallStatus
+                                      };
+                                    });
+                                  }
+                                }}
+                                className="text-[11px] font-bold px-2 py-1 rounded-lg border border-gray-300 bg-white hover:border-teal-600 focus:outline-none cursor-pointer"
+                                title="Update status for this specific product"
+                              >
+                                <option value="Pending">🕒 Pending</option>
+                                <option value="Confirmed">✅ Confirmed</option>
+                                <option value="Processing">⏳ Processing</option>
+                                <option value="Packed">📦 Packed</option>
+                                <option value="Shipped">🚚 Shipped</option>
+                                <option value="Out for Delivery">🛵 Out for Delivery</option>
+                                <option value="Delivered">🎉 Delivered</option>
+                                <option value="Cancelled">❌ Cancelled</option>
+                              </select>
+                            ) : (
+                              <span className="text-[10px] text-gray-500 font-bold px-1.5 py-0.5 rounded bg-gray-100 border border-gray-200">
+                                🔒 Other Seller
+                              </span>
+                            )}
                           </div>
                           <div className="font-bold text-gray-900 text-xs min-w-[50px] text-right">₹{(item.price * item.quantity)}</div>
                         </div>

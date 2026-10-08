@@ -140,32 +140,36 @@ export default function SchoolOrdersTab() {
         )
       ));
 
-      const isUnassignedBroadcast = (req.assignmentMode === 'broadcast' || req.isGlobalRfq || req.isGlobal || req.isPublic) &&
-        !assignedSellerId &&
-        !req.acceptedQuoteId &&
-        !['completed', 'fulfilled', 'cancelled', 'rejected'].includes(String(req.status || '').toLowerCase());
+      const isBroadcast = req.assignmentMode === 'broadcast' || req.isGlobalRfq || req.isGlobal || req.isPublic || !req.assignmentMode || req.assignmentMode === 'unassigned' || req.assignmentMode === 'open';
+      const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
 
-      // STRICT ACCESS CONTROL RULES:
-      // A. If order is assigned/awarded to ANOTHER seller -> STRICT ACCESS DENIED
-      if (isAssignedToAnother && !isAssignedToMe) {
+      // Access Rules:
+      // A. If an order is explicitly a private direct order assigned to another seller (not broadcast, not invited, not quoted) -> hide
+      const isPrivateDirectToOther = req.assignmentMode === 'direct' && !isBroadcast && isAssignedToAnother && !isInvitedToMe && !hasMySellerQuote;
+      if (isPrivateDirectToOther) {
         return false;
       }
 
       // B. Seller CAN see order IF:
-      // - Assigned to me OR won by me OR invited to me OR it's an unassigned open broadcast order OR I quoted on it before it was awarded
-      const hasAccess = isAssignedToMe || isWinningSeller || isInvitedToMe || isUnassignedBroadcast || (hasMySellerQuote && !isAssignedToAnother);
+      // - Prepayment is not paid yet (all marketplace bulk RFQs remain open for competitive acceptance and pitches until prepayment is verified!)
+      // - It is a broadcast / open marketplace RFQ (visible to all sellers, even if one seller accepted it!)
+      // - Assigned to me OR won by me
+      // - Invited to me
+      // - I quoted on it
+      const hasAccess = !isPrepaymentPaid || isBroadcast || isAssignedToMe || isWinningSeller || isInvitedToMe || hasMySellerQuote;
       if (!hasAccess) return false;
 
       // Channel Filter
       let channelMatch = true;
       if (channelFilter === 'Accepted') {
-        channelMatch = isAssignedToMe || isWinningSeller;
+        const isAcceptedOrder = ['quote_accepted', 'accepted', 'seller_accepted_counter', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status) || req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget;
+        channelMatch = isAssignedToMe || isWinningSeller || isAcceptedOrder;
       } else if (channelFilter === 'Direct') {
         channelMatch = req.assignmentMode === 'direct';
       } else if (channelFilter === 'Invited') {
-        channelMatch = req.assignmentMode === 'selected';
+        channelMatch = req.assignmentMode === 'selected' || isInvitedToMe;
       } else if (channelFilter === 'Broadcast') {
-        channelMatch = req.assignmentMode === 'broadcast';
+        channelMatch = req.assignmentMode === 'broadcast' || isBroadcast;
       }
 
       // Search Filter
@@ -378,21 +382,39 @@ export default function SchoolOrdersTab() {
               String(myQuote._id || myQuote.id) === String(req.acceptedQuoteId)
             ));
 
+            const isBroadcast = req.assignmentMode === 'broadcast' || req.isGlobalRfq || req.isGlobal || req.isPublic || !req.assignmentMode || req.assignmentMode === 'unassigned' || req.assignmentMode === 'open';
             const isAcceptedStatus = ['quote_accepted', 'accepted', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
-            const isAssignedToMe = (assignedSellerId && sellerCandidateIds.includes(String(assignedSellerId))) || isWinningSeller || (isAcceptedStatus && hasSellerQuote);
-            const isAcceptedOther = (req.status === 'quote_accepted' || req.acceptedQuoteId) && assignedSellerId && !sellerCandidateIds.includes(String(assignedSellerId)) && !isAssignedToMe;
+            const isAssignedToMe = (assignedSellerId && sellerCandidateIds.includes(String(assignedSellerId))) || isWinningSeller;
+            const isTargetBudgetAccepted = req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget;
 
             const isPacked = req.status === 'packed';
             const isOutForDelivery = req.status === 'out for delivery' || req.status === 'out_for_delivery';
             const isCompleted = req.status === 'completed' || req.status === 'fulfilled' || req.remainingPaymentStatus === 'paid';
             const isReceived = req.status === 'received' || req.status === 'delivered' || isCompleted;
 
-            const advRequired = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0) > 0 || Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || 0) > 0;
+            const advRequired = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || req.prepaymentAmount || 0) > 0 || Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || req.prepaymentPercentage || 0) > 0 || req.advancePaymentStatus === 'pending';
             const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
             const isPrepaymentPending = advRequired && !isPrepaymentPaid;
 
+            // An order is locked to another seller ONLY if prepayment is confirmed, or if it was a private direct order assigned to someone else
+            const isLockedToOther = !isAssignedToMe && (isPrepaymentPaid || (req.assignmentMode === 'direct' && !isBroadcast && Boolean(assignedSellerId)));
+            const isAcceptedOther = !isAssignedToMe && Boolean(assignedSellerId);
+
+            const budgetVal = req.acceptedPrice || req.overallBudget || req.targetBudgetPerKit || req.estimatedBudget || myQuote?.quoteAmount || 0;
+
+            let cardColorClass = 'bg-white border-gray-100 hover:border-teal-200 shadow-xs';
+            if (isLockedToOther) {
+              cardColorClass = 'bg-gray-100/90 border-gray-200 text-gray-500 opacity-75 shadow-none';
+            } else if (isCompleted || isReceived) {
+              cardColorClass = 'bg-gray-50/80 border-gray-200 hover:border-gray-300 shadow-xs';
+            } else if ((isTargetBudgetAccepted || isAssignedToMe) && !isPrepaymentPending) {
+              cardColorClass = 'bg-blue-50/70 border-blue-200 hover:border-blue-300 ring-1 ring-blue-100 shadow-xs';
+            } else if (isPrepaymentPending || req.status === 'seller_accepted_counter' || req.status === 'buyer_countered' || myQuote?.negotiationStage === 'buyer_countered') {
+              cardColorClass = 'bg-amber-50/70 border-amber-200/90 hover:border-amber-300 ring-1 ring-amber-100 shadow-xs';
+            }
+
             return (
-              <div key={req.id || req._id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs hover:border-teal-200 transition-all space-y-4">
+              <div key={req.id || req._id} className={`${cardColorClass} p-5 rounded-2xl border transition-all space-y-4`}>
                 
                 {/* Header */}
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 border-b border-gray-100 pb-3">
@@ -454,7 +476,9 @@ export default function SchoolOrdersTab() {
 
                   <div className="flex items-center gap-2">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                      isCompleted
+                      isLockedToOther
+                        ? 'bg-gray-200 text-gray-700 border-gray-300'
+                        : isCompleted
                         ? 'bg-emerald-100 text-emerald-950 border-emerald-400 font-black'
                         : isReceived
                         ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
@@ -462,20 +486,27 @@ export default function SchoolOrdersTab() {
                         ? 'bg-amber-100 text-amber-950 border-amber-300'
                         : isPacked
                         ? 'bg-cyan-50 text-cyan-900 border-cyan-200'
+                        : (isAssignedToMe && isTargetBudgetAccepted)
+                        ? 'bg-blue-100 text-blue-950 border-blue-300 font-black flex items-center gap-1.5'
+                        : (isAssignedToMe && isPrepaymentPending)
+                        ? 'bg-amber-100 text-amber-950 border-amber-300 font-extrabold'
                         : isAssignedToMe
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        : isAcceptedOther
-                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                        : (!isAssignedToMe && assignedSellerId && !isPrepaymentPaid)
+                        ? 'bg-amber-100 text-amber-900 border-amber-300'
                         : hasSellerQuote
                         ? 'bg-purple-50 text-purple-800 border-purple-200'
                         : 'bg-teal-50 text-teal-800 border-teal-200'
                     }`}>
-                      {isCompleted ? '🎉 Order Completed & Paid (UPI)' :
+                      {isLockedToOther ? '🔒 Awarded to Another Vendor (Prepayment Confirmed)' :
+                       isCompleted ? '🎉 Order Completed & Paid (UPI)' :
                        isReceived ? '✅ Consignment Delivered & Received' :
                        isOutForDelivery ? '🚚 Out for Delivery (Store Fleet)' :
                        isPacked ? '📦 Consignment Packed & Ready' :
-                       isAssignedToMe ? '🎉 Order Accepted by Buyer' :
-                       isAcceptedOther ? 'ℹ️ Buyer accepted quotation from another seller' :
+                       (isAssignedToMe && isTargetBudgetAccepted) ? `🎯 Accepted at Target Budget (${budgetVal > 0 ? `₹${Number(budgetVal).toLocaleString()}` : 'Agreed'})` :
+                       (isAssignedToMe && isPrepaymentPending) ? '⏳ Pitch Selected • Prepayment Pending' :
+                       isAssignedToMe ? '🎉 Order Accepted & Prepayment Confirmed!' :
+                       (!isAssignedToMe && assignedSellerId && !isPrepaymentPaid) ? '⚡ Pending Prepayment Confirmation (Open for Pitches & Acceptance)' :
                        hasSellerQuote ? 'Your Pitch Submitted' : 'RFQ Open for Quotations'}
                     </span>
                   </div>
@@ -772,7 +803,7 @@ export default function SchoolOrdersTab() {
                 {myQuote && (
                   <div className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
                     isAssignedToMe
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
+                      ? (isPrepaymentPending ? 'bg-amber-50/90 border-amber-300 text-amber-950 font-bold' : 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold')
                       : isAcceptedOther
                       ? 'bg-amber-50 border-amber-200 text-amber-900'
                       : 'bg-purple-50/80 border-purple-200'
@@ -784,13 +815,17 @@ export default function SchoolOrdersTab() {
                     </div>
 
                     <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                      isAssignedToMe ? 'bg-emerald-600 text-white' :
-                      isAcceptedOther ? 'bg-amber-200 text-amber-900' :
-                      'bg-purple-100 text-purple-700'
+                      isAssignedToMe
+                        ? (isPrepaymentPending ? 'bg-amber-200 text-amber-950 border border-amber-400 font-extrabold' : 'bg-emerald-600 text-white font-extrabold')
+                        : isAcceptedOther
+                        ? 'bg-amber-200 text-amber-900'
+                        : 'bg-purple-100 text-purple-700'
                     }`}>
-                      {isAssignedToMe ? '🎉 Customer Accepted Your Pitch!' :
-                       isAcceptedOther ? 'Customer Accepted Other Seller' :
-                       'Pitch Under Review'}
+                      {isAssignedToMe
+                        ? (isPrepaymentPending ? '⏳ Pitch Selected • Prepayment Pending' : '🎉 Customer Accepted & Prepayment Confirmed!')
+                        : isAcceptedOther
+                        ? 'Customer Accepted Other Seller'
+                        : 'Pitch Under Review'}
                     </span>
                   </div>
                 )}
@@ -1008,8 +1043,17 @@ export default function SchoolOrdersTab() {
                       </>
                     )}
 
-                    {/* Unassigned order action buttons */}
-                    {!isAssignedToMe && (
+                    {/* Unassigned order action buttons or locked indicator */}
+                    {isLockedToOther ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-gray-200 text-gray-500 text-xs font-bold rounded-xl cursor-not-allowed opacity-80"
+                      >
+                        <Lock size={14} />
+                        <span>Consignment Awarded & Locked</span>
+                      </button>
+                    ) : !isAssignedToMe ? (
                       <>
                         <button
                           onClick={() => acceptSchoolOrder(req.id || req._id)}
@@ -1029,7 +1073,7 @@ export default function SchoolOrdersTab() {
                           <span>{hasSellerQuote ? 'Update Quotation Pitch' : 'Pitch Updated Quotation'}</span>
                         </button>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 

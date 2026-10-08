@@ -586,18 +586,21 @@ export default function BulkOrderPreviewModal({
 
   const assignedSellerId = order.sellerId ? String(typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : '';
   const isAssignedToMe = Boolean(assignedSellerId && (assignedSellerId === currentSellerId || sellerCandidateIds.includes(assignedSellerId)));
+  const isBroadcast = order.assignmentMode === 'broadcast' || order.isGlobalRfq || order.isGlobal || order.isPublic || !order.assignmentMode || order.assignmentMode === 'unassigned' || order.assignmentMode === 'open';
+  const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || order.advancePaymentStatus === 'paid_partially';
   const isAssignedToAnother = Boolean(assignedSellerId && !isAssignedToMe);
+  const isLockedToAnother = isAssignedToAnother && (isPrepaymentPaid || (order.assignmentMode === 'direct' && !isBroadcast));
 
-  if (userRole === 'seller' && isAssignedToAnother) {
+  if (userRole === 'seller' && isLockedToAnother) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in">
-        <div className="bg-white rounded-3xl w-full max-w-md p-6 text-center shadow-2xl border border-red-200">
-          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="bg-white rounded-3xl w-full max-w-md p-6 text-center shadow-2xl border border-gray-200">
+          <div className="w-16 h-16 bg-gray-100 text-gray-500 rounded-full flex items-center justify-center mx-auto mb-4">
             <Lock size={32} />
           </div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Consignment Awarded & Locked</h3>
           <p className="text-sm text-gray-600 mb-6">
-            This school bulk order has been awarded to another seller for fulfillment. Access and fulfillment details are private.
+            This school bulk order has been confirmed with another vendor whose advance prepayment was received. Bidding is officially closed.
           </p>
           <button
             onClick={onClose}
@@ -609,6 +612,9 @@ export default function BulkOrderPreviewModal({
       </div>
     );
   }
+
+  const isTargetBudgetAccepted = order.acceptanceMode === 'target_budget' || order.acceptedAtTargetBudget;
+  const targetBudgetVal = order.acceptedPrice || order.overallBudget || order.targetBudgetPerKit || order.estimatedBudget || 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in">
@@ -637,13 +643,16 @@ export default function BulkOrderPreviewModal({
 
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-xs font-extrabold border ${
-              order.status === 'quote_accepted'
+              (isTargetBudgetAccepted || (isAssignedToMe && order.status === 'accepted'))
+                ? 'bg-blue-500/20 text-blue-200 border-blue-400/40'
+                : order.status === 'quote_accepted'
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
                 : order.status === 'published' || order.status === 'assigned'
                 ? 'bg-blue-500/20 text-blue-300 border-blue-400/40'
                 : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
             }`}>
-              {order.status === 'quote_accepted' ? 'Quote Accepted & Finalized' :
+              {(isTargetBudgetAccepted || (isAssignedToMe && order.status === 'accepted')) ? `🎯 Accepted at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
+               order.status === 'quote_accepted' ? 'Quote Accepted & Finalized' :
                order.status === 'published' ? 'Marketplace RFQ Published' :
                order.status === 'assigned' ? 'Assigned to Vendor' : 'Pending Distribution'}
             </span>
@@ -859,18 +868,33 @@ export default function BulkOrderPreviewModal({
                 }
 
                 if (winningQuote && (userRole === 'admin' || isAcceptedToMe)) {
+                  const modalAdvAmt = winningQuote?.prepaymentAmount || winningQuote?.sellerAdvanceAmount || order.sellerAdvanceAmount || order.prepaymentAmount || 0;
+                  const modalAdvPct = winningQuote?.prepaymentPercentage || winningQuote?.sellerAdvancePercentage || order.sellerAdvancePercentage || order.prepaymentPercentage || 0;
+                  const isModalPrepaymentPending = (Number(modalAdvAmt) > 0 || Number(modalAdvPct) > 0) && !isPrepaymentPaid;
+
                   return (
                     <div className="space-y-4">
                       {/* Winner Notification Banner for Seller */}
                       {userRole === 'seller' && isAcceptedToMe && (
-                        <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-1.5 border border-emerald-500">
-                          <div className="font-black text-sm flex items-center gap-2">
-                            <Sparkles size={18} className="text-amber-300" /> 🎉 Order Received! Your Quotation Was Accepted by Customer
+                        isModalPrepaymentPending ? (
+                          <div className="bg-amber-500 text-amber-950 p-4.5 rounded-2xl shadow-md space-y-1.5 border border-amber-400">
+                            <div className="font-black text-sm flex items-center gap-2">
+                              <Sparkles size={18} className="text-amber-100" /> ⏳ Pitch Selected • Prepayment Pending
+                            </div>
+                            <p className="text-xs text-amber-950 font-medium">
+                              The customer selected your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount || 0).toLocaleString()}</strong>. Fulfillment and packing will unlock once the buyer's online prepayment of <strong>₹{Number(modalAdvAmt).toLocaleString()}{modalAdvPct > 0 ? ` (${modalAdvPct}%)` : ''}</strong> is transferred.
+                            </p>
                           </div>
-                          <p className="text-xs text-emerald-100 font-medium">
-                            Congratulations! The customer accepted your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount || 0).toLocaleString()}</strong>. Admin and Customer have received your fulfillment commitment.
-                          </p>
-                        </div>
+                        ) : (
+                          <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-1.5 border border-emerald-500">
+                            <div className="font-black text-sm flex items-center gap-2">
+                              <Sparkles size={18} className="text-amber-300" /> 🎉 Order Received! Customer Accepted & Prepayment Confirmed
+                            </div>
+                            <p className="text-xs text-emerald-100 font-medium">
+                              Congratulations! The customer accepted your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount || 0).toLocaleString()}</strong> and verified online prepayment. Admin and Customer have received your fulfillment commitment.
+                            </p>
+                          </div>
+                        )
                       )}
 
                       {/* Approved & Winning Vendor Quotation Card */}
@@ -2572,7 +2596,7 @@ export default function BulkOrderPreviewModal({
             </button>
             )}
 
-            {userRole === 'seller' && onSubmitQuote && order.status !== 'quote_accepted' && (
+            {userRole === 'seller' && onSubmitQuote && !isPrepaymentPaid && (
               <button
                 onClick={() => setModalSubTab('submit_quote')}
                 className="flex-1 sm:flex-initial px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
@@ -2582,7 +2606,7 @@ export default function BulkOrderPreviewModal({
               </button>
             )}
 
-            {userRole === 'seller' && onAcceptDirect && order.status !== 'quote_accepted' && (
+            {userRole === 'seller' && onAcceptDirect && !isPrepaymentPaid && (
               <button
                 onClick={() => {
                   onAcceptDirect(order.id || order._id);

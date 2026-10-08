@@ -58,8 +58,46 @@ export default function ProductsTab() {
     isApproved,
     kits = [],
     addKit,
-    editKit
+    editKit,
+    sellerUser
   } = useSellerData();
+
+  const isProductOwnedBySeller = (p) => {
+    if (!p) return false;
+    if (!sellerUser || Object.keys(sellerUser).length === 0) return true;
+
+    const candidateIds = [
+      sellerUser.id,
+      sellerUser._id,
+      sellerUser.merchantId,
+      sellerUser.sellerId,
+      typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+    ].filter(Boolean).map(String);
+
+    const cleanSellerPhone = String(sellerUser.phone || sellerUser.sellerPhone || '').replace(/\D/g, '').slice(-10);
+    const cleanSellerStore = String(sellerUser.storeName || sellerUser.businessName || sellerUser.name || '').trim().toLowerCase();
+
+    const productOwnerIds = [
+      p.sellerId,
+      p.userId,
+      p.seller,
+      p.user,
+      p.createdBy
+    ].filter(Boolean).map(id => String(typeof id === 'object' ? (id._id || id.id) : id).trim());
+
+    if (productOwnerIds.some(id => candidateIds.includes(id))) return true;
+
+    const prodPhone = String(p.sellerPhone || p.phone || '').replace(/\D/g, '').slice(-10);
+    if (cleanSellerPhone && prodPhone && prodPhone === cleanSellerPhone) return true;
+
+    const prodStore = String(p.sellerStoreName || p.storeName || p.sellerName || '').trim().toLowerCase();
+    if (cleanSellerStore && prodStore && (cleanSellerStore === prodStore || cleanSellerStore.includes(prodStore) || prodStore.includes(cleanSellerStore))) return true;
+
+    if (productOwnerIds.length > 0 || prodStore) return false;
+    return true;
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all'); // all | in_stock | low_stock | out_of_stock
@@ -110,6 +148,10 @@ export default function ProductsTab() {
   }, []);
 
   const openEditModal = (p) => {
+    if (!isProductOwnedBySeller(p)) {
+      alert('⚠️ This product is listed by another seller and is strictly read-only.');
+      return;
+    }
     setErrorMsg('');
     setEditingProduct(p);
     setViewMode('form');
@@ -150,6 +192,10 @@ export default function ProductsTab() {
   };
 
   const handleToggleProductStatus = (product) => {
+    if (!isProductOwnedBySeller(product)) {
+      alert('⚠️ You can only change status for your own products.');
+      return;
+    }
     const qty = Number(product.stockQuantity ?? 0);
     const isActive = product.inStock !== false && qty > 0;
 
@@ -547,35 +593,55 @@ export default function ProductsTab() {
                           {(() => {
                             const pVars = parseSizeVariants(p);
                             const hasVariantList = pVars && pVars.length > 0;
+                            const isOwned = isProductOwnedBySeller(p);
 
                             return hasVariantList ? (
-                              <button
-                                type="button"
-                                onClick={() => setVariantStockModalProduct(p)}
-                                className="group/stock flex flex-col items-start gap-0.5 p-1.5 rounded-xl bg-teal-50/90 hover:bg-teal-100 border border-teal-200 transition-all cursor-pointer text-left shadow-2xs"
-                                title="Click to view & edit variant stocks"
-                              >
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-extrabold text-teal-950 text-xs">{qty} pcs</span>
-                                  <span className="text-[9px] font-extrabold text-teal-800 bg-teal-200/80 px-1.5 py-0.2 rounded-md">
-                                    {pVars.length} Vars
+                              isOwned ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setVariantStockModalProduct(p)}
+                                  className="group/stock flex flex-col items-start gap-0.5 p-1.5 rounded-xl bg-teal-50/90 hover:bg-teal-100 border border-teal-200 transition-all cursor-pointer text-left shadow-2xs"
+                                  title="Click to view & edit variant stocks"
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-extrabold text-teal-950 text-xs">{qty} pcs</span>
+                                    <span className="text-[9px] font-extrabold text-teal-800 bg-teal-200/80 px-1.5 py-0.2 rounded-md">
+                                      {pVars.length} Vars
+                                    </span>
+                                  </div>
+                                  <span className="text-[9px] text-teal-700 font-bold group-hover/stock:text-teal-900 flex items-center gap-0.5">
+                                    <Layers size={10} /> Edit Variant Stock
                                   </span>
+                                </button>
+                              ) : (
+                                <div className="flex flex-col items-start gap-0.5 p-1.5 rounded-xl bg-gray-50 border border-gray-200 text-left">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-extrabold text-gray-800 text-xs">{qty} pcs</span>
+                                    <span className="text-[9px] font-bold text-gray-600 bg-gray-200 px-1.5 py-0.2 rounded-md">
+                                      {pVars.length} Vars
+                                    </span>
+                                  </div>
+                                  <span className="text-[9px] text-gray-400 font-medium">Read-Only</span>
                                 </div>
-                                <span className="text-[9px] text-teal-700 font-bold group-hover/stock:text-teal-900 flex items-center gap-0.5">
-                                  <Layers size={10} /> Edit Variant Stock
-                                </span>
-                              </button>
+                              )
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => setVariantStockModalProduct(p)}
-                                className="flex items-center gap-1.5 hover:bg-teal-50 p-1.5 rounded-xl border border-transparent hover:border-teal-200 transition-all cursor-pointer"
-                                title="Click to adjust product stock"
-                              >
-                                <span className="font-extrabold text-gray-900 text-xs">{qty}</span>
-                                <span className="text-[10px] text-gray-500 font-medium">pcs</span>
-                                <Edit3 size={12} className="text-gray-400 hover:text-teal-700" />
-                              </button>
+                              isOwned ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setVariantStockModalProduct(p)}
+                                  className="flex items-center gap-1.5 hover:bg-teal-50 p-1.5 rounded-xl border border-transparent hover:border-teal-200 transition-all cursor-pointer"
+                                  title="Click to adjust product stock"
+                                >
+                                  <span className="font-extrabold text-gray-900 text-xs">{qty}</span>
+                                  <span className="text-[10px] text-gray-500 font-medium">pcs</span>
+                                  <Edit3 size={12} className="text-gray-400 hover:text-teal-700" />
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-1.5 p-1.5">
+                                  <span className="font-extrabold text-gray-700 text-xs">{qty}</span>
+                                  <span className="text-[10px] text-gray-400 font-medium">pcs</span>
+                                </div>
+                              )
                             );
                           })()}
                           {isLow && (
@@ -618,20 +684,30 @@ export default function ProductsTab() {
 
                         {/* Status (Click to Toggle) */}
                         <td className="py-3.5 px-3" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleProductStatus(p)}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer shadow-2xs border ${
-                              isActive 
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100' 
-                                : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
-                            }`}
-                            title={`Click to switch to ${isActive ? 'Inactive' : 'Active'}`}
-                          >
-                            <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
-                            <span>{isActive ? 'Active' : 'Inactive'}</span>
-                            <Power size={11} className="opacity-60 hover:opacity-100" />
-                          </button>
+                          {isProductOwnedBySeller(p) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleProductStatus(p)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer shadow-2xs border ${
+                                isActive 
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100' 
+                                  : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
+                              }`}
+                              title={`Click to switch to ${isActive ? 'Inactive' : 'Active'}`}
+                            >
+                              <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+                              <span>{isActive ? 'Active' : 'Inactive'}</span>
+                              <Power size={11} className="opacity-60 hover:opacity-100" />
+                            </button>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 text-gray-500 border border-gray-200"
+                              title="Product listed by other seller (Read-Only)"
+                            >
+                              <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-gray-400' : 'bg-gray-300'}`}></span>
+                              <span>{isActive ? 'Active' : 'Inactive'}</span>
+                            </span>
+                          )}
                         </td>
 
                         {/* Actions */}
@@ -644,20 +720,28 @@ export default function ProductsTab() {
                             >
                               <Eye size={15} />
                             </button>
-                            <button
-                              onClick={() => openEditModal(p)}
-                              className="p-1.5 text-gray-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
-                              title="Edit Product"
-                            >
-                              <Edit3 size={15} />
-                            </button>
-                            <button
-                              onClick={() => setDeletingProductId(p.id)}
-                              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                              title="Delete Product"
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            {isProductOwnedBySeller(p) ? (
+                              <>
+                                <button
+                                  onClick={() => openEditModal(p)}
+                                  className="p-1.5 text-gray-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Edit Product"
+                                >
+                                  <Edit3 size={15} />
+                                </button>
+                                <button
+                                  onClick={() => setDeletingProductId(p.id)}
+                                  className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Delete Product"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                                🔒 Read-Only
+                              </span>
+                            )}
                           </div>
                         </td>
 
@@ -748,20 +832,30 @@ export default function ProductsTab() {
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleToggleProductStatus(selectedProductForDetail)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer shadow-2xs border ${
-                    (selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0))
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100' 
-                      : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
-                  }`}
-                  title="Click to toggle status"
-                >
-                  <span className={`w-2 h-2 rounded-full ${(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
-                  <span>{(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Active' : 'Inactive'}</span>
-                  <Power size={12} className="opacity-70" />
-                </button>
+                {isProductOwnedBySeller(selectedProductForDetail) ? (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleProductStatus(selectedProductForDetail)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer shadow-2xs border ${
+                      (selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0))
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100' 
+                        : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
+                    }`}
+                    title="Click to toggle status"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+                    <span>{(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Active' : 'Inactive'}</span>
+                    <Power size={12} className="opacity-70" />
+                  </button>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200"
+                    title="Read-only catalog item"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'bg-gray-400' : 'bg-gray-300'}`}></span>
+                    <span>{(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Active' : 'Inactive'}</span>
+                  </span>
+                )}
 
                 <button
                   onClick={() => setSelectedProductForDetail(null)}
@@ -775,6 +869,15 @@ export default function ProductsTab() {
 
             {/* Modal Scrollable Body */}
             <div className="overflow-y-auto p-6 space-y-6 text-xs flex-1">
+              {!isProductOwnedBySeller(selectedProductForDetail) && (
+                <div className="p-3.5 bg-blue-50/80 border border-blue-200 text-blue-900 rounded-2xl text-xs flex items-center justify-between font-medium">
+                  <span className="flex items-center gap-2">
+                    <Store size={16} className="text-blue-600 shrink-0" />
+                    <span>👁️ <strong>Read-Only Catalog View:</strong> Listed by <strong>{selectedProductForDetail.sellerStoreName || selectedProductForDetail.storeName || selectedProductForDetail.sellerName || 'Other Verified Seller'}</strong>. Modifications and inventory updates are restricted to the listing owner.</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-200 text-blue-950 text-[10px] font-black uppercase shrink-0">Catalog Item</span>
+                </div>
+              )}
               
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 
@@ -1001,13 +1104,15 @@ export default function ProductsTab() {
                               <Layers size={14} className="text-teal-700" />
                               <span>Product Variants & Detail Photos ({detailVariants.length})</span>
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => setVariantStockModalProduct(selectedProductForDetail)}
-                              className="px-2.5 py-1 bg-teal-800 hover:bg-teal-900 text-white text-[10px] font-extrabold rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
-                            >
-                              <Edit3 size={11} /> Update Variant Stock
-                            </button>
+                            {isProductOwnedBySeller(selectedProductForDetail) && (
+                              <button
+                                type="button"
+                                onClick={() => setVariantStockModalProduct(selectedProductForDetail)}
+                                className="px-2.5 py-1 bg-teal-800 hover:bg-teal-900 text-white text-[10px] font-extrabold rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                              >
+                                <Edit3 size={11} /> Update Variant Stock
+                              </button>
+                            )}
                           </div>
 
                           {/* Variant Preview Image Layout in Row */}
@@ -1295,13 +1400,19 @@ export default function ProductsTab() {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleToggleProductStatus(selectedProductForDetail)}
-                      className="w-full px-3 py-2 bg-white text-gray-900 font-bold text-xs rounded-xl border border-gray-200 hover:bg-gray-50 cursor-pointer shadow-2xs text-center"
-                    >
-                      Switch to {(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Inactive' : 'Active'}
-                    </button>
+                    {isProductOwnedBySeller(selectedProductForDetail) ? (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleProductStatus(selectedProductForDetail)}
+                        className="w-full px-3 py-2 bg-white text-gray-900 font-bold text-xs rounded-xl border border-gray-200 hover:bg-gray-50 cursor-pointer shadow-2xs text-center"
+                      >
+                        Switch to {(selectedProductForDetail.inStock !== false && (selectedProductForDetail.stockQuantity === undefined || selectedProductForDetail.stockQuantity > 0)) ? 'Inactive' : 'Active'}
+                      </button>
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-gray-100 border border-gray-200 text-gray-500 text-xs font-semibold text-center">
+                        🔒 Status toggling is disabled for products listed by other sellers.
+                      </div>
+                    )}
                   </div>
 
                 </div>
@@ -1310,31 +1421,48 @@ export default function ProductsTab() {
 
             {/* Modal Footer */}
             <div className="px-6 py-3.5 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  const toDelete = selectedProductForDetail.id;
-                  setSelectedProductForDetail(null);
-                  setDeletingProductId(toDelete);
-                }}
-                className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-xl font-bold transition-colors cursor-pointer"
-              >
-                Delete Product
-              </button>
+              {isProductOwnedBySeller(selectedProductForDetail) ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toDelete = selectedProductForDetail.id;
+                      setSelectedProductForDetail(null);
+                      setDeletingProductId(toDelete);
+                    }}
+                    className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-xl font-bold transition-colors cursor-pointer"
+                  >
+                    Delete Product
+                  </button>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const toEdit = selectedProductForDetail;
-                    setSelectedProductForDetail(null);
-                    openEditModal(toEdit);
-                  }}
-                  className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Edit3 size={14} /> Edit Full Product
-                </button>
-              </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const toEdit = selectedProductForDetail;
+                        setSelectedProductForDetail(null);
+                        openEditModal(toEdit);
+                      }}
+                      className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Edit3 size={14} /> Edit Full Product
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs text-gray-500 font-bold flex items-center gap-1">
+                    <Lock size={13} className="text-gray-400" /> Read-Only Catalog View
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProductForDetail(null)}
+                    className="px-5 py-2 bg-gray-900 text-white font-bold text-xs rounded-xl hover:bg-gray-800 cursor-pointer transition-colors"
+                  >
+                    Close Overview
+                  </button>
+                </>
+              )}
             </div>
 
           </div>
@@ -1398,6 +1526,10 @@ export default function ProductsTab() {
         isOpen={Boolean(variantStockModalProduct)}
         onClose={() => setVariantStockModalProduct(null)}
         onSave={(productId, updatedData) => {
+          if (variantStockModalProduct && !isProductOwnedBySeller(variantStockModalProduct)) {
+            alert('⚠️ You cannot edit stock for other sellers\' products.');
+            return;
+          }
           updateVariantStock(productId, updatedData);
           if (selectedProductForDetail && (selectedProductForDetail.id === productId || selectedProductForDetail._id === productId)) {
             if (Array.isArray(updatedData)) {
