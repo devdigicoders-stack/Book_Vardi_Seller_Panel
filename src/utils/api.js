@@ -363,6 +363,21 @@ export const updateReturnExchangeStatusApi = async (orderId, payload) => {
   }
 };
 
+export const resendDeliveryBoyWhatsAppApi = async (orderId) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/resend-whatsapp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      }
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
 export const downloadSellerInvoiceApi = async (orderId) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/invoice`, {

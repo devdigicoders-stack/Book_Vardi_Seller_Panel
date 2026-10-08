@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   sendPhoneOtpApi,
   verifyPhoneOtpApi,
@@ -18,6 +18,7 @@ import {
   updateOrderStatusApi,
   updateSellerOrderItemStatusApi,
   updateReturnExchangeStatusApi,
+  resendDeliveryBoyWhatsAppApi,
   fetchSchoolOrdersApi,
   createSchoolOrderApi,
   updateSchoolOrderApi,
@@ -343,6 +344,8 @@ export const SellerDataProvider = ({ children }) => {
       return [];
     }
   });
+  // Track recently applied seller order statuses with 30s lock to eliminate status flicker
+  const latestStatusMapRef = useRef(new Map());
   const [promotions, setPromotions] = useState([]);
   const [schoolOrders, setSchoolOrders] = useState(() => {
     try {
@@ -524,8 +527,19 @@ export const SellerDataProvider = ({ children }) => {
 
   const normalizeOrderList = (ordersList) => {
     if (!Array.isArray(ordersList)) return [];
+    const now = Date.now();
     return ordersList.map(o => {
-      const resolvedStatus = o.status || o.overallStatus || (o.items && o.items[0]?.status) || 'Pending';
+      const idKey = String(o.id || o._id || o.orderId || '');
+      const lockedStatusEntry = latestStatusMapRef.current.get(idKey) ||
+                                (o.orderId ? latestStatusMapRef.current.get(String(o.orderId)) : null) ||
+                                (o._id ? latestStatusMapRef.current.get(String(o._id)) : null);
+
+      let resolvedStatus = o.status || o.overallStatus || (o.items && o.items[0]?.status) || 'Pending';
+      if (lockedStatusEntry && (now - lockedStatusEntry.timestamp < 30000)) {
+        // Enforce latest seller status update is authoritative and final
+        resolvedStatus = lockedStatusEntry.status;
+      }
+
       let resolvedDate = o.date;
       if (o.createdAt) {
         try {
@@ -544,6 +558,9 @@ export const SellerDataProvider = ({ children }) => {
         id: String(o.id || o._id || o.orderId || ''),
         _id: o._id || o.id,
         orderId: o.orderId || o.id || o._id,
+        customerName: o.customerName || (typeof o.customer === 'object' ? (o.customer?.name || o.customer?.fullName) : o.customer) || 'Customer',
+        customerPhone: o.customerPhone || (typeof o.customer === 'object' ? o.customer?.phone : '') || '',
+        school: o.school || o.schoolName || 'General School',
         date: resolvedDate || o.date,
         status: resolvedStatus,
         overallStatus: resolvedStatus,
@@ -568,11 +585,43 @@ export const SellerDataProvider = ({ children }) => {
       if (!isAuthenticated) return;
       fetchSellerOrdersApi().then(ordersList => {
         if (Array.isArray(ordersList)) {
-          const normalizedOrders = normalizeOrderList(ordersList);
-          setOrders(normalizedOrders);
-          try {
-            localStorage.setItem('bv_seller_orders', JSON.stringify(normalizedOrders));
-          } catch (e) {}
+          const freshNormalized = normalizeOrderList(ordersList);
+          setOrders(prev => {
+            const prevMap = new Map();
+            prev.forEach(p => {
+              if (p.id) prevMap.set(String(p.id), p);
+              if (p._id) prevMap.set(String(p._id), p);
+              if (p.orderId) prevMap.set(String(p.orderId), p);
+            });
+
+            const merged = freshNormalized.map(fresh => {
+              const prevMatch = prevMap.get(String(fresh.id)) ||
+                                (fresh.orderId ? prevMap.get(String(fresh.orderId)) : null) ||
+                                (fresh._id ? prevMap.get(String(fresh._id)) : null);
+              if (!prevMatch) return fresh;
+
+              const lockedStatusEntry = latestStatusMapRef.current.get(String(fresh.id)) ||
+                                        (fresh.orderId ? latestStatusMapRef.current.get(String(fresh.orderId)) : null);
+              const isLocked = lockedStatusEntry && (Date.now() - lockedStatusEntry.timestamp < 30000);
+
+              return {
+                ...prevMatch,
+                ...fresh,
+                status: isLocked ? lockedStatusEntry.status : (fresh.status || prevMatch.status),
+                overallStatus: isLocked ? lockedStatusEntry.status : (fresh.overallStatus || prevMatch.overallStatus),
+                customerName: fresh.customerName || prevMatch.customerName || 'Customer',
+                customerPhone: fresh.customerPhone || prevMatch.customerPhone || '',
+                school: fresh.school || prevMatch.school || 'General School',
+                total: fresh.total !== undefined ? fresh.total : prevMatch.total,
+                date: fresh.date || prevMatch.date
+              };
+            });
+
+            try {
+              localStorage.setItem('bv_seller_orders', JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
+          });
         }
       }).catch(() => {});
     };
@@ -1636,18 +1685,33 @@ export const SellerDataProvider = ({ children }) => {
   const editOrder = (id, updates) => {
     checkPermission();
     const strId = String(id);
+    const newStatus = updates.status || updates.overallStatus;
+    if (newStatus) {
+      latestStatusMapRef.current.set(strId, { status: newStatus, timestamp: Date.now() });
+      if (updates.orderId) latestStatusMapRef.current.set(String(updates.orderId), { status: newStatus, timestamp: Date.now() });
+      if (updates._id) latestStatusMapRef.current.set(String(updates._id), { status: newStatus, timestamp: Date.now() });
+    }
     setOrders(prev => {
       const updated = prev.map(o => {
         if (String(o.id) === strId || String(o._id) === strId || String(o.orderId) === strId) {
-          const newStatus = updates.status || updates.overallStatus || o.status;
-          const updatedItems = Array.isArray(o.items)
-            ? o.items.map(item => ({ ...item, status: newStatus }))
-            : o.items;
+          const resolvedStatus = newStatus || o.status || o.overallStatus;
+          const updatedItems = Array.isArray(updates.items)
+            ? updates.items
+            : (Array.isArray(o.items) ? o.items.map(item => ({ ...item, status: resolvedStatus })) : o.items);
           return {
             ...o,
             ...updates,
-            status: newStatus,
-            overallStatus: newStatus,
+            id: o.id || updates.id || o._id || updates._id || strId,
+            _id: o._id || updates._id || o.id || strId,
+            orderId: o.orderId || updates.orderId || o.id || strId,
+            customerName: updates.customerName || o.customerName || 'Customer',
+            customerPhone: updates.customerPhone || o.customerPhone || '',
+            school: updates.school || o.school || 'General School',
+            total: (updates.total !== undefined && updates.total !== null) ? updates.total : o.total,
+            itemsCount: updates.itemsCount || o.itemsCount || (updatedItems?.length || 0),
+            date: updates.date || o.date,
+            status: resolvedStatus,
+            overallStatus: resolvedStatus,
             items: updatedItems
           };
         }
@@ -1667,12 +1731,12 @@ export const SellerDataProvider = ({ children }) => {
       const res = await updateOrderStatusApi(id, status, details);
       if (res && (res.order || res.success)) {
         const updatedOrder = res.order || {};
-        const finalStatus = updatedOrder.status || updatedOrder.overallStatus || status;
+        // The seller's selected status is authoritative and final
+        const finalStatus = status || updatedOrder.status || updatedOrder.overallStatus;
         editOrder(id, { ...updatedOrder, status: finalStatus, overallStatus: finalStatus, ...details });
         showToast(`Order #${id} status updated to ${finalStatus}`);
       } else if (res && (res.success === false || res.message)) {
         showToast(`⚠️ ${res.message || 'Failed to update order status'}`);
-        handleOrderSync();
         return res;
       } else {
         showToast(`Order #${id} status updated to ${status}`);
@@ -1689,6 +1753,22 @@ export const SellerDataProvider = ({ children }) => {
       }
       showToast(`Order #${id} status updated to ${status}`);
       return null;
+    }
+  };
+
+  const resendDeliveryBoyWhatsApp = async (orderId) => {
+    try {
+      const res = await resendDeliveryBoyWhatsAppApi(orderId);
+      if (res && res.success) {
+        showToast('✅ WhatsApp link dispatched to delivery partner!');
+        return res;
+      } else {
+        showToast(`⚠️ ${res?.message || 'Failed to dispatch WhatsApp link'}`);
+        return res;
+      }
+    } catch (err) {
+      showToast('⚠️ Error dispatching WhatsApp link');
+      return { success: false, message: err.message };
     }
   };
 
@@ -2467,6 +2547,7 @@ export const SellerDataProvider = ({ children }) => {
         updateOrderStatus,
         updateOrderItemStatus,
         updateReturnExchangeStatus,
+        resendDeliveryBoyWhatsApp,
         deleteOrder,
         downloadSellerInvoice,
         // Promo actions
