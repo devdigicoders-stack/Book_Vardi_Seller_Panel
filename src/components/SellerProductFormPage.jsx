@@ -628,7 +628,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         for (const variant of sizeVariants) {
           if (!variant.price || Number(variant.price) <= 0) {
             setError(`Please specify a valid selling price for variant "${variant.size || variant.measureValue}".`);
-            setActiveTab('variants');
+            setActiveTab('general');
             return;
           }
         }
@@ -937,8 +937,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         {entryType === 'single' ? (
           [
             { id: 'general', label: '1. General Details & Base Photos', icon: Tag },
-            { id: 'variants', label: `2. Category Size & Stock Matrix (${sizeVariants.length})`, icon: Layers },
-            { id: 'payment', label: '3. Allowed Payment Methods', icon: CreditCard }
+            { id: 'payment', label: '2. Allowed Payment Methods', icon: CreditCard }
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -2093,149 +2092,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
             </div>
           )}
 
-          {/* TAB 2: VARIANTS WITH "+ ADD VARIANT" MODAL */}
-          {activeTab === 'variants' && (
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-6">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <div>
-                  <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                    <Layers className="text-brand-teal" size={18} /> Size & Stock Variants
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Configure price, MRP, stock, and individual photos for each variant size.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={openAddVariantModal}
-                  className="px-4 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <Plus size={16} /> + Add Variant
-                </button>
-              </div>
 
-              {/* Variants Table */}
-              {sizeVariants.length === 0 ? (
-                <div className="p-8 text-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 space-y-2">
-                  <Boxes className="mx-auto text-gray-400" size={32} />
-                  <h4 className="text-sm font-bold text-gray-700">No Size Variants Active</h4>
-                  <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                    Select sizes from the size pills in <strong>General Information</strong> tab or click <strong>"+ Add Variant"</strong> above.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={openAddVariantModal}
-                    className="px-4 py-2 bg-brand-teal text-white rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1"
-                  >
-                    <Plus size={14} /> Add Variant
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* Variant Preview Image Layout in Row */}
-                  <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin">
-                    {sizeVariants.map((v, vIdx) => {
-                      const vImgUrl = v.image ? resolveImageUrl(v.image) : '';
-                      const vVal = v.size || v.measureValue || `Variant #${vIdx + 1}`;
-
-                      return (
-                        <div
-                          key={vIdx}
-                          onClick={() => openEditVariantModal(vIdx)}
-                          className="flex items-center gap-2.5 p-2 rounded-xl bg-teal-50/70 hover:bg-teal-100/80 border border-teal-200/80 shrink-0 min-w-[175px] cursor-pointer transition-all shadow-2xs"
-                          title="Click to edit this variant"
-                        >
-                          <div className="relative w-12 h-12 rounded-lg bg-teal-100 text-teal-950 font-bold text-xs flex items-center justify-center shrink-0 border border-teal-200 overflow-hidden">
-                            {vImgUrl ? (
-                              <img
-                                src={vImgUrl}
-                                alt={vVal}
-                                className="w-full h-full object-cover relative z-10"
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                              />
-                            ) : null}
-                            <span className="select-none absolute z-0">{vVal.slice(0, 3)}</span>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-extrabold text-xs text-gray-900 truncate">{vVal}</div>
-                            <div className="text-[11px] font-bold text-teal-800 flex items-center gap-1 mt-0.5">
-                              <span>₹{v.price}</span>
-                              {v.mrp && Number(v.mrp) > Number(v.price) && (
-                                <span className="text-[9px] text-gray-400 line-through">₹{v.mrp}</span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
-                              {v.stock || 0} pcs in stock
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px]">
-                      <tr>
-                        <th className="px-3 py-3">Size / Variant</th>
-                        <th className="px-3 py-3">Price (₹)</th>
-                        <th className="px-3 py-3">MRP (₹)</th>
-                        <th className="px-3 py-3">Stock</th>
-                        <th className="px-3 py-3">Variant Image</th>
-                        <th className="px-3 py-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 bg-white font-medium">
-                      {sizeVariants.map((v, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                          <td className="px-3 py-2.5 font-bold text-gray-900">{v.size || v.measureValue}</td>
-                          <td className="px-3 py-2.5 font-extrabold text-gray-900">₹{v.price}</td>
-                          <td className="px-3 py-2.5 text-gray-500 line-through">₹{v.mrp}</td>
-                          <td className="px-3 py-2.5">
-                            <input
-                              type="number"
-                              min="0"
-                              value={v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : '')}
-                              onChange={(e) => {
-                                const newStock = e.target.value;
-                                setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, stock: newStock, stockQuantity: newStock } : item));
-                              }}
-                              className="w-20 px-2 py-1 bg-teal-50 border border-teal-300 rounded-lg text-xs font-bold text-teal-900 text-center outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white"
-                              title="Edit variant stock quantity"
-                            />
-                          </td>
-                          <td className="px-3 py-2.5">
-                            {v.image ? (
-                              <img src={resolveImageUrl(v.image)} alt={v.size} className="w-9 h-9 rounded object-cover border border-gray-200" />
-                            ) : (
-                              <span className="text-[10px] text-gray-400 italic">No image</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 text-right space-x-2">
-                            <button
-                              type="button"
-                              onClick={() => openEditVariantModal(idx)}
-                              className="text-xs font-bold text-brand-teal hover:underline cursor-pointer"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveVariant(idx)}
-                              className="text-xs font-bold text-red-600 hover:underline cursor-pointer"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-            </div>
-          )}
         </div>
       )}
 
@@ -2417,126 +2274,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         </div>
       )}
 
-      {/* MODAL: + Add / Edit Variant Dialog */}
-      {isVariantModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-gray-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
-              <h3 className="font-display font-bold text-base text-gray-900">
-                {editingVariantIndex !== null ? 'Edit Variant' : 'Add New Variant'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsVariantModalOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            <form onSubmit={handleSaveVariantModal} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Variant Size / Label Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={variantForm.measureValue || variantForm.size}
-                  onChange={e => setVariantForm({ ...variantForm, measureValue: e.target.value, size: e.target.value })}
-                  placeholder="e.g. S, XL, Size 8, Pack of 3"
-                  className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-medium outline-none"
-                />
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[10px] text-gray-500 font-bold mr-1">Quick Base Values:</span>
-                  {['250g', '500g', '1kg', '1pc', '3pcs', '6pcs', '1.8m', '2.5m', '3metre'].map(val => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setVariantForm({ ...variantForm, measureValue: val, size: val })}
-                      className="px-2 py-0.5 rounded-md bg-gray-100 hover:bg-brand-teal hover:text-white text-gray-700 text-[10px] font-bold transition-colors cursor-pointer border border-gray-200"
-                    >
-                      + {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Selling Price (₹) *</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={variantForm.price}
-                    onChange={e => setVariantForm({ ...variantForm, price: e.target.value })}
-                    placeholder="499"
-                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-bold outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">MRP (₹)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={variantForm.mrp}
-                    onChange={e => setVariantForm({ ...variantForm, mrp: e.target.value })}
-                    placeholder="699"
-                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-bold outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Stock (Units) *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={variantForm.stock}
-                    onChange={e => setVariantForm({ ...variantForm, stock: e.target.value, stockQuantity: e.target.value })}
-                    placeholder="25"
-                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-bold outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Variant SKU</label>
-                  <input
-                    type="text"
-                    value={variantForm.sku}
-                    onChange={e => setVariantForm({ ...variantForm, sku: e.target.value })}
-                    placeholder="SKU-VAR"
-                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-xs font-mono font-medium outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Variant Specific Photo</label>
-                <ImageUploadDropzone
-                  images={variantForm.images}
-                  onChange={(imgs) => setVariantForm({ ...variantForm, images: imgs, image: imgs[0] || '' })}
-                  maxImages={4}
-                  helperText="Upload photo for this variant"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsVariantModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-brand-teal text-white rounded-xl text-xs font-bold cursor-pointer"
-                >
-                  Save Variant
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

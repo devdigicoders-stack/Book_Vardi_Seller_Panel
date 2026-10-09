@@ -152,7 +152,7 @@ export default function ShippingTab() {
             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                  BlueDart Campus Air Priority
+                  BlueDart Air Priority
                 </div>
                 <button
                   type="button"
