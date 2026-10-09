@@ -163,7 +163,7 @@ export default function SchoolOrdersTab() {
       // Channel Filter
       let channelMatch = true;
       if (channelFilter === 'Accepted') {
-        const isAcceptedOrder = ['quote_accepted', 'accepted', 'seller_accepted_counter', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status) || req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget;
+        const isAcceptedOrder = ['quote_accepted', 'accepted', 'confirmed', 'seller_accepted_counter', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
         channelMatch = (isAssignedToMe || isWinningSeller) && isAcceptedOrder;
       } else if (channelFilter === 'Direct') {
         channelMatch = req.assignmentMode === 'direct';
@@ -427,10 +427,20 @@ export default function SchoolOrdersTab() {
               (isAssignedToMeCandidate || !assignedSellerId || String(assignedSellerId) === String(myQuote.sellerId))
             );
 
+            const isAssignedToMe = !isMyQuoteRejected && (isAssignedToMeCandidate || isWinningSeller);
+
             const isBroadcast = req.assignmentMode === 'broadcast' || req.isGlobalRfq || req.isGlobal || req.isPublic || !req.assignmentMode || req.assignmentMode === 'unassigned' || req.assignmentMode === 'open';
             const isAcceptedStatus = ['quote_accepted', 'accepted', 'confirmed', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
-            const isAssignedToMe = !isMyQuoteRejected && (isAssignedToMeCandidate || isWinningSeller);
-            const isTargetBudgetAccepted = req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget;
+            const targetBudgetNum = Number(req.targetBudgetPerKit || req.overallBudget || req.estimatedBudget || 0);
+            const isMyTargetBudgetQuote = Boolean(
+              myQuote && (
+                myQuote.acceptanceMode === 'target_budget' ||
+                myQuote.acceptedAtTargetBudget ||
+                (typeof myQuote.notes === 'string' && myQuote.notes.toLowerCase().includes('target budget')) ||
+                (targetBudgetNum > 0 && Number(myQuote.quoteAmount) === targetBudgetNum)
+              )
+            );
+            const isTargetBudgetAccepted = isAssignedToMe && (req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget || isMyTargetBudgetQuote);
 
             const isPacked = req.status === 'packed';
             const isOutForDelivery = req.status === 'out for delivery' || req.status === 'out_for_delivery';
@@ -442,12 +452,12 @@ export default function SchoolOrdersTab() {
             const isPrepaymentPending = advRequired && !isPrepaymentPaid;
 
             const isOutbidOrRejected = isMyQuoteRejected || Boolean(
-              (isAcceptedStatus || req.acceptedQuoteId || assignedSellerId) && !isAssignedToMe && Boolean(assignedSellerId || req.acceptedQuoteId)
+              (isAcceptedStatus || req.acceptedQuoteId || assignedSellerId) && !isAssignedToMe && Boolean(assignedSellerId || req.acceptedQuoteId) && isPrepaymentPaid
             );
 
-            // An order is locked to another seller if prepayment is confirmed, or if it was awarded to another vendor, or if it was a private direct order assigned to someone else
+            // An order is locked to another seller if prepayment is confirmed, or if it was awarded to another vendor with prepayment confirmed, or if it was a private direct order assigned to someone else
             const isLockedToOther = !isAssignedToMe && (isPrepaymentPaid || isOutbidOrRejected || (req.assignmentMode === 'direct' && !isBroadcast && Boolean(assignedSellerId)));
-            const isAcceptedOther = !isAssignedToMe && Boolean(assignedSellerId);
+            const isAcceptedOther = !isAssignedToMe && Boolean(assignedSellerId) && isPrepaymentPaid;
 
             const budgetVal = req.acceptedPrice || req.overallBudget || req.targetBudgetPerKit || req.estimatedBudget || myQuote?.quoteAmount || 0;
 
@@ -456,10 +466,12 @@ export default function SchoolOrdersTab() {
               cardColorClass = 'bg-gray-100/90 border-gray-200 text-gray-500 opacity-75 shadow-none';
             } else if (isCompleted || isReceived) {
               cardColorClass = 'bg-gray-50/80 border-gray-200 hover:border-gray-300 shadow-xs';
-            } else if ((isTargetBudgetAccepted || isAssignedToMe) && !isPrepaymentPending) {
+            } else if ((isTargetBudgetAccepted || isAssignedToMe) && isPrepaymentPaid) {
               cardColorClass = 'bg-blue-50/70 border-blue-200 hover:border-blue-300 ring-1 ring-blue-100 shadow-xs';
             } else if (isPrepaymentPending || req.status === 'seller_accepted_counter' || req.status === 'buyer_countered' || myQuote?.negotiationStage === 'buyer_countered') {
               cardColorClass = 'bg-amber-50/70 border-amber-200/90 hover:border-amber-300 ring-1 ring-amber-100 shadow-xs';
+            } else if (isMyTargetBudgetQuote) {
+              cardColorClass = 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-300 ring-1 ring-emerald-100 shadow-xs';
             }
 
             return (
@@ -555,9 +567,10 @@ export default function SchoolOrdersTab() {
                        isReceived ? '✅ Consignment Delivered & Received' :
                        isOutForDelivery ? '🚚 Out for Delivery (Store Fleet)' :
                        isPacked ? '📦 Consignment Packed & Ready' :
-                       (isAssignedToMe && isTargetBudgetAccepted) ? `🎯 Accepted at Target Budget (${budgetVal > 0 ? `₹${Number(budgetVal).toLocaleString()}` : 'Agreed'})` :
+                       (isAssignedToMe && isPrepaymentPaid && isTargetBudgetAccepted) ? `🎯 Accepted at Target Budget (${budgetVal > 0 ? `₹${Number(budgetVal).toLocaleString()}` : 'Agreed'})` :
                        (isAssignedToMe && isPrepaymentPending) ? '⏳ Pitch Selected • Prepayment Pending' :
-                       isAssignedToMe ? '🎉 Order Accepted & Prepayment Confirmed!' :
+                       (isAssignedToMe && isPrepaymentPaid) ? '🎉 Order Accepted & Prepayment Confirmed!' :
+                       (myQuote && isMyTargetBudgetQuote) ? `🎯 Accepted Order at Target Budget (${myQuote.quoteAmount > 0 ? `₹${Number(myQuote.quoteAmount).toLocaleString()}` : 'Agreed'}) • Awaiting Buyer Advance` :
                        (!isAssignedToMe && assignedSellerId && !isPrepaymentPaid) ? '⚡ Pending Prepayment Confirmation (Open for Pitches & Acceptance)' :
                        hasSellerQuote ? 'Your Pitch Submitted' : 'RFQ Open for Quotations'}
                     </span>
@@ -1120,12 +1133,19 @@ export default function SchoolOrdersTab() {
                       </button>
                     ) : !isAssignedToMe ? (
                       <>
-                        <button
-                          onClick={() => acceptSchoolOrder(req.id || req._id)}
-                          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                        >
-                          <CheckCircle2 size={14} /> Accept at Target Budget
-                        </button>
+                        {isMyTargetBudgetQuote ? (
+                          <span className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-300">
+                            <CheckCircle2 size={14} className="text-emerald-600" />
+                            <span>Accepted Order at Target Budget</span>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => acceptSchoolOrder(req.id || req._id)}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                          >
+                            <CheckCircle2 size={14} /> Accept at Target Budget
+                          </button>
+                        )}
 
                         <button
                           onClick={() => {

@@ -674,8 +674,31 @@ export default function BulkOrderPreviewModal({
     );
   }
 
-  const isTargetBudgetAccepted = order.acceptanceMode === 'target_budget' || order.acceptedAtTargetBudget;
-  const targetBudgetVal = order.acceptedPrice || order.overallBudget || order.targetBudgetPerKit || order.estimatedBudget || 0;
+  const isMyQuoteRejected = Boolean(existingSellerQuote && (existingSellerQuote.status === 'rejected' || existingSellerQuote.negotiationStage === 'rejected'));
+  const isWinningSeller = Boolean(
+    !isMyQuoteRejected &&
+    order.acceptedQuoteId &&
+    (
+      (existingSellerQuote && String(existingSellerQuote._id || existingSellerQuote.id) === String(order.acceptedQuoteId)) ||
+      (Array.isArray(order.quotations) && order.quotations.some(
+        q => String(q._id || q.id) === String(order.acceptedQuoteId) &&
+             (String(q.sellerId?._id || q.sellerId?.id || q.sellerId) === currentSellerId ||
+              sellerCandidateIds.includes(String(q.sellerId?._id || q.sellerId?.id || q.sellerId)) ||
+              (cleanSellerPhone && String(q.sellerPhone || '').replace(/\D/g, '').slice(-10) === cleanSellerPhone))
+      ))
+    )
+  );
+
+  const targetBudgetVal = order.acceptedPrice || order.overallBudget || order.targetBudgetPerKit || order.estimatedBudget || existingSellerQuote?.quoteAmount || 0;
+  const isMyTargetBudgetQuote = Boolean(
+    existingSellerQuote && (
+      existingSellerQuote.acceptanceMode === 'target_budget' ||
+      existingSellerQuote.acceptedAtTargetBudget ||
+      (typeof existingSellerQuote.notes === 'string' && existingSellerQuote.notes.toLowerCase().includes('target budget')) ||
+      (Number(targetBudgetVal) > 0 && Number(existingSellerQuote.quoteAmount) === Number(targetBudgetVal))
+    )
+  );
+  const isTargetBudgetAccepted = (isAssignedToMe || isWinningSeller) && isPrepaymentPaid && (order.acceptanceMode === 'target_budget' || order.acceptedAtTargetBudget || isMyTargetBudgetQuote);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in">
@@ -704,15 +727,18 @@ export default function BulkOrderPreviewModal({
 
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-xs font-extrabold border ${
-              (isTargetBudgetAccepted || (isAssignedToMe && order.status === 'accepted'))
+              isTargetBudgetAccepted
                 ? 'bg-blue-500/20 text-blue-200 border-blue-400/40'
+                : isMyTargetBudgetQuote
+                ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
                 : order.status === 'quote_accepted'
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
                 : order.status === 'published' || order.status === 'assigned'
                 ? 'bg-blue-500/20 text-blue-300 border-blue-400/40'
                 : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
             }`}>
-              {(isTargetBudgetAccepted || (isAssignedToMe && order.status === 'accepted')) ? `🎯 Accepted at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
+              {isTargetBudgetAccepted ? `🎯 Accepted at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
+               isMyTargetBudgetQuote ? `🎯 Accepted Order at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
                order.status === 'quote_accepted' ? 'Quote Accepted & Finalized' :
                order.status === 'published' ? 'Marketplace RFQ Published' :
                order.status === 'assigned' ? 'Assigned to Vendor' : 'Pending Distribution'}
@@ -2721,16 +2747,23 @@ export default function BulkOrderPreviewModal({
             )}
 
             {userRole === 'seller' && onAcceptDirect && !isPrepaymentPaid && (
-              <button
-                onClick={() => {
-                  onAcceptDirect(order.id || order._id);
-                  onClose();
-                }}
-                className="flex-1 sm:flex-initial px-4 py-2 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1"
-              >
-                <CheckCircle2 size={14} />
-                <span>Accept at Target Budget</span>
-              </button>
+              isMyTargetBudgetQuote ? (
+                <span className="px-4 py-2 bg-emerald-50 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-300 flex items-center justify-center gap-1">
+                  <CheckCircle2 size={14} className="text-emerald-600" />
+                  <span>Accepted Order at Target Budget</span>
+                </span>
+              ) : (
+                <button
+                  onClick={() => {
+                    onAcceptDirect(order.id || order._id);
+                    onClose();
+                  }}
+                  className="flex-1 sm:flex-initial px-4 py-2 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Accept at Target Budget</span>
+                </button>
+              )
             )}
 
             <button
@@ -2940,6 +2973,7 @@ export default function BulkOrderPreviewModal({
           isOpen={isInvoiceOpen}
           onClose={() => setIsInvoiceOpen(false)}
           order={taxInvoiceOrder}
+          sellerUser={sellerUser}
         />
       )}
 

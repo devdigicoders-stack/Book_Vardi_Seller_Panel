@@ -2053,13 +2053,30 @@ export const SellerDataProvider = ({ children }) => {
       const updatedList = prev.map(s => {
         if (String(s.id || s._id) === String(id) || String(s.referenceId) === String(id)) {
           const budgetVal = Number(s.overallBudget || s.targetBudgetPerKit || s.estimatedBudget || 0);
-          return {
-            ...s,
-            status: 'accepted',
+          const existingQuotes = Array.isArray(s.quotations) ? s.quotations : [];
+          const myQuoteIndex = existingQuotes.findIndex(q => String(q.sellerId) === String(currentSellerId));
+          const targetQuote = {
+            ...(myQuoteIndex >= 0 ? existingQuotes[myQuoteIndex] : {}),
+            _id: myQuoteIndex >= 0 ? existingQuotes[myQuoteIndex]._id : Date.now(),
+            sellerId: currentSellerId,
+            sellerName: sellerUser?.name || 'Seller',
+            sellerStoreName: sellerUser?.storeName || 'My Store',
+            sellerPhone: sellerUser?.phone || '',
+            quoteAmount: budgetVal > 0 ? budgetVal : 50000,
+            status: 'submitted',
+            negotiationStage: 'seller_quoted',
             acceptanceMode: 'target_budget',
             acceptedAtTargetBudget: true,
-            acceptedPrice: budgetVal > 0 ? budgetVal : s.acceptedPrice,
-            sellerId: currentSellerId || s.sellerId
+            notes: `Accepted direct fulfillment at buyer's target budget of ₹${budgetVal.toLocaleString()}`
+          };
+          const updatedQuotes = myQuoteIndex >= 0
+            ? existingQuotes.map((q, idx) => idx === myQuoteIndex ? targetQuote : q)
+            : [...existingQuotes, targetQuote];
+
+          return {
+            ...s,
+            status: (s.status === 'open' || s.status === 'published' || !s.status) ? 'quoted' : s.status,
+            quotations: updatedQuotes
           };
         }
         return s;
@@ -2072,7 +2089,28 @@ export const SellerDataProvider = ({ children }) => {
             const list = JSON.parse(localStorage.getItem(k) || '[]');
             const idx = list.findIndex(o => String(o.id || o._id) === String(id) || (o.referenceId && String(o.referenceId) === String(id)));
             if (idx !== -1) {
-              list[idx] = { ...list[idx], status: 'accepted', sellerId: currentSellerId, acceptanceMode: 'target_budget', acceptedAtTargetBudget: true };
+              const ord = list[idx];
+              const existingQuotes = Array.isArray(ord.quotations) ? ord.quotations : [];
+              const myQuoteIndex = existingQuotes.findIndex(q => String(q.sellerId) === String(currentSellerId));
+              const budgetVal = Number(ord.overallBudget || ord.targetBudgetPerKit || ord.estimatedBudget || 0);
+              const targetQuote = {
+                ...(myQuoteIndex >= 0 ? existingQuotes[myQuoteIndex] : {}),
+                _id: myQuoteIndex >= 0 ? existingQuotes[myQuoteIndex]._id : Date.now(),
+                sellerId: currentSellerId,
+                sellerName: sellerUser?.name || 'Seller',
+                sellerStoreName: sellerUser?.storeName || 'My Store',
+                sellerPhone: sellerUser?.phone || '',
+                quoteAmount: budgetVal > 0 ? budgetVal : 50000,
+                status: 'submitted',
+                negotiationStage: 'seller_quoted',
+                acceptanceMode: 'target_budget',
+                acceptedAtTargetBudget: true,
+                notes: `Accepted direct fulfillment at buyer's target budget of ₹${budgetVal.toLocaleString()}`
+              };
+              ord.quotations = myQuoteIndex >= 0
+                ? existingQuotes.map((q, qIdx) => qIdx === myQuoteIndex ? targetQuote : q)
+                : [...existingQuotes, targetQuote];
+              ord.status = (ord.status === 'open' || ord.status === 'published' || !ord.status) ? 'quoted' : ord.status;
               localStorage.setItem(k, JSON.stringify(list));
             }
           } catch (e) {}
@@ -2097,7 +2135,7 @@ export const SellerDataProvider = ({ children }) => {
             return merged;
           });
         }
-        showToast('🎯 You have accepted this school bulk order at target budget!');
+        showToast('🎯 Accepted order at target budget! Awaiting buyer review and advance payment.');
       }
     } catch (e) {
       console.warn('Backend accept school order fallback:', e);
