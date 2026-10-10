@@ -213,6 +213,12 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   // Variants & Measuring Scales
   const [sizeVariants, setSizeVariants] = useState([]);
 
+  // Quick Custom Size & Unit Add State (Issue 9 & 10)
+  const [customSizeInput, setCustomSizeInput] = useState('');
+  const [customSizeUnit, setCustomSizeUnit] = useState('Pcs');
+  const [customSizePrice, setCustomSizePrice] = useState('');
+  const [customSizeStock, setCustomSizeStock] = useState('25');
+
   // Modal for Adding / Editing a Variant
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
   const [editingVariantIndex, setEditingVariantIndex] = useState(null);
@@ -551,6 +557,44 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     }
 
     setIsVariantModalOpen(false);
+    setError('');
+  };
+
+  const handleQuickAddCustomSize = () => {
+    const val = customSizeInput.trim();
+    if (!val) {
+      setError('Please enter a size or measurement name (e.g. Size 34, 2.5 Meter, Pair 8).');
+      return;
+    }
+    const price = customSizePrice ? Number(customSizePrice) : Number(formData.price || 499);
+    const mrp = Math.round(price * 1.25).toString();
+    const stock = customSizeStock ? customSizeStock : '25';
+    const defaultImage = formData.images[0] || formData.image || '';
+
+    const newVariant = {
+      size: val,
+      measureScale: customSizeUnit === 'Mtr' ? 'meter' : 'size',
+      measureValue: val,
+      unit: customSizeUnit,
+      price: String(price),
+      mrp: String(mrp),
+      stock: String(stock),
+      sku: formData.sku ? `${formData.sku}-${val.replace(/\s+/g, '')}` : `SKU-${val.replace(/\s+/g, '')}`,
+      image: defaultImage,
+      images: defaultImage ? [defaultImage] : []
+    };
+
+    setSizeVariants(prev => {
+      const existingIdx = prev.findIndex(v => (v.size || v.measureValue || '').toLowerCase() === val.toLowerCase());
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = newVariant;
+        return copy;
+      }
+      return [...prev, newVariant];
+    });
+
+    setCustomSizeInput('');
     setError('');
   };
 
@@ -1467,10 +1511,66 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       ) : (
                         /* APPAREL SIZE SELECTION PILLS & INLINE TABLE */
                         <div className="space-y-3 pt-2 border-t border-teal-100">
+                          {/* Quick Custom Size & Unit Add Bar (Issue 9 & 10) */}
+                          <div className="p-3 bg-gradient-to-r from-teal-50/80 to-blue-50/80 rounded-xl border border-teal-200/70 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-extrabold uppercase text-brand-teal tracking-wide">
+                                Quick Add Custom Size / Unit
+                              </span>
+                              <span className="text-[10px] text-gray-500">Type custom size & select unit</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex-1 min-w-[140px]">
+                                <input
+                                  type="text"
+                                  value={customSizeInput}
+                                  onChange={e => setCustomSizeInput(e.target.value)}
+                                  placeholder="e.g. Size 34, 2.5m, Custom"
+                                  className="w-full px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-brand-teal outline-hidden"
+                                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleQuickAddCustomSize(); } }}
+                                />
+                              </div>
+                              <select
+                                value={customSizeUnit}
+                                onChange={e => setCustomSizeUnit(e.target.value)}
+                                className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-700 outline-hidden cursor-pointer"
+                              >
+                                <option value="Pcs">Pcs (Pieces)</option>
+                                <option value="Mtr">Mtr (Meters)</option>
+                                <option value="Pairs">Pairs (Prs)</option>
+                                <option value="Box">Box</option>
+                                <option value="Set">Set</option>
+                                <option value="Kg">Kg</option>
+                              </select>
+                              <input
+                                type="number"
+                                value={customSizePrice}
+                                onChange={e => setCustomSizePrice(e.target.value)}
+                                placeholder={`Price (₹${formData.price || 499})`}
+                                className="w-28 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold focus:ring-1 focus:ring-brand-teal outline-hidden"
+                              />
+                              <input
+                                type="number"
+                                value={customSizeStock}
+                                onChange={e => setCustomSizeStock(e.target.value)}
+                                placeholder="Stock (25)"
+                                className="w-24 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-brand-teal outline-hidden"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleQuickAddCustomSize}
+                                className="px-3.5 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white rounded-lg text-xs font-extrabold cursor-pointer flex items-center gap-1 shadow-xs"
+                              >
+                                <Plus size={14} />
+                                <span>Add Size</span>
+                              </button>
+                            </div>
+                          </div>
+
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                               <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
-                                Select Available Apparel Sizes *
+                                Quick Preset Apparel Sizes
                               </label>
                               <p className="text-[11px] text-gray-500">
                                 Click size pills to toggle available stock options for this item.

@@ -167,10 +167,20 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   });
 
   const subtotal = order.subtotal || items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
-  const taxAmount = Math.round(totalTaxAmount * 100) / 100;
   const shippingCost = Number(order.shippingCost ?? order.shippingFee ?? 0);
   const discount = Number(order.discount ?? order.discountAmount ?? 0);
   const grandTotal = Number(order.total || order.totalAmount || (subtotal + shippingCost - discount));
+
+  // Include shipping GST into total taxable value & total tax amount for unified grand total breakdown
+  if (shippingCost > 0) {
+    const shippingGstRate = 18;
+    const shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
+    const shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+    totalTaxableValue += shippingTaxable;
+    totalTaxAmount += shippingTax;
+  }
+
+  const taxAmount = Math.round(totalTaxAmount * 100) / 100;
 
   const isPlaceholderName = (name) => {
     if (!name || typeof name !== 'string') return true;
@@ -460,18 +470,23 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   // Logistics tracking resolution: strictly visible when product is Out for Delivery & partner decided
   const logisticsStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
   const isOut = logisticsStatus === 'out for delivery' || logisticsStatus === 'delivered';
-  const isSelf = String(order.deliveryMode || order.deliveryType || '').toLowerCase().includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPersonName);
-  const isThirdParty = String(order.deliveryMode || order.deliveryType || '').toLowerCase().includes('third') || Boolean(order.courierName || order.thirdPartyDetails?.courierName);
+  const rawMode = String(order.deliveryMode || order.deliveryType || '').toLowerCase();
+  const isThirdParty = rawMode.includes('third') || Boolean(order.courierName || order.thirdPartyDetails?.courierName);
+  const isSelf = !isThirdParty && (rawMode.includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPersonName));
   const hasPartner = isSelf || isThirdParty || Boolean(order.courierName || order.selfDeliveryDetails?.deliveryPersonName);
   const hasTracking = isOut && hasPartner && Boolean(order.trackingNumber || order.selfDeliveryDetails?.deliveryPartnerToken || order.thirdPartyDetails?.trackingNumber);
 
-  const deliveryPartnerDisplay = isSelf 
-    ? (order.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
-    : (order.courierName || order.thirdPartyDetails?.courierName || '3rd-Party Logistics Carrier');
+  const deliveryPartnerDisplay = isThirdParty
+    ? (order.courierName || order.thirdPartyDetails?.courierName || '3rd-Party Logistics Carrier')
+    : (order.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)');
 
-  const trackingNumberDisplay = order.trackingNumber || (isSelf ? order.selfDeliveryDetails?.deliveryPartnerToken : order.thirdPartyDetails?.trackingNumber) || '';
+  const trackingNumberDisplay = isThirdParty
+    ? (order.trackingNumber || order.thirdPartyDetails?.trackingNumber || '')
+    : (order.selfDeliveryDetails?.deliveryPartnerToken || order.trackingNumber || '');
 
-  const trackingLinkDisplay = order.trackingUrl || order.selfDeliveryDetails?.trackingUrl || order.thirdPartyDetails?.trackingUrl || '';
+  const trackingLinkDisplay = isThirdParty
+    ? (order.trackingUrl || order.thirdPartyDetails?.trackingUrl || '')
+    : (order.selfDeliveryDetails?.trackingUrl || order.trackingUrl || '');
 
   const handlePrint = () => {
     if (!confirmed) {
