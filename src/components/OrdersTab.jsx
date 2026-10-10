@@ -35,6 +35,7 @@ import { useSellerData } from '../context/SellerDataContext';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
 import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
+import { SERVER_URL } from '../utils/api';
 
 // Helper to generate dynamic tracking ID based on courier name
 export const generateDynamicTrackingId = (courierName) => {
@@ -245,7 +246,10 @@ export default function OrdersTab() {
 
   const handleOpenShipModal = (orderId) => {
     setShippingOrderId(orderId);
-    setTrackingNumberInput(generateDynamicTrackingId(courierInput || 'BlueDart'));
+    const ord = orders.find(o => String(o.id || o._id) === String(orderId));
+    const assignedCourier = ord?.courierName && ord.courierName !== 'N/A' ? ord.courierName : (courierInput || 'Delhivery');
+    setCourierInput(assignedCourier);
+    setTrackingNumberInput(ord?.trackingNumber || generateDynamicTrackingId(assignedCourier));
     setIsShipModalOpen(true);
   };
 
@@ -288,7 +292,22 @@ export default function OrdersTab() {
       let tokenVal = '';
       let trackingLink = '';
 
-      if (deliveryModeInput === 'self_delivery') {
+      // Check existing lock status
+      const isExistingSelf = Boolean(
+        activeOrderModal.deliveryMode === 'self_delivery' ||
+        activeOrderModal.deliveryType === 'self_delivery' ||
+        activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken ||
+        activeOrderModal.selfDeliveryDetails?.deliveryPersonName
+      );
+      const isExistingThirdParty = Boolean(
+        (activeOrderModal.deliveryMode === 'third_party' || activeOrderModal.courierName || activeOrderModal.trackingNumber) &&
+        (activeOrderModal.courierName && activeOrderModal.courierName !== 'N/A' && activeOrderModal.courierName !== '')
+      );
+
+      const effectiveDeliveryMode = isExistingSelf ? 'self_delivery' : (isExistingThirdParty ? 'third_party' : deliveryModeInput);
+      const effectiveCourier = isExistingThirdParty && activeOrderModal.courierName ? activeOrderModal.courierName : modalCourierInput;
+
+      if (effectiveDeliveryMode === 'self_delivery') {
         if (!modalDriverName.trim()) {
           alert('⚠️ Please enter Driver / Delivery Person Name.');
           setIsSavingDelivery(false);
@@ -308,13 +327,13 @@ export default function OrdersTab() {
         const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
         trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
         finalAwb = tokenVal;
-      } else if (deliveryModeInput === 'third_party') {
-        if (!modalCourierInput.trim()) {
+      } else if (effectiveDeliveryMode === 'third_party') {
+        if (!effectiveCourier.trim()) {
           alert('⚠️ Please select or enter Courier Partner Name.');
           setIsSavingDelivery(false);
           return;
         }
-        finalAwb = modalTrackingInput.trim() || generateDynamicTrackingId(modalCourierInput);
+        finalAwb = modalTrackingInput.trim() || generateDynamicTrackingId(effectiveCourier);
         setModalTrackingInput(finalAwb);
       }
 
@@ -328,8 +347,8 @@ export default function OrdersTab() {
         city: sellerUser?.city || activeOrderModal.sellerDetails?.city || ''
       };
 
-      const lowerCourier = modalCourierInput.toLowerCase().trim();
-      const carrierUrl = deliveryModeInput === 'third_party' && finalAwb ? (
+      const lowerCourier = effectiveCourier.toLowerCase().trim();
+      const carrierUrl = effectiveDeliveryMode === 'third_party' && finalAwb ? (
         lowerCourier.includes('bluedart') ? `https://www.bluedart.com/tracking?awb=${finalAwb}` :
         lowerCourier.includes('delhivery') ? `https://www.delhivery.com/track/package/${finalAwb}` :
         lowerCourier.includes('dtdc') ? `https://www.dtdc.in/tracking/shipment-tracking.asp?awb=${finalAwb}` :
@@ -342,13 +361,13 @@ export default function OrdersTab() {
       ) : '';
 
       const details = {
-        courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',
+        courierName: effectiveDeliveryMode === 'third_party' ? effectiveCourier : '',
         trackingNumber: finalAwb,
-        trackingUrl: deliveryModeInput === 'self_delivery' ? trackingLink : carrierUrl,
-        deliveryMode: deliveryModeInput,
-        deliveryType: deliveryModeInput,
+        trackingUrl: effectiveDeliveryMode === 'self_delivery' ? trackingLink : carrierUrl,
+        deliveryMode: effectiveDeliveryMode,
+        deliveryType: effectiveDeliveryMode,
         sellerDetails: sellerPayload,
-        selfDeliveryDetails: deliveryModeInput === 'self_delivery'
+        selfDeliveryDetails: effectiveDeliveryMode === 'self_delivery'
           ? {
               deliveryPersonName: modalDriverName.trim(),
               deliveryPersonPhone: modalDriverPhone.trim(),
@@ -860,6 +879,22 @@ export default function OrdersTab() {
                   );
                 })()}
 
+                {(activeOrderModal.paymentStatus?.toLowerCase() === 'refunded' ||
+                  activeOrderModal.status?.toLowerCase().includes('refund') ||
+                  activeOrderModal.returnRequest?.status?.toLowerCase().includes('refund') ||
+                  activeOrderModal.status === 'product_received') && (
+                  <a
+                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200"
+                    title="Download GST Credit Note under Section 34 of CGST Act"
+                  >
+                    <FileText size={14} />
+                    <span>GST Credit Note</span>
+                  </a>
+                )}
+
                 <button
                   onClick={() => setActiveOrderModal(null)}
                   className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 cursor-pointer"
@@ -1187,80 +1222,147 @@ export default function OrdersTab() {
               </div>
 
               {/* Order Status & Fulfillment Management Card */}
-              <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-100 space-y-4">
-                <div className="flex items-center justify-between font-bold text-teal-950">
-                  <span className="flex items-center gap-1.5 text-sm">
-                    <Truck size={16} className="text-teal-700" /> Fulfillment & Delivery Management
-                  </span>
-                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-teal-200 text-teal-900">
-                    {activeOrderModal.status}
-                  </span>
-                </div>
+              {(() => {
+                const isSelfDeliveryAssigned = Boolean(
+                  activeOrderModal.deliveryMode === 'self_delivery' ||
+                  activeOrderModal.deliveryType === 'self_delivery' ||
+                  activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken ||
+                  activeOrderModal.selfDeliveryDetails?.deliveryPersonName
+                );
 
-                {/* Mode Selector Tabs */}
-                <div className="grid grid-cols-2 gap-2 bg-teal-100/60 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryModeInput('third_party')}
-                    className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                      deliveryModeInput === 'third_party'
-                        ? 'bg-white text-teal-900 shadow-xs'
-                        : 'text-teal-800 hover:text-teal-950'
-                    }`}
-                  >
-                    🚚 3rd-Party Courier (Delhivery/BlueDart)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryModeInput('self_delivery')}
-                    className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                      deliveryModeInput === 'self_delivery'
-                        ? 'bg-white text-teal-900 shadow-xs'
-                        : 'text-teal-800 hover:text-teal-950'
-                    }`}
-                  >
-                    🛵 Self-Delivery (Direct / Store)
-                  </button>
-                </div>
+                const isThirdPartyAssigned = Boolean(
+                  (activeOrderModal.deliveryMode === 'third_party' || activeOrderModal.courierName || activeOrderModal.trackingNumber) &&
+                  (activeOrderModal.courierName && activeOrderModal.courierName !== 'N/A' && activeOrderModal.courierName !== '')
+                );
 
-                {/* Mode A: 3rd Party Courier Fields */}
-                {deliveryModeInput === 'third_party' ? (
-                  <div className="space-y-3">
-                    <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center justify-between">
-                      <div>
-                        <strong className="block text-amber-950 font-bold text-xs">Automated Courier Dispatch (Shiprocket / Delhivery / BlueDart)</strong>
-                        <span className="text-[10px] text-amber-800">Auto-calculate freight rate, generate AWB, and print shipping label PDF</span>
+                const isDeliveryPartnerLocked = Boolean(
+                  isSelfDeliveryAssigned ||
+                  isThirdPartyAssigned ||
+                  ['Shipped', 'Out for Delivery', 'Delivered', 'Completed'].includes(activeOrderModal.status)
+                );
+
+                const lockedPartnerName = isSelfDeliveryAssigned
+                  ? 'Self-Delivery (Direct Store Fleet)'
+                  : (activeOrderModal.courierName || '3rd-Party Courier');
+
+                return (
+                  <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-100 space-y-4">
+                    <div className="flex items-center justify-between font-bold text-teal-950">
+                      <span className="flex items-center gap-1.5 text-sm">
+                        <Truck size={16} className="text-teal-700" /> Fulfillment & Delivery Management
+                      </span>
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-teal-200 text-teal-900">
+                        {activeOrderModal.status}
+                      </span>
+                    </div>
+
+                    {/* Delivery Partner Permanent Lock Banner */}
+                    {isDeliveryPartnerLocked && (
+                      <div className="bg-amber-100/90 border border-amber-300 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs text-amber-950 font-bold shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <Lock size={15} className="text-amber-800 shrink-0" />
+                          <span>Delivery Partner Locked: <strong className="text-amber-950 underline decoration-amber-400">{lockedPartnerName}</strong></span>
+                        </div>
+                        <span className="text-[10px] uppercase tracking-wider bg-amber-200/90 px-2 py-0.5 rounded text-amber-900 border border-amber-300 font-extrabold">
+                          Permanent
+                        </span>
                       </div>
+                    )}
+
+                    {/* Mode Selector Tabs */}
+                    <div className="grid grid-cols-2 gap-2 bg-teal-100/60 p-1 rounded-xl">
                       <button
                         type="button"
-                        onClick={() => setIsCreateShipmentModalOpen(true)}
-                        className="px-3 py-1.5 bg-teal-800 hover:bg-teal-700 text-white font-extrabold text-[11px] rounded-lg shadow-xs transition-colors cursor-pointer shrink-0"
+                        disabled={isDeliveryPartnerLocked}
+                        onClick={() => {
+                          if (!isDeliveryPartnerLocked) setDeliveryModeInput('third_party');
+                        }}
+                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all ${
+                          isDeliveryPartnerLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'
+                        } ${
+                          deliveryModeInput === 'third_party'
+                            ? 'bg-white text-teal-900 shadow-xs'
+                            : 'text-teal-800 hover:text-teal-950'
+                        }`}
                       >
-                        🚀 Dispatch via Delivery Partner
+                        🚚 3rd-Party Courier (Delhivery/BlueDart)
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeliveryPartnerLocked}
+                        onClick={() => {
+                          if (!isDeliveryPartnerLocked) setDeliveryModeInput('self_delivery');
+                        }}
+                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all ${
+                          isDeliveryPartnerLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'
+                        } ${
+                          deliveryModeInput === 'self_delivery'
+                            ? 'bg-white text-teal-900 shadow-xs'
+                            : 'text-teal-800 hover:text-teal-950'
+                        }`}
+                      >
+                        🛵 Self-Delivery (Direct / Store)
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-teal-100">
-                      <div className="space-y-1">
-                        <label className="font-semibold text-gray-700">Courier Partner</label>
-                        <select
-                          value={modalCourierInput}
-                          onChange={(e) => {
-                            const selected = e.target.value;
-                            setModalCourierInput(selected);
-                            if (!modalTrackingInput.trim()) {
-                              setModalTrackingInput(generateDynamicTrackingId(selected));
-                            }
-                          }}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium focus:outline-none focus:border-teal-600"
-                        >
-                          <option value="Delhivery">Delhivery Express</option>
-                          <option value="BlueDart">BlueDart Air</option>
-                          <option value="Ekart">Ekart Logistics</option>
-                          <option value="DTDC">DTDC Courier</option>
-                          <option value="IndiaPost">SpeedPost / India Post</option>
-                        </select>
-                      </div>
+                    {/* Mode A: 3rd Party Courier Fields */}
+                    {deliveryModeInput === 'third_party' ? (
+                      <div className="space-y-3">
+                        <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-center justify-between">
+                          <div>
+                            <strong className="block text-amber-950 font-bold text-xs">Automated Courier Dispatch (Shiprocket / Delhivery / BlueDart)</strong>
+                            <span className="text-[10px] text-amber-800">Auto-calculate freight rate, generate AWB, and print shipping label PDF</span>
+                          </div>
+                          {(isThirdPartyAssigned || activeOrderModal.trackingNumber || activeOrderModal.shipmentDetails?.awbNumber) ? (
+                            <div className="px-3 py-1.5 bg-emerald-100 text-emerald-900 font-extrabold text-[11px] rounded-lg border border-emerald-300 shrink-0 flex items-center gap-1 shadow-2xs">
+                              <CheckCircle size={13} className="text-emerald-700" />
+                              <span>Shipment Assigned</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsCreateShipmentModalOpen(true)}
+                              className="px-3 py-1.5 bg-teal-800 hover:bg-teal-700 text-white font-extrabold text-[11px] rounded-lg shadow-xs transition-colors cursor-pointer shrink-0"
+                            >
+                              🚀 Dispatch via Delivery Partner
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-teal-100">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <label className="font-semibold text-gray-700">Courier Partner</label>
+                              {isThirdPartyAssigned && (
+                                <span className="text-[10px] text-amber-800 font-bold flex items-center gap-1">
+                                  <Lock size={10} /> Locked
+                                </span>
+                              )}
+                            </div>
+                            <select
+                              disabled={isThirdPartyAssigned}
+                              value={modalCourierInput}
+                              onChange={(e) => {
+                                if (isThirdPartyAssigned) return;
+                                const selected = e.target.value;
+                                setModalCourierInput(selected);
+                                if (!modalTrackingInput.trim()) {
+                                  setModalTrackingInput(generateDynamicTrackingId(selected));
+                                }
+                              }}
+                              className={`w-full px-3 py-2 rounded-xl border font-medium focus:outline-none ${
+                                isThirdPartyAssigned
+                                  ? 'bg-gray-100 text-gray-700 border-gray-300 cursor-not-allowed'
+                                  : 'bg-white border-gray-200 focus:border-teal-600'
+                              }`}
+                            >
+                              <option value="Delhivery">Delhivery Express</option>
+                              <option value="BlueDart">BlueDart Air</option>
+                              <option value="Ekart">Ekart Logistics</option>
+                              <option value="DTDC">DTDC Courier</option>
+                              <option value="IndiaPost">SpeedPost / India Post</option>
+                            </select>
+                          </div>
 
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
@@ -1329,33 +1431,21 @@ export default function OrdersTab() {
                           Tracking ID: {modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}
                         </span>
                       </div>
-                      {(() => {
-                        const orderOtp = activeOrderModal?.deliveryOtp ||
-                          activeOrderModal?.selfDeliveryDetails?.deliveryOtp ||
-                          activeOrderModal?.items?.[0]?.deliveryOtp ||
-                          activeOrderModal?.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
-                          '';
-                        return (
-                          <div className="text-[11px] text-emerald-900 font-medium bg-emerald-50 p-2 rounded-xl border border-emerald-200 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold flex items-center gap-1 text-emerald-800">
-                                🔐 <strong>Order Delivery Handover OTP:</strong>
-                              </span>
-                              {orderOtp ? (
-                                <span className="font-mono text-xs font-black bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-950 tracking-widest shadow-2xs">
-                                  {orderOtp}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-gray-500 font-mono">Shared on delivery dispatch</span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-gray-600 flex items-center justify-between">
-                              <span>Customer presents this 4-digit OTP at doorstep.</span>
-                              <span className="text-gray-400 font-mono">(Fallback PIN: 1234 / 4829)</span>
+                      {/* Customer Handover OTP Privacy Guard */}
+                      <div className="text-[11px] text-teal-900 font-medium bg-teal-50/80 p-2.5 rounded-xl border border-teal-200 flex items-center justify-between shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={16} className="text-teal-700 shrink-0" />
+                          <div>
+                            <div className="font-bold text-teal-950">Customer Handover OTP Protected</div>
+                            <div className="text-[10px] text-teal-700">
+                              Dispatched directly to buyer's phone. Buyer provides this 4-digit OTP at doorstep.
                             </div>
                           </div>
-                        );
-                      })()}
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-teal-800 border border-teal-200 font-mono">
+                          Confidential
+                        </span>
+                      </div>
 
                       <div className="flex items-center gap-1.5">
                         <input
@@ -1493,8 +1583,9 @@ export default function OrdersTab() {
                     </button>
                   </div>
                 </div>
-
               </div>
+            );
+          })()}
 
               {/* Items List */}
               <div className="space-y-2">
@@ -1757,24 +1848,41 @@ export default function OrdersTab() {
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
               <Truck className="text-purple-700" size={20} /> Pack & Dispatch Order
             </h4>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="font-semibold text-gray-700">Courier Partner</label>
-                <select
-                  value={courierInput}
-                  onChange={(e) => {
-                    const selected = e.target.value;
-                    setCourierInput(selected);
-                    setTrackingNumberInput(generateDynamicTrackingId(selected));
-                  }}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none"
-                >
-                  <option value="Delhivery">Delhivery Express</option>
-                  <option value="BlueDart">BlueDart Air Premium</option>
-                  <option value="Ekart">Ekart Logistics</option>
-                  <option value="DTDC">DTDC Courier</option>
-                </select>
-              </div>
+            {(() => {
+              const shipTargetOrder = orders.find(o => String(o.id || o._id) === String(shippingOrderId));
+              const isShipTargetCourierLocked = Boolean(shipTargetOrder?.courierName && shipTargetOrder.courierName !== 'N/A');
+              return (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="font-semibold text-gray-700">Courier Partner</label>
+                      {isShipTargetCourierLocked && (
+                        <span className="text-[10px] text-amber-800 font-bold flex items-center gap-1">
+                          <Lock size={10} /> Locked: {shipTargetOrder.courierName}
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      disabled={isShipTargetCourierLocked}
+                      value={courierInput}
+                      onChange={(e) => {
+                        if (isShipTargetCourierLocked) return;
+                        const selected = e.target.value;
+                        setCourierInput(selected);
+                        setTrackingNumberInput(generateDynamicTrackingId(selected));
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
+                        isShipTargetCourierLocked
+                          ? 'bg-gray-100 text-gray-700 border-gray-300 cursor-not-allowed'
+                          : 'border-gray-200'
+                      }`}
+                    >
+                      <option value="Delhivery">Delhivery Express</option>
+                      <option value="BlueDart">BlueDart Air Premium</option>
+                      <option value="Ekart">Ekart Logistics</option>
+                      <option value="DTDC">DTDC Courier</option>
+                    </select>
+                  </div>
 
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -1796,6 +1904,8 @@ export default function OrdersTab() {
                 />
               </div>
             </div>
+          );
+        })()}
 
             <div className="flex gap-2 pt-2">
               <button
