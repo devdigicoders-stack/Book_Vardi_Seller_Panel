@@ -275,6 +275,26 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     loadMetadata();
   }, []);
 
+  // Compute dynamic categories with fallback to static schema
+  const displayCategories = (dbCategories && dbCategories.length > 0)
+    ? dbCategories.map(c => ({
+        id: c.name,
+        name: c.name,
+        gstPercentage: c.gstPercentage,
+        subCategories: Array.isArray(c.subCategories)
+          ? c.subCategories.map(s => typeof s === 'string' ? s : (s.name || '')).filter(Boolean)
+          : []
+      }))
+    : CATEGORY_STRUCTURE;
+
+  const getDynamicSubCategories = (catName) => {
+    const found = displayCategories.find(c => c.name.toLowerCase() === (catName || '').toLowerCase());
+    if (found && Array.isArray(found.subCategories) && found.subCategories.length > 0) {
+      return found.subCategories;
+    }
+    return getSubCategories(catName);
+  };
+
   // Initialize form
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1050,17 +1070,19 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     <select
                       value={formData.category}
                       onChange={e => {
-                        const selectedCat = normalizeCategory(e.target.value);
-                        const subs = getSubCategories(selectedCat);
+                        const selectedCat = e.target.value;
+                        const subs = getDynamicSubCategories(selectedCat);
+                        const matchedCat = displayCategories.find(c => c.name.toLowerCase() === selectedCat.toLowerCase());
                         setFormData(prev => ({
                           ...prev,
                           category: selectedCat,
-                          subCategory: subs[0] || ''
+                          subCategory: subs[0] || '',
+                          gst: (matchedCat && matchedCat.gstPercentage !== undefined) ? String(matchedCat.gstPercentage) : prev.gst
                         }));
                       }}
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
                     >
-                      {CATEGORY_STRUCTURE.map(c => (
+                      {displayCategories.map(c => (
                         <option key={c.name} value={c.name}>{c.name}</option>
                       ))}
                     </select>
@@ -1072,7 +1094,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       onChange={e => setFormData({ ...formData, subCategory: e.target.value })}
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
                     >
-                      {getSubCategories(formData.category).map(sub => (
+                      {getDynamicSubCategories(formData.category).map(sub => (
                         <option key={sub} value={sub}>{sub}</option>
                       ))}
                     </select>
