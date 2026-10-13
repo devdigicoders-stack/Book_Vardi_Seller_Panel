@@ -29,6 +29,7 @@ import { useSellerData } from '../context/SellerDataContext';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import LocationPickerModal from './LocationPickerModal';
 import { getMediaUrl, getFileNameOnly } from '../utils/mediaUrl';
+import { API_BASE_URL } from '../utils/api';
 
 const DEFAULT_12_STEP_DATA = {
   sellerName: '',
@@ -206,7 +207,7 @@ export default function ProfileTab() {
 
       try {
         const token = localStorage.getItem('bv_seller_jwt_token');
-        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+        const res = await fetch(`${API_BASE_URL}/upload-base64`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -257,7 +258,7 @@ export default function ProfileTab() {
 
       try {
         const token = localStorage.getItem('bv_seller_jwt_token');
-        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+        const res = await fetch(`${API_BASE_URL}/upload-base64`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
