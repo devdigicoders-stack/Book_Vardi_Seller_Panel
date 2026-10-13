@@ -30,16 +30,14 @@ import ImageUploadDropzone from './ImageUploadDropzone';
 import { resolveImageUrl, parseSizeVariants, dedupeImages } from '../utils/mediaUrl';
 import { fetchSchoolsApi, fetchCategoriesApi } from '../utils/api';
 import { CATEGORY_STRUCTURE, normalizeCategory, getSubCategories } from '../constants/categories';
+import { getProductStockUnit } from '../utils/stockUnitHelper';
 
 // Universal Category Form Configuration Schema Matrix
 export function getCategorySchema(categoryKey) {
-  const normCat = normalizeCategory(categoryKey);
-  const cat = normCat.toLowerCase();
-  const isApparel = cat.includes('uniform') || cat.includes('rain') || cat.includes('sport') || cat.includes('blazer') || cat.includes('cloth') || cat.includes('apparel');
   return {
-    showMeterCalculation: isApparel,
-    showSizeChart: isApparel,
-    showGender: isApparel || cat.includes('shoe') || cat.includes('footwear') || cat.includes('bag')
+    showMeterCalculation: true,
+    showSizeChart: true,
+    showGender: true
   };
 }
 
@@ -72,7 +70,16 @@ export const AGE_OPTIONS = [
   'All Ages'
 ];
 
-export const APPAREL_SIZES = ['S', 'M', 'L', 'XL', 'XXL', '26', '28', '30', '32', '34', '36', '38'];
+export const APPAREL_SIZES_ALPHA = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL'];
+export const APPAREL_SIZES_KIDS = ['18', '20', '22', '24'];
+export const APPAREL_SIZES_REGULAR = ['26', '28', '30', '32', '34', '36', '38'];
+export const APPAREL_SIZES_PLUS = ['40', '42', '44', '46', '48'];
+export const APPAREL_SIZES = [
+  ...APPAREL_SIZES_KIDS,
+  ...APPAREL_SIZES_REGULAR,
+  ...APPAREL_SIZES_PLUS,
+  ...APPAREL_SIZES_ALPHA
+];
 export const KIDS_SHOE_SIZES = [
   '6 Kids', '7 Kids', '8 Kids', '9 Kids', '10 Kids',
   '11 Kids', '12 Kids', '13 Kids'
@@ -80,8 +87,7 @@ export const KIDS_SHOE_SIZES = [
 
 export const SENIOR_SHOE_SIZES = [
   'Size 1', 'Size 2', 'Size 3', 'Size 4', 'Size 5',
-  'Size 6', 'Size 7', 'Size 8', 'Size 9', 'Size 10',
-  'Size 11', 'Size 12', 'Size 13'
+  'Size 6', 'Size 7', 'Size 8', 'Size 9', 'Size 10'
 ];
 
 export const SHOE_SIZES = [...KIDS_SHOE_SIZES, ...SENIOR_SHOE_SIZES];
@@ -89,9 +95,8 @@ export const SHOE_SIZES = [...KIDS_SHOE_SIZES, ...SENIOR_SHOE_SIZES];
 export function getCategoryUnitType(categoryKey) {
   const cat = (categoryKey || '').toLowerCase();
   if (cat.includes('footwear') || cat.includes('shoe') || cat.includes('sock')) return 'footwear';
-  if (cat.includes('book') || cat.includes('ncert') || cat.includes('practice') || cat.includes('drawing')) return 'books';
-  if (cat.includes('uniform') || cat.includes('blazer') || cat.includes('shirt') || cat.includes('pant') || cat.includes('apparel') || cat.includes('rain') || cat.includes('sport')) return 'apparel';
-  return 'general'; // Notebooks, stationery, bags, kits
+  // All clothing (pent, pant, shirt, uniform, blazer, fabrics) and custom categories default to apparel & size variants
+  return 'apparel';
 }
 
 export function parseBool(val, defaultVal = true) {
@@ -126,8 +131,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     subtitle: '',
     price: '',
     originalPrice: '',
-    category: 'School Uniform',
-    subCategory: 'Ready to wear',
+    category: isEdit && product?.category ? normalizeCategory(product.category) : '',
+    subCategory: isEdit && product?.subCategory ? product.subCategory : '',
     schoolName: '',
     schoolCode: '',
     classGrade: '',
@@ -168,8 +173,9 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   });
 
   // Dynamic Category Form Schema & Unit Type (Apparel, Footwear, Books, General)
+  const [selectedUnitType, setSelectedUnitType] = useState(null);
   const categorySchema = getCategorySchema(formData.category);
-  const categoryUnitType = getCategoryUnitType(formData.category);
+  const categoryUnitType = selectedUnitType || getCategoryUnitType(formData.category);
 
   const toggleCategorySizeVariant = (sz, scaleName = 'size') => {
         const target = String(sz).toLowerCase().trim();
@@ -213,11 +219,16 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   // Variants & Measuring Scales
   const [sizeVariants, setSizeVariants] = useState([]);
 
+  // Custom Apparel Sizes (Dynamic custom size pills)
+  const [customApparelSizes, setCustomApparelSizes] = useState([]);
+  const [newSizePillInput, setNewSizePillInput] = useState('');
+
   // Quick Custom Size & Unit Add State (Issue 9 & 10)
   const [customSizeInput, setCustomSizeInput] = useState('');
   const [customSizeUnit, setCustomSizeUnit] = useState('Pcs');
   const [customSizePrice, setCustomSizePrice] = useState('');
   const [customSizeStock, setCustomSizeStock] = useState('25');
+  const [customSizeImage, setCustomSizeImage] = useState('');
 
   // Modal for Adding / Editing a Variant
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
@@ -288,7 +299,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     : CATEGORY_STRUCTURE;
 
   const getDynamicSubCategories = (catName) => {
-    const found = displayCategories.find(c => c.name.toLowerCase() === (catName || '').toLowerCase());
+    if (!catName || !catName.trim()) return [];
+    const found = displayCategories.find(c => c.name.toLowerCase() === catName.toLowerCase());
     if (found && Array.isArray(found.subCategories) && found.subCategories.length > 0) {
       return found.subCategories;
     }
@@ -413,6 +425,19 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         setSizeVariants([]);
       }
 
+      // Automatically populate customApparelSizes for any non-standard sizes
+      const allLoadedSizeNames = (parsedVariants.length > 0
+        ? parsedVariants.map(v => v.size || v.measureValue)
+        : (Array.isArray(product.sizes) ? product.sizes : [])
+      ).filter(Boolean);
+
+      const nonStandardSizes = allLoadedSizeNames.filter(s =>
+        !APPAREL_SIZES.some(std => std.toLowerCase() === String(s).toLowerCase().trim())
+      );
+      if (nonStandardSizes.length > 0) {
+        setCustomApparelSizes(prev => Array.from(new Set([...prev, ...nonStandardSizes])));
+      }
+
       // Initialize Kit if editing a kit
       if (product.category === 'kits' || product.bundleType === 'kit' || Array.isArray(product.items)) {
         setKitData({
@@ -445,8 +470,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         subtitle: '',
         price: '',
         originalPrice: '',
-        category: 'School Uniform',
-        subCategory: 'Ready to wear',
+        category: '',
+        subCategory: '',
         schoolName: '',
         schoolCode: '',
         classGrade: '',
@@ -580,16 +605,16 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     setError('');
   };
 
-  const handleQuickAddCustomSize = () => {
-    const val = customSizeInput.trim();
+  const handleUnifiedAddCustomSize = () => {
+    const val = (customSizeInput || '').trim();
     if (!val) {
-      setError('Please enter a size or measurement name (e.g. Size 34, 2.5 Meter, Pair 8).');
+      setError('Please enter a size or measurement name (e.g. Size 34, 16, 42, 2.5m, Free Size).');
       return;
     }
     const price = customSizePrice ? Number(customSizePrice) : Number(formData.price || 499);
     const mrp = Math.round(price * 1.25).toString();
-    const stock = customSizeStock ? customSizeStock : '25';
-    const defaultImage = formData.images[0] || formData.image || '';
+    const stock = customSizeStock ? customSizeStock : (formData.stockQuantity || '25');
+    const defaultImage = customSizeImage || formData.images[0] || formData.image || '';
 
     const newVariant = {
       size: val,
@@ -599,10 +624,16 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
       price: String(price),
       mrp: String(mrp),
       stock: String(stock),
+      stockQuantity: String(stock),
       sku: formData.sku ? `${formData.sku}-${val.replace(/\s+/g, '')}` : `SKU-${val.replace(/\s+/g, '')}`,
       image: defaultImage,
       images: defaultImage ? [defaultImage] : []
     };
+
+    if (!customApparelSizes.some(s => s.toLowerCase() === val.toLowerCase()) &&
+        !APPAREL_SIZES.some(s => s.toLowerCase() === val.toLowerCase())) {
+      setCustomApparelSizes(prev => [...prev, val]);
+    }
 
     setSizeVariants(prev => {
       const existingIdx = prev.findIndex(v => (v.size || v.measureValue || '').toLowerCase() === val.toLowerCase());
@@ -615,11 +646,72 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     });
 
     setCustomSizeInput('');
+    setCustomSizeImage('');
     setError('');
+  };
+
+  const handleVariantImageFile = (index, file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target.result;
+      setSizeVariants(prev => prev.map((item, i) => {
+        if (i === index) {
+          return {
+            ...item,
+            image: dataUrl,
+            images: [dataUrl]
+          };
+        }
+        return item;
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetVariantImage = (index) => {
+    const baseImg = formData.images[0] || formData.image || '';
+    setSizeVariants(prev => prev.map((item, i) => {
+      if (i === index) {
+        return {
+          ...item,
+          image: baseImg,
+          images: baseImg ? [baseImg] : []
+        };
+      }
+      return item;
+    }));
   };
 
   const handleRemoveVariant = (index) => {
     setSizeVariants(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveCustomSizePill = (sizeToRemove) => {
+    setCustomApparelSizes(prev => prev.filter(s => s.toLowerCase() !== sizeToRemove.toLowerCase()));
+    setSizeVariants(prev => prev.filter(v => String(v.size || v.measureValue || '').toLowerCase() !== sizeToRemove.toLowerCase()));
+  };
+
+  const handleAddCustomSizeRow = () => {
+    const defaultPrice = formData.price || '499';
+    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+    const defaultStock = formData.stockQuantity || '25';
+    const defaultImage = formData.images[0] || formData.image || '';
+
+    const newV = {
+      size: '',
+      measureScale: customSizeUnit === 'Mtr' ? 'meter' : 'size',
+      measureValue: '',
+      unit: customSizeUnit || (formData.isMeterBased ? 'Mtr' : 'Pcs'),
+      price: defaultPrice,
+      mrp: defaultMrp,
+      stock: defaultStock,
+      stockQuantity: defaultStock,
+      image: defaultImage,
+      images: defaultImage ? [defaultImage] : [],
+      sku: formData.sku ? `${formData.sku}-CUSTOM` : 'SKU-CUSTOM'
+    };
+    setSizeVariants(prev => [...prev, newV]);
   };
 
   const applySizePreset = (preset) => {
@@ -684,6 +776,18 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     if (entryType === 'single') {
       if (!formData.name.trim()) {
         setError('Please provide a product title/name.');
+        setActiveTab('general');
+        return;
+      }
+
+      if (!formData.category || !formData.category.trim()) {
+        setError('Please select a product Category.');
+        setActiveTab('general');
+        return;
+      }
+
+      if (!formData.subCategory || !formData.subCategory.trim()) {
+        setError('Please select a product Sub-Category.');
         setActiveTab('general');
         return;
       }
@@ -776,34 +880,56 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           returnWindowDays: Number(formData.returnWindowDays) || 7,
           sizeChart: formData.enableSizeChart ? formData.sizeChart : { rows: [] },
           sizes: sizeVariants.map(v => v.size || v.measureValue),
-          sizeVariants: sizeVariants.map(v => ({
-            size: v.size || v.measureValue,
-            measureScale: v.measureScale || 'size',
-            measureValue: v.measureValue || v.size,
-            unit: v.unit || 'Size',
-            price: Number(v.price) || minVariantPrice,
-            mrp: Number(v.mrp || v.originalPrice) || Math.round(minVariantPrice * 1.25),
-            originalPrice: Number(v.originalPrice || v.mrp) || Math.round(minVariantPrice * 1.25),
-            stock: Number(v.stock) || 0,
-            stockQuantity: Number(v.stockQuantity || v.stock) || 0,
-            image: v.image || primaryImage,
-            images: Array.isArray(v.images) && v.images.length > 0 ? v.images : [v.image || primaryImage],
-            sku: v.sku || `${formData.sku || 'SKU'}-${v.size || v.measureValue}`
-          })),
-          variants: sizeVariants.map(v => ({
-            size: v.size || v.measureValue,
-            measureScale: v.measureScale || 'size',
-            measureValue: v.measureValue || v.size,
-            unit: v.unit || 'Size',
-            price: Number(v.price) || minVariantPrice,
-            mrp: Number(v.mrp || v.originalPrice) || Math.round(minVariantPrice * 1.25),
-            originalPrice: Number(v.originalPrice || v.mrp) || Math.round(minVariantPrice * 1.25),
-            stock: Number(v.stock) || 0,
-            stockQuantity: Number(v.stockQuantity || v.stock) || 0,
-            image: v.image || primaryImage,
-            images: Array.isArray(v.images) && v.images.length > 0 ? v.images : [v.image || primaryImage],
-            sku: v.sku || `${formData.sku || 'SKU'}-${v.size || v.measureValue}`
-          }))
+          sizeVariants: sizeVariants.map(v => {
+            const isPlaceholder = (img) => !img || (typeof img === 'string' && (img.includes('unsplash.com') || img.includes('placeholder') || img.includes('via.placeholder')));
+            const hasCustomImg = v.image && !isPlaceholder(v.image) && v.image !== primaryImage;
+            const effectiveImg = hasCustomImg ? v.image : (v.image && !isPlaceholder(v.image) ? v.image : primaryImage);
+            const finalVImgs = hasCustomImg
+              ? [v.image]
+              : (Array.isArray(v.images) && v.images.length > 0 && !v.images.every(isPlaceholder)
+                ? Array.from(new Set(v.images.filter(img => !isPlaceholder(img))))
+                : (effectiveImg ? [effectiveImg] : []));
+
+            return {
+              size: v.size || v.measureValue,
+              measureScale: v.measureScale || 'size',
+              measureValue: v.measureValue || v.size,
+              unit: v.unit || 'Size',
+              price: Number(v.price) || minVariantPrice,
+              mrp: Number(v.mrp || v.originalPrice) || Math.round(minVariantPrice * 1.25),
+              originalPrice: Number(v.originalPrice || v.mrp) || Math.round(minVariantPrice * 1.25),
+              stock: Number(v.stock) || 0,
+              stockQuantity: Number(v.stockQuantity || v.stock) || 0,
+              image: effectiveImg,
+              images: finalVImgs,
+              sku: v.sku || `${formData.sku || 'SKU'}-${v.size || v.measureValue}`
+            };
+          }),
+          variants: sizeVariants.map(v => {
+            const isPlaceholder = (img) => !img || (typeof img === 'string' && (img.includes('unsplash.com') || img.includes('placeholder') || img.includes('via.placeholder')));
+            const hasCustomImg = v.image && !isPlaceholder(v.image) && v.image !== primaryImage;
+            const effectiveImg = hasCustomImg ? v.image : (v.image && !isPlaceholder(v.image) ? v.image : primaryImage);
+            const finalVImgs = hasCustomImg
+              ? [v.image]
+              : (Array.isArray(v.images) && v.images.length > 0 && !v.images.every(isPlaceholder)
+                ? Array.from(new Set(v.images.filter(img => !isPlaceholder(img))))
+                : (effectiveImg ? [effectiveImg] : []));
+
+            return {
+              size: v.size || v.measureValue,
+              measureScale: v.measureScale || 'size',
+              measureValue: v.measureValue || v.size,
+              unit: v.unit || 'Size',
+              price: Number(v.price) || minVariantPrice,
+              mrp: Number(v.mrp || v.originalPrice) || Math.round(minVariantPrice * 1.25),
+              originalPrice: Number(v.originalPrice || v.mrp) || Math.round(minVariantPrice * 1.25),
+              stock: Number(v.stock) || 0,
+              stockQuantity: Number(v.stockQuantity || v.stock) || 0,
+              image: effectiveImg,
+              images: finalVImgs,
+              sku: v.sku || `${formData.sku || 'SKU'}-${v.size || v.measureValue}`
+            };
+          })
         };
 
         await onSave(payload);
@@ -1068,11 +1194,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Category *</label>
                     <select
+                      required
                       value={formData.category}
                       onChange={e => {
                         const selectedCat = e.target.value;
-                        const subs = getDynamicSubCategories(selectedCat);
-                        const matchedCat = displayCategories.find(c => c.name.toLowerCase() === selectedCat.toLowerCase());
+                        const subs = selectedCat ? getDynamicSubCategories(selectedCat) : [];
+                        const matchedCat = selectedCat ? displayCategories.find(c => c.name.toLowerCase() === selectedCat.toLowerCase()) : null;
+                        setSelectedUnitType(null);
                         setFormData(prev => ({
                           ...prev,
                           category: selectedCat,
@@ -1080,23 +1208,40 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                           gst: (matchedCat && matchedCat.gstPercentage !== undefined) ? String(matchedCat.gstPercentage) : prev.gst
                         }));
                       }}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer focus:border-teal-500 focus:bg-white"
                     >
+                      <option value="">-- Select Category --</option>
                       {displayCategories.map(c => (
                         <option key={c.name} value={c.name}>{c.name}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Sub-Category *</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Sub-Category * {!formData.category && <span className="text-[10px] text-amber-600 font-semibold">(Please select Category first)</span>}
+                    </label>
                     <select
+                      required
+                      disabled={!formData.category}
                       value={formData.subCategory}
                       onChange={e => setFormData({ ...formData, subCategory: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      className={`w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold outline-none transition-all ${
+                        !formData.category
+                          ? 'bg-gray-100/90 text-gray-400 border-gray-200 cursor-not-allowed opacity-75'
+                          : 'bg-gray-50 text-gray-800 border-gray-200 cursor-pointer focus:border-teal-500 focus:bg-white'
+                      }`}
+                      title={!formData.category ? 'Please select a Category first' : 'Select Sub-Category'}
                     >
-                      {getDynamicSubCategories(formData.category).map(sub => (
-                        <option key={sub} value={sub}>{sub}</option>
-                      ))}
+                      {!formData.category ? (
+                        <option value="">-- Please Select Category First --</option>
+                      ) : (
+                        <>
+                          <option value="">-- Select Sub-Category --</option>
+                          {getDynamicSubCategories(formData.category).map(sub => (
+                            <option key={sub} value={sub}>{sub}</option>
+                          ))}
+                        </>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -1136,7 +1281,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Base Stock (Qty) *</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Base Stock ({getProductStockUnit(formData)}) *</label>
                     <input
                       type="number"
                       min="0"
@@ -1443,7 +1588,19 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   <label className="block text-xs font-bold text-gray-700 mb-1">Base Product Cover & Gallery Photos</label>
                   <ImageUploadDropzone
                     images={formData.images}
-                    onChange={(imgs) => setFormData({ ...formData, images: imgs, image: imgs[0] || '' })}
+                    onChange={(imgs) => {
+                      const newPrimary = imgs[0] || '';
+                      setFormData({ ...formData, images: imgs, image: newPrimary });
+                      if (newPrimary) {
+                        setSizeVariants(prev => prev.map(v => {
+                          const isPlaceholder = !v.image || (typeof v.image === 'string' && (v.image.includes('unsplash.com') || v.image.includes('placeholder')));
+                          if (isPlaceholder) {
+                            return { ...v, image: newPrimary, images: [newPrimary] };
+                          }
+                          return v;
+                        }));
+                      }
+                    }}
                     maxImages={8}
                     helperText="Drag & drop primary product photos here"
                   />
@@ -1451,21 +1608,50 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
                 {/* CATEGORY-DRIVEN UNIVERSAL UNIT & SIZING SYSTEM */}
                 <div className="p-4.5 rounded-2xl bg-teal-50/40 border border-teal-200/80 space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
                         Category Selling Unit & Sizing Configuration
                       </label>
                       <p className="text-[11px] text-gray-500 mt-0.5">
-                        Automatically configured for category: <strong className="text-teal-900">{formData.category || 'General'}</strong>
+                        Category: <strong className="text-teal-900">{formData.category || 'General'}</strong>
                       </p>
                     </div>
-                    <span className="px-2.5 py-1 rounded-lg bg-teal-100 text-teal-900 text-[11px] font-black uppercase tracking-wider border border-teal-200">
-                      {categoryUnitType === 'apparel' && (formData.isMeterBased ? '✂️ Fabric Meters' : '👔 Apparel Sizes')}
-                      {categoryUnitType === 'footwear' && '👟 Indian Shoe Sizes'}
-                      {categoryUnitType === 'books' && '📚 Book Pieces'}
-                      {categoryUnitType === 'general' && '📦 Unit Pieces / Kit'}
-                    </span>
+                    <div className="flex items-center flex-wrap gap-1 bg-white p-1 rounded-xl border border-teal-200 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUnitType('apparel')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                          categoryUnitType === 'apparel'
+                            ? 'bg-teal-700 text-white shadow-xs'
+                            : 'text-gray-600 hover:text-teal-800 hover:bg-teal-50'
+                        }`}
+                      >
+                        👔 Apparel & Sizes (18-44, S-4XL)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUnitType('footwear')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                          categoryUnitType === 'footwear'
+                            ? 'bg-teal-700 text-white shadow-xs'
+                            : 'text-gray-600 hover:text-teal-800 hover:bg-teal-50'
+                        }`}
+                      >
+                        👟 Shoe Sizes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUnitType('general')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                          categoryUnitType === 'general'
+                            ? 'bg-teal-700 text-white shadow-xs'
+                            : 'text-gray-600 hover:text-teal-800 hover:bg-teal-50'
+                        }`}
+                      >
+                        📦 Single Piece (No Sizes)
+                      </button>
+                    </div>
                   </div>
 
                   {/* APPAREL UNIT SYSTEM */}
@@ -1533,123 +1719,326 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       ) : (
                         /* APPAREL SIZE SELECTION PILLS & INLINE TABLE */
                         <div className="space-y-3 pt-2 border-t border-teal-100">
-                          {/* Quick Custom Size & Unit Add Bar (Issue 9 & 10) */}
-                          <div className="p-3 bg-gradient-to-r from-teal-50/80 to-blue-50/80 rounded-xl border border-teal-200/70 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-extrabold uppercase text-brand-teal tracking-wide">
-                                Quick Add Custom Size / Unit
-                              </span>
-                              <span className="text-[10px] text-gray-500">Type custom size & select unit</span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="flex-1 min-w-[140px]">
-                                <input
-                                  type="text"
-                                  value={customSizeInput}
-                                  onChange={e => setCustomSizeInput(e.target.value)}
-                                  placeholder="e.g. Size 34, 2.5m, Custom"
-                                  className="w-full px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-brand-teal outline-hidden"
-                                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleQuickAddCustomSize(); } }}
-                                />
+
+                          {/* PRESETS & ADD CUSTOM SIZES SECTION */}
+                          <div className="space-y-2.5">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
+                                  Apparel Sizes & Custom Size Addition
+                                </label>
+                                <p className="text-[11px] text-gray-500">
+                                  Select from presets or add any custom size (e.g. 16, 40, 42, Free Size) as needed.
+                                </p>
                               </div>
-                              <select
-                                value={customSizeUnit}
-                                onChange={e => setCustomSizeUnit(e.target.value)}
-                                className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-700 outline-hidden cursor-pointer"
-                              >
-                                <option value="Pcs">Pcs (Pieces)</option>
-                                <option value="Mtr">Mtr (Meters)</option>
-                                <option value="Pairs">Pairs (Prs)</option>
-                                <option value="Box">Box</option>
-                                <option value="Set">Set</option>
-                                <option value="Kg">Kg</option>
-                              </select>
-                              <input
-                                type="number"
-                                value={customSizePrice}
-                                onChange={e => setCustomSizePrice(e.target.value)}
-                                placeholder={`Price (₹${formData.price || 499})`}
-                                className="w-28 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold focus:ring-1 focus:ring-brand-teal outline-hidden"
-                              />
-                              <input
-                                type="number"
-                                value={customSizeStock}
-                                onChange={e => setCustomSizeStock(e.target.value)}
-                                placeholder="Stock (25)"
-                                className="w-24 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium focus:ring-1 focus:ring-brand-teal outline-hidden"
-                              />
-                              <button
-                                type="button"
-                                onClick={handleQuickAddCustomSize}
-                                className="px-3.5 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white rounded-lg text-xs font-extrabold cursor-pointer flex items-center gap-1 shadow-xs"
-                              >
-                                <Plus size={14} />
-                                <span>Add Size</span>
-                              </button>
-                            </div>
-                          </div>
 
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div>
-                              <label className="block text-xs font-extrabold text-teal-950 uppercase tracking-wider">
-                                Quick Preset Apparel Sizes
-                              </label>
-                              <p className="text-[11px] text-gray-500">
-                                Click size pills to toggle available stock options for this item.
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs font-bold">
-                              <button
-                                type="button"
-                                onClick={() => setSizeVariants(APPAREL_SIZES.slice(0, 5).map(sz => ({
-                                  size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
-                                  price: formData.price || '499', mrp: formData.originalPrice || '699',
-                                  stock: formData.stockQuantity || '25', stockQuantity: formData.stockQuantity || '25'
-                                })))}
-                                className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
-                              >
-                                + Standard (S - XXL)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSizeVariants(APPAREL_SIZES.slice(5).map(sz => ({
-                                  size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
-                                  price: formData.price || '499', mrp: formData.originalPrice || '699',
-                                  stock: formData.stockQuantity || '25', stockQuantity: formData.stockQuantity || '25'
-                                })))}
-                                className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
-                              >
-                                + Waist (26 - 38)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSizeVariants([])}
-                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 text-[11px] cursor-pointer"
-                              >
-                                Clear
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap gap-1.5">
-                            {APPAREL_SIZES.map(sz => {
-                              const isSelected = sizeVariants.some(v => String(v.size || v.measureValue).toLowerCase() === sz.toLowerCase());
-                              return (
+                              {/* Presets Toolbar */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
                                 <button
-                                  key={sz}
                                   type="button"
-                                  onClick={() => toggleCategorySizeVariant(sz, 'size')}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                                    isSelected
-                                      ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
-                                      : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                                  }`}
+                                  onClick={() => {
+                                    const defaultPrice = formData.price || '499';
+                                    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+                                    const defaultStock = formData.stockQuantity || '25';
+                                    const kidsVariants = APPAREL_SIZES_KIDS.map(sz => {
+                                      const existing = sizeVariants.find(v => String(v.size || v.measureValue || '').toLowerCase().trim() === sz.toLowerCase());
+                                      return existing || {
+                                        size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
+                                        price: defaultPrice, mrp: defaultMrp,
+                                        stock: defaultStock, stockQuantity: defaultStock
+                                      };
+                                    });
+                                    const nonKids = sizeVariants.filter(v => !APPAREL_SIZES_KIDS.some(k => k.toLowerCase() === String(v.size || v.measureValue || '').toLowerCase().trim()));
+                                    setSizeVariants([...nonKids, ...kidsVariants]);
+                                  }}
+                                  className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                                  title="Add Kids waist sizes 18, 20, 22, 24"
                                 >
-                                  {isSelected && <span className="mr-1">✓</span>}
-                                  {sz}
+                                  + Kids (18 - 24)
                                 </button>
-                              );
-                            })}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const defaultPrice = formData.price || '499';
+                                    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+                                    const defaultStock = formData.stockQuantity || '25';
+                                    const regVariants = APPAREL_SIZES_REGULAR.map(sz => {
+                                      const existing = sizeVariants.find(v => String(v.size || v.measureValue || '').toLowerCase().trim() === sz.toLowerCase());
+                                      return existing || {
+                                        size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
+                                        price: defaultPrice, mrp: defaultMrp,
+                                        stock: defaultStock, stockQuantity: defaultStock
+                                      };
+                                    });
+                                    const nonReg = sizeVariants.filter(v => !APPAREL_SIZES_REGULAR.some(r => r.toLowerCase() === String(v.size || v.measureValue || '').toLowerCase().trim()));
+                                    setSizeVariants([...nonReg, ...regVariants]);
+                                  }}
+                                  className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                                  title="Add Regular waist sizes 26 - 38"
+                                >
+                                  + Regular (26 - 38)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const defaultPrice = formData.price || '499';
+                                    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+                                    const defaultStock = formData.stockQuantity || '25';
+                                    const plusVariants = APPAREL_SIZES_PLUS.map(sz => {
+                                      const existing = sizeVariants.find(v => String(v.size || v.measureValue || '').toLowerCase().trim() === sz.toLowerCase());
+                                      return existing || {
+                                        size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
+                                        price: defaultPrice, mrp: defaultMrp,
+                                        stock: defaultStock, stockQuantity: defaultStock
+                                      };
+                                    });
+                                    const nonPlus = sizeVariants.filter(v => !APPAREL_SIZES_PLUS.some(p => p.toLowerCase() === String(v.size || v.measureValue || '').toLowerCase().trim()));
+                                    setSizeVariants([...nonPlus, ...plusVariants]);
+                                  }}
+                                  className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                                  title="Add Senior / Plus sizes 40 - 48"
+                                >
+                                  + Plus (40 - 48)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const defaultPrice = formData.price || '499';
+                                    const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
+                                    const defaultStock = formData.stockQuantity || '25';
+                                    const alphaVariants = APPAREL_SIZES_ALPHA.slice(1, 6).map(sz => {
+                                      const existing = sizeVariants.find(v => String(v.size || v.measureValue || '').toLowerCase().trim() === sz.toLowerCase());
+                                      return existing || {
+                                        size: sz, measureScale: 'size', measureValue: sz, unit: 'SIZE',
+                                        price: defaultPrice, mrp: defaultMrp,
+                                        stock: defaultStock, stockQuantity: defaultStock
+                                      };
+                                    });
+                                    const nonAlpha = sizeVariants.filter(v => !APPAREL_SIZES_ALPHA.slice(1, 6).some(a => a.toLowerCase() === String(v.size || v.measureValue || '').toLowerCase().trim()));
+                                    setSizeVariants([...nonAlpha, ...alphaVariants]);
+                                  }}
+                                  className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
+                                  title="Add Alpha standard sizes S - XXL"
+                                >
+                                  + Alpha (S - XXL)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSizeVariants([])}
+                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 text-[11px] cursor-pointer"
+                                >
+                                  Clear All
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* UNIFIED CUSTOM SIZE & UNIT ADDER BAR */}
+                            <div className="p-3 bg-gradient-to-r from-teal-50/90 to-emerald-50/90 rounded-2xl border border-teal-200 shadow-2xs space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-extrabold text-teal-950 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Plus size={14} className="text-teal-700" />
+                                  <span>अपनी जरूरत का नया साइज / यूनिट जोड़ें (Add Custom Size & Unit):</span>
+                                </span>
+                                <span className="text-[10px] text-gray-500 font-medium">Type size name, choose unit, price & stock</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex-1 min-w-[150px]">
+                                  <input
+                                    type="text"
+                                    value={customSizeInput}
+                                    onChange={e => setCustomSizeInput(e.target.value)}
+                                    placeholder="Type size name (e.g. 16, 42, 2.5m, Free Size)..."
+                                    className="w-full px-3 py-1.5 bg-white border border-teal-300 rounded-lg text-xs font-bold text-teal-950 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleUnifiedAddCustomSize(); } }}
+                                  />
+                                </div>
+                                <select
+                                  value={customSizeUnit}
+                                  onChange={e => setCustomSizeUnit(e.target.value)}
+                                  className="px-2.5 py-1.5 bg-white border border-teal-300 rounded-lg text-xs font-bold text-teal-900 outline-none cursor-pointer shadow-2xs"
+                                >
+                                  <option value="Pcs">Pcs (Pieces)</option>
+                                  <option value="Mtr">Mtr (Meters)</option>
+                                  <option value="Pairs">Pairs (Prs)</option>
+                                  <option value="Box">Box</option>
+                                  <option value="Set">Set</option>
+                                  <option value="Kg">Kg</option>
+                                </select>
+                                <input
+                                  type="number"
+                                  value={customSizePrice}
+                                  onChange={e => setCustomSizePrice(e.target.value)}
+                                  placeholder={`Price (₹${formData.price || 499})`}
+                                  className="w-28 px-2.5 py-1.5 bg-white border border-teal-300 rounded-lg text-xs font-bold text-teal-950 focus:outline-none focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                                />
+                                <input
+                                  type="number"
+                                  value={customSizeStock}
+                                  onChange={e => setCustomSizeStock(e.target.value)}
+                                  placeholder="Stock (25)"
+                                  className="w-24 px-2.5 py-1.5 bg-white border border-teal-300 rounded-lg text-xs font-bold text-teal-950 focus:outline-none focus:ring-1 focus:ring-teal-600 shadow-2xs"
+                                />
+
+                                {/* Optional Size Photo */}
+                                <div className="relative">
+                                  <input
+                                    type="file"
+                                    id="custom-size-img-upload"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files && e.target.files[0];
+                                      if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => setCustomSizeImage(ev.target.result);
+                                        reader.readAsDataURL(file);
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                  />
+                                  <label
+                                    htmlFor="custom-size-img-upload"
+                                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all ${
+                                      customSizeImage
+                                        ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
+                                        : 'bg-white border-teal-300 text-teal-900 hover:bg-teal-50'
+                                    }`}
+                                    title="Add photo for this size (Optional)"
+                                  >
+                                    {customSizeImage ? (
+                                      <>
+                                        <img src={customSizeImage} alt="preview" className="w-4 h-4 rounded object-cover" />
+                                        <span className="text-[11px]">Photo Attached</span>
+                                        <span
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setCustomSizeImage('');
+                                          }}
+                                          className="text-rose-500 hover:text-rose-700 ml-1 text-xs"
+                                        >✕</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ImageIcon size={13} className="text-teal-700" />
+                                        <span className="text-[11px]">+ Photo</span>
+                                      </>
+                                    )}
+                                  </label>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={handleUnifiedAddCustomSize}
+                                  className="px-3.5 py-1.5 bg-teal-800 hover:bg-teal-900 text-white rounded-lg text-xs font-extrabold cursor-pointer flex items-center gap-1 shadow-xs transition-all"
+                                >
+                                  <Plus size={14} />
+                                  <span>+ Add Size</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* SIZE PILLS DISPLAY */}
+                          <div className="space-y-2">
+                            {/* Number Sizes (Kids, Regular, Plus) */}
+                            <div>
+                              <div className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider mb-1">
+                                Waist / Number Sizes (18 to 48):
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {[...APPAREL_SIZES_KIDS, ...APPAREL_SIZES_REGULAR, ...APPAREL_SIZES_PLUS].map(sz => {
+                                  const isSelected = sizeVariants.some(v => String(v.size || v.measureValue).toLowerCase() === sz.toLowerCase());
+                                  return (
+                                    <button
+                                      key={sz}
+                                      type="button"
+                                      onClick={() => toggleCategorySizeVariant(sz, 'size')}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                        isSelected
+                                          ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                                          : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                                      }`}
+                                    >
+                                      {isSelected && <span className="mr-1">✓</span>}
+                                      {sz}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Standard Alpha Sizes */}
+                            <div>
+                              <div className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider mb-1">
+                                Alpha Sizes (XS to 4XL):
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {APPAREL_SIZES_ALPHA.map(sz => {
+                                  const isSelected = sizeVariants.some(v => String(v.size || v.measureValue).toLowerCase() === sz.toLowerCase());
+                                  return (
+                                    <button
+                                      key={sz}
+                                      type="button"
+                                      onClick={() => toggleCategorySizeVariant(sz, 'size')}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                        isSelected
+                                          ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                                          : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                                      }`}
+                                    >
+                                      {isSelected && <span className="mr-1">✓</span>}
+                                      {sz}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Custom Added Sizes */}
+                            {customApparelSizes.length > 0 && (
+                              <div className="p-2 bg-amber-50/60 rounded-xl border border-amber-200/80">
+                                <div className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                  <span>Custom Added Sizes (आपकी अपनी जोड़ी गई साइज):</span>
+                                  <span className="text-gray-400 font-normal">Click to toggle, ✕ to remove pill</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {customApparelSizes.map(sz => {
+                                    const isSelected = sizeVariants.some(v => String(v.size || v.measureValue).toLowerCase() === sz.toLowerCase());
+                                    return (
+                                      <span
+                                        key={sz}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                                          isSelected
+                                            ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
+                                            : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
+                                        }`}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleCategorySizeVariant(sz, 'size')}
+                                          className="cursor-pointer"
+                                        >
+                                          {isSelected && <span className="mr-1">✓</span>}
+                                          {sz}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemoveCustomSizePill(sz);
+                                          }}
+                                          className="text-rose-400 hover:text-rose-600 font-bold ml-1 cursor-pointer text-xs"
+                                          title="Remove this custom size pill"
+                                        >
+                                          ✕
+                                        </button>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Inline Size Matrix Table */}
@@ -1658,17 +2047,128 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                               <table className="w-full text-left text-xs">
                                 <thead className="bg-teal-50/80 border-b border-teal-200 text-teal-950 font-bold uppercase text-[10px]">
                                   <tr>
-                                    <th className="px-3 py-2.5">Apparel Size</th>
+                                    <th className="px-3 py-2.5">Apparel Size (Editable)</th>
+                                    <th className="px-3 py-2.5">Photo</th>
+                                    <th className="px-3 py-2.5">Unit</th>
                                     <th className="px-3 py-2.5">Price (₹)</th>
                                     <th className="px-3 py-2.5">MRP (₹)</th>
-                                    <th className="px-3 py-2.5">Stock Units</th>
+                                    <th className="px-3 py-2.5">Stock</th>
                                     <th className="px-3 py-2.5 text-right">Remove</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-teal-100 font-medium">
                                   {sizeVariants.map((v, idx) => (
                                     <tr key={idx} className="hover:bg-teal-50/30">
-                                      <td className="px-3 py-2 font-extrabold text-teal-950">{v.size || v.measureValue}</td>
+                                      <td className="px-3 py-2">
+                                        <input
+                                          type="text"
+                                          value={v.size || v.measureValue || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, size: val, measureValue: val } : item));
+                                          }}
+                                          className="w-24 px-2 py-1 bg-white border border-gray-200 rounded text-xs font-extrabold text-teal-950 focus:border-teal-500 focus:outline-none"
+                                          placeholder="Size e.g. 32"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex items-center gap-2">
+                                          <div className="relative group w-9 h-9 rounded-lg overflow-hidden border border-teal-200 bg-teal-50 shrink-0 flex items-center justify-center shadow-2xs">
+                                            {v.image ? (
+                                              <img
+                                                src={resolveImageUrl(v.image)}
+                                                alt={v.size || 'Size photo'}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                              />
+                                            ) : (
+                                              <ImageIcon size={16} className="text-teal-400" />
+                                            )}
+                                            <label
+                                              htmlFor={`apparel-img-file-${idx}`}
+                                              className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white cursor-pointer transition-opacity text-[8px] font-bold"
+                                              title="Upload photo for this size"
+                                            >
+                                              Upload
+                                            </label>
+                                          </div>
+
+                                          <input
+                                            id={`apparel-img-file-${idx}`}
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              if (e.target.files && e.target.files[0]) {
+                                                handleVariantImageFile(idx, e.target.files[0]);
+                                                e.target.value = '';
+                                              }
+                                            }}
+                                          />
+
+                                          <div className="flex flex-col gap-0.5">
+                                            <label
+                                              htmlFor={`apparel-img-file-${idx}`}
+                                              className="px-2 py-0.5 bg-white hover:bg-teal-50 text-teal-900 border border-teal-300 rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                              title="Upload photo from device"
+                                            >
+                                              <UploadCloud size={11} className="text-teal-700" />
+                                              <span>{v.image && v.image !== (formData.images[0] || formData.image) ? 'Change' : '+ Photo'}</span>
+                                            </label>
+
+                                            {v.image && v.image !== (formData.images[0] || formData.image) ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleResetVariantImage(idx)}
+                                                className="text-[9px] text-rose-500 hover:text-rose-700 font-semibold cursor-pointer text-left"
+                                                title="Reset to main product photo"
+                                              >
+                                                ✕ Reset
+                                              </button>
+                                            ) : (
+                                              formData.images && formData.images.length > 1 && (
+                                                <select
+                                                  value={v.image || ''}
+                                                  onChange={(e) => {
+                                                    const selectedImg = e.target.value;
+                                                    if (selectedImg) {
+                                                      setSizeVariants(prev => prev.map((item, i) => i === idx ? {
+                                                        ...item,
+                                                        image: selectedImg,
+                                                        images: [selectedImg]
+                                                      } : item));
+                                                    }
+                                                  }}
+                                                  className="text-[9px] text-gray-600 border border-gray-200 rounded px-1 py-0.5 bg-white outline-none cursor-pointer max-w-[80px] truncate"
+                                                  title="Choose from uploaded product photos"
+                                                >
+                                                  <option value="">Base photo</option>
+                                                  {formData.images.map((img, imgIdx) => (
+                                                    <option key={imgIdx} value={img}>Photo #{imgIdx + 1}</option>
+                                                  ))}
+                                                </select>
+                                              )
+                                            )}
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <select
+                                          value={v.unit || (formData.isMeterBased ? 'Mtr' : 'Pcs')}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, unit: val, measureScale: val === 'Mtr' ? 'meter' : 'size' } : item));
+                                          }}
+                                          className="px-2 py-1 bg-white border border-teal-200 rounded text-xs font-bold text-teal-900 outline-none cursor-pointer"
+                                        >
+                                          <option value="Pcs">Pcs</option>
+                                          <option value="Mtr">Mtr</option>
+                                          <option value="Pairs">Pairs</option>
+                                          <option value="Box">Box</option>
+                                          <option value="Set">Set</option>
+                                          <option value="Kg">Kg</option>
+                                        </select>
+                                      </td>
                                       <td className="px-3 py-2">
                                         <input
                                           type="number"
@@ -1694,16 +2194,19 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                         />
                                       </td>
                                       <td className="px-3 py-2">
-                                        <input
-                                          type="number"
-                                          value={v.stock}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, stock: val, stockQuantity: val } : item));
-                                          }}
-                                          className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-teal-900"
-                                          placeholder="Stock"
-                                        />
+                                        <div className="flex items-center gap-1">
+                                          <input
+                                            type="number"
+                                            value={v.stock}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setSizeVariants(prev => prev.map((item, i) => i === idx ? { ...item, stock: val, stockQuantity: val } : item));
+                                            }}
+                                            className="w-20 px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-teal-900"
+                                            placeholder="Stock"
+                                          />
+                                          <span className="text-[10px] font-bold text-gray-400">{v.unit || 'Pcs'}</span>
+                                        </div>
                                       </td>
                                       <td className="px-3 py-2 text-right">
                                         <button
@@ -1718,6 +2221,20 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                   ))}
                                 </tbody>
                               </table>
+
+                              <div className="flex items-center justify-between p-2.5 bg-teal-50/50 border-t border-teal-100">
+                                <button
+                                  type="button"
+                                  onClick={handleAddCustomSizeRow}
+                                  className="px-3 py-1.5 bg-white hover:bg-teal-100 text-teal-900 border border-teal-300 rounded-lg text-xs font-bold cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                >
+                                  <Plus size={14} />
+                                  + Add Size Row in Table
+                                </button>
+                                <span className="text-[11px] text-gray-500 font-medium">
+                                  You can edit any size name or price/stock directly in this table.
+                                </span>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1795,7 +2312,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                             }}
                             className="px-2 py-1 bg-white hover:bg-teal-100 text-teal-900 rounded-lg border border-teal-300 text-[11px] cursor-pointer"
                           >
-                            + All Senior / Adults (1 - 13)
+                            + All Senior / Adults (1 - 10)
                           </button>
                           <button
                             type="button"
@@ -1869,7 +2386,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       <div className="p-3 bg-white/80 rounded-xl border border-teal-100 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-extrabold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>👟 Senior / Adult Shoe Sizes (Size 1 - 13)</span>
+                            <span>👟 Senior / Adult Shoe Sizes (Size 1 - 10)</span>
                           </span>
                           <span className="text-[10px] text-gray-500 font-medium">Middle, Secondary, Senior School & Adults</span>
                         </div>
@@ -1907,6 +2424,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                             <thead className="bg-teal-50/80 border-b border-teal-200 text-teal-950 font-bold uppercase text-[10px]">
                               <tr>
                                 <th className="px-3 py-2.5">Shoe Size</th>
+                                <th className="px-3 py-2.5">Photo</th>
                                 <th className="px-3 py-2.5">Price (₹)</th>
                                 <th className="px-3 py-2.5">MRP (₹)</th>
                                 <th className="px-3 py-2.5">Stock Pairs</th>
@@ -1917,6 +2435,64 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                               {sizeVariants.map((v, idx) => (
                                 <tr key={idx} className="hover:bg-teal-50/30">
                                   <td className="px-3 py-2 font-extrabold text-teal-950">{v.size || v.measureValue}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="relative group w-9 h-9 rounded-lg overflow-hidden border border-teal-200 bg-teal-50 shrink-0 flex items-center justify-center shadow-2xs">
+                                        {v.image ? (
+                                          <img
+                                            src={resolveImageUrl(v.image)}
+                                            alt={v.size || 'Shoe photo'}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                          />
+                                        ) : (
+                                          <ImageIcon size={16} className="text-teal-400" />
+                                        )}
+                                        <label
+                                          htmlFor={`shoe-img-file-${idx}`}
+                                          className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white cursor-pointer transition-opacity text-[8px] font-bold"
+                                          title="Upload photo for this shoe size"
+                                        >
+                                          Upload
+                                        </label>
+                                      </div>
+
+                                      <input
+                                        id={`shoe-img-file-${idx}`}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            handleVariantImageFile(idx, e.target.files[0]);
+                                            e.target.value = '';
+                                          }
+                                        }}
+                                      />
+
+                                      <div className="flex flex-col gap-0.5">
+                                        <label
+                                          htmlFor={`shoe-img-file-${idx}`}
+                                          className="px-2 py-0.5 bg-white hover:bg-teal-50 text-teal-900 border border-teal-300 rounded text-[10px] font-bold cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                          title="Upload photo from device"
+                                        >
+                                          <UploadCloud size={11} className="text-teal-700" />
+                                          <span>{v.image && v.image !== (formData.images[0] || formData.image) ? 'Change' : '+ Photo'}</span>
+                                        </label>
+
+                                        {v.image && v.image !== (formData.images[0] || formData.image) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleResetVariantImage(idx)}
+                                            className="text-[9px] text-rose-500 hover:text-rose-700 font-semibold cursor-pointer text-left"
+                                            title="Reset to main product photo"
+                                          >
+                                            ✕ Reset
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
                                   <td className="px-3 py-2">
                                     <input
                                       type="number"

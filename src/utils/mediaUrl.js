@@ -93,11 +93,42 @@ export const parseSizeVariants = (product) => {
         }
 
         if (typeof v === 'object' && v !== null) {
-          const rawImage = v.image || v.imageUrl || v.photo || v.url || (Array.isArray(v.images) && v.images[0]) || product?.image || (Array.isArray(product?.images) && product.images[0]) || '';
-          let rawImages = Array.isArray(v.images) && v.images.length > 0 ? v.images : (rawImage ? [rawImage] : []);
+          const fallbackProductImg = product?.image || (Array.isArray(product?.images) && product.images[0]) || '';
+          const fallbackUrl = fallbackProductImg ? resolveImageUrl(fallbackProductImg) : '';
+          const isPlaceholder = (img) => !img || (typeof img === 'string' && img.includes('unsplash.com'));
+
+          let rawImages = Array.isArray(v.images) && v.images.length > 0 ? v.images : (v.image ? [v.image] : []);
           if (typeof rawImages === 'string') {
             try { rawImages = JSON.parse(rawImages); } catch { rawImages = [rawImages]; }
           }
+          if (!Array.isArray(rawImages)) rawImages = [rawImages];
+
+          // Deduplicate and filter placeholders
+          const seen = new Set();
+          let cleanedImages = [];
+          rawImages.forEach(img => {
+            if (!img || isPlaceholder(img)) return;
+            const resolved = resolveImageUrl(img);
+            if (resolved && !seen.has(resolved)) {
+              seen.add(resolved);
+              cleanedImages.push(img);
+            }
+          });
+
+          // If there are multiple images and one is the base product fallback, keep only custom variant images
+          if (cleanedImages.length > 1 && fallbackUrl) {
+            const customOnly = cleanedImages.filter(img => resolveImageUrl(img) !== fallbackUrl);
+            if (customOnly.length > 0) {
+              cleanedImages = customOnly;
+            }
+          }
+
+          // If no variant image, fallback to base product image
+          if (cleanedImages.length === 0 && fallbackProductImg && !isPlaceholder(fallbackProductImg)) {
+            cleanedImages = [fallbackProductImg];
+          }
+
+          const rawImage = cleanedImages[0] || (v.image && !isPlaceholder(v.image) ? v.image : fallbackProductImg);
 
           const sizeVal = String(v.size || v.measureValue || v.name || v.label || v.title || `Variant #${idx + 1}`);
           const priceVal = (v.price !== undefined && v.price !== null && !isNaN(Number(v.price)) && Number(v.price) >= 0)
@@ -124,7 +155,7 @@ export const parseSizeVariants = (product) => {
             stockQuantity: stockVal,
             sku: v.sku || (product?.sku ? `${product.sku}-${sizeVal}` : `SKU-VAR-${idx + 1}`),
             image: rawImage,
-            images: rawImages
+            images: cleanedImages
           };
         }
 

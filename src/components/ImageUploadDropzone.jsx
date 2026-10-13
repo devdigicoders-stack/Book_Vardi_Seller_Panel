@@ -14,14 +14,15 @@ export default function ImageUploadDropzone({
   const [showUrlInput, setShowUrlInput] = useState(false);
   const fileInputRef = useRef(null);
 
-  const safeImages = Array.isArray(images) ? images : [];
+  const safeImages = Array.from(new Set((Array.isArray(images) ? images : []).filter(Boolean)));
 
   const notifyChange = (updatedImages) => {
+    const deduped = Array.from(new Set((Array.isArray(updatedImages) ? updatedImages : []).filter(Boolean)));
     if (typeof onChange === 'function') {
-      onChange(updatedImages);
+      onChange(deduped);
     }
     if (typeof onImagesChange === 'function') {
-      onImagesChange(updatedImages);
+      onImagesChange(deduped);
     }
   };
 

@@ -21,6 +21,7 @@ import {
 import { useSellerData } from '../context/SellerDataContext';
 import { resolveImageUrl } from '../utils/mediaUrl';
 import BulkUpdateModal from './BulkUpdateModal';
+import { getProductStockUnit } from '../utils/stockUnitHelper';
 
 export default function InventoryTab() {
   const { products, updateProductStock, editProduct, deleteProduct } = useSellerData();
@@ -347,7 +348,7 @@ export default function InventoryTab() {
                       {/* Current Stock */}
                       <td className="py-3.5 px-3">
                         <span className="font-extrabold text-gray-900 text-sm">{qty}</span>
-                        <span className="text-[10px] text-gray-400 ml-1">units</span>
+                        <span className="text-[10px] text-gray-400 ml-1">{getProductStockUnit(p, null, { short: true })}</span>
                       </td>
 
                       {/* Status */}
@@ -513,7 +514,7 @@ export default function InventoryTab() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-700">Stock Quantity (Units) *</label>
+                  <label className="font-semibold text-gray-700">Stock Quantity ({getProductStockUnit(editingProduct || {})}) *</label>
                   <input
                     type="number"
                     min="0"

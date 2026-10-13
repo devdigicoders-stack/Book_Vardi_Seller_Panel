@@ -33,6 +33,7 @@ import SellerProductFormPage from './SellerProductFormPage';
 import SellerKitFormPage from './SellerKitFormPage';
 import VariantStockModal from './VariantStockModal';
 import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
+import { getProductStockUnit } from '../utils/stockUnitHelper';
 
 const CATEGORIES = [
   { id: 'all', label: 'All Categories' },
@@ -477,7 +478,7 @@ export default function ProductsTab() {
                 <th className="py-3 px-4">Product Info</th>
                 <th className="py-3 px-3">Category</th>
                 <th className="py-3 px-3">Price & MRP</th>
-                <th className="py-3 px-3">Stock Units</th>
+                <th className="py-3 px-3">Stock</th>
                 <th className="py-3 px-3">Sizes & Gender</th>
                 <th className="py-3 px-3">Approval</th>
                 <th className="py-3 px-3">Status</th>
@@ -604,7 +605,7 @@ export default function ProductsTab() {
                                   title="Click to view & edit variant stocks"
                                 >
                                   <div className="flex items-center gap-1.5">
-                                    <span className="font-extrabold text-teal-950 text-xs">{qty} pcs</span>
+                                    <span className="font-extrabold text-teal-950 text-xs">{qty} {getProductStockUnit(p, null, { short: true })}</span>
                                     <span className="text-[9px] font-extrabold text-teal-800 bg-teal-200/80 px-1.5 py-0.2 rounded-md">
                                       {pVars.length} Vars
                                     </span>
@@ -616,7 +617,7 @@ export default function ProductsTab() {
                               ) : (
                                 <div className="flex flex-col items-start gap-0.5 p-1.5 rounded-xl bg-gray-50 border border-gray-200 text-left">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="font-extrabold text-gray-800 text-xs">{qty} pcs</span>
+                                    <span className="font-extrabold text-gray-800 text-xs">{qty} {getProductStockUnit(p, null, { short: true })}</span>
                                     <span className="text-[9px] font-bold text-gray-600 bg-gray-200 px-1.5 py-0.2 rounded-md">
                                       {pVars.length} Vars
                                     </span>
@@ -633,13 +634,13 @@ export default function ProductsTab() {
                                   title="Click to adjust product stock"
                                 >
                                   <span className="font-extrabold text-gray-900 text-xs">{qty}</span>
-                                  <span className="text-[10px] text-gray-500 font-medium">pcs</span>
+                                  <span className="text-[10px] text-gray-500 font-medium">{getProductStockUnit(p, null, { short: true })}</span>
                                   <Edit3 size={12} className="text-gray-400 hover:text-teal-700" />
                                 </button>
                               ) : (
                                 <div className="flex items-center gap-1.5 p-1.5">
                                   <span className="font-extrabold text-gray-700 text-xs">{qty}</span>
-                                  <span className="text-[10px] text-gray-400 font-medium">pcs</span>
+                                  <span className="text-[10px] text-gray-400 font-medium">{getProductStockUnit(p, null, { short: true })}</span>
                                 </div>
                               )
                             );
@@ -1023,7 +1024,7 @@ export default function ProductsTab() {
                       <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
                         <span className="text-[10px] text-gray-400 block font-bold uppercase">Stock Level</span>
                         <span className="font-extrabold text-gray-800 text-xs">
-                          {selectedProductForDetail.stockQuantity ?? selectedProductForDetail.stock ?? 0} units
+                          {selectedProductForDetail.stockQuantity ?? selectedProductForDetail.stock ?? 0} {getProductStockUnit(selectedProductForDetail)}
                         </span>
                       </div>
                       <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
@@ -1118,8 +1119,18 @@ export default function ProductsTab() {
                           {/* Variant Preview Image Layout in Row */}
                           <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 border-b border-gray-100 scrollbar-thin">
                             {detailVariants.map((v, vIdx) => {
-                              const vRawImg = v.image || (Array.isArray(v.images) && v.images[0]) || selectedProductForDetail.image || (Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[0]);
-                              const vImgUrl = vRawImg ? resolveImageUrl(vRawImg) : '';
+                              const fallbackImg = selectedProductForDetail.image || (Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[0]);
+                              const fallbackUrl = fallbackImg ? resolveImageUrl(fallbackImg) : '';
+                              const isPlaceholder = (img) => !img || (typeof img === 'string' && img.includes('unsplash.com'));
+                              const rawVImages = Array.isArray(v.images) && v.images.length > 0 && !v.images.every(isPlaceholder)
+                                ? v.images.filter(img => !isPlaceholder(img))
+                                : (v.image && !isPlaceholder(v.image) ? [v.image] : (fallbackImg ? [fallbackImg] : []));
+                              let vImages = Array.from(new Set(rawVImages.map(img => resolveImageUrl(img)).filter(Boolean)));
+                              if (vImages.length > 1 && fallbackUrl) {
+                                const customOnly = vImages.filter(u => u !== fallbackUrl);
+                                if (customOnly.length > 0) vImages = customOnly;
+                              }
+                              const vImgUrl = vImages[0] || fallbackUrl || '';
                               const vVal = v.measureValue || v.size || `Var #${vIdx + 1}`;
 
                               return (
@@ -1175,9 +1186,19 @@ export default function ProductsTab() {
                               </thead>
                               <tbody className="divide-y divide-gray-100">
                                 {detailVariants.map((v, vIdx) => {
-                                  const vImages = Array.isArray(v.images) && v.images.length > 0
-                                    ? v.images
-                                    : (v.image ? [v.image] : []);
+                                  const fallbackImg = selectedProductForDetail.image || (Array.isArray(selectedProductForDetail.images) && selectedProductForDetail.images[0]);
+                                  const fallbackUrl = fallbackImg ? resolveImageUrl(fallbackImg) : '';
+                                  const isPlaceholder = (img) => !img || (typeof img === 'string' && img.includes('unsplash.com'));
+                                  const rawVImages = Array.isArray(v.images) && v.images.length > 0 && !v.images.every(isPlaceholder)
+                                    ? v.images.filter(img => !isPlaceholder(img))
+                                    : (v.image && !isPlaceholder(v.image) ? [v.image] : (fallbackImg ? [fallbackImg] : []));
+                                  let vImages = Array.from(new Set(rawVImages.map(img => resolveImageUrl(img)).filter(Boolean)));
+                                  if (vImages.length > 1 && fallbackUrl) {
+                                    const customOnly = vImages.filter(u => u !== fallbackUrl);
+                                    if (customOnly.length > 0) {
+                                      vImages = customOnly;
+                                    }
+                                  }
 
                                   return (
                                     <tr key={vIdx} className="hover:bg-gray-50">
@@ -1187,8 +1208,7 @@ export default function ProductsTab() {
                                       <td className="px-3 py-2">
                                         {vImages.length > 0 ? (
                                           <div className="flex items-center gap-1.5 flex-wrap">
-                                            {vImages.map((img, imgIdx) => {
-                                              const fullUrl = resolveImageUrl(img);
+                                            {vImages.map((fullUrl, imgIdx) => {
                                               return (
                                                 <button
                                                   key={imgIdx}

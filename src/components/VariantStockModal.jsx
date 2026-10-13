@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Layers, Save, Plus, Minus, Package } from 'lucide-react';
 import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
+import { getProductStockUnit } from '../utils/stockUnitHelper';
 
 export default function VariantStockModal({ product, isOpen, onClose, onSave }) {
   const [variants, setVariants] = useState([]);
@@ -88,7 +89,7 @@ export default function VariantStockModal({ product, isOpen, onClose, onSave }) 
             <Package size={16} className="text-teal-700" />
             <span>Total Product Stock:</span>
             <span className="px-2.5 py-0.5 rounded-full bg-teal-700 text-white font-extrabold text-sm">
-              {totalVariantStock} pcs
+              {totalVariantStock} {getProductStockUnit(product, null, { short: true })}
             </span>
           </div>
           <span className="text-[11px] text-teal-800 font-medium">
@@ -219,6 +220,9 @@ export default function VariantStockModal({ product, isOpen, onClose, onSave }) 
                 >
                   <Plus size={18} />
                 </button>
+                <span className="text-xs font-extrabold text-teal-800 uppercase px-2 py-1 bg-teal-50 rounded-lg border border-teal-200">
+                  {getProductStockUnit(product)}
+                </span>
               </div>
             </div>
           )}
