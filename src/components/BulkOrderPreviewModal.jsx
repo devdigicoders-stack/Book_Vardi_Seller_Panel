@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
@@ -168,6 +169,65 @@ export default function BulkOrderPreviewModal({
     }
   }, [zoomImage]);
 
+  // Seller Quotation State & Robust Candidate Matching (Defined before hooks that consume existingSellerQuote)
+  const sellerCandidateIds = useMemo(() => {
+    return [
+      sellerUser?.id,
+      sellerUser?._id,
+      sellerUser?.merchantId,
+      typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
+      typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
+    ].filter(Boolean).map(String);
+  }, [sellerUser]);
+
+  const currentSellerId = String(sellerUser?.id || sellerUser?._id || sellerCandidateIds[0] || '');
+  const cleanSellerPhone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
+  const cleanSellerStore = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
+
+  const existingSellerQuote = useMemo(() => {
+    if (!Array.isArray(order?.quotations) || order.quotations.length === 0) return null;
+
+    // 1. Check direct candidate ID match
+    const matchById = order.quotations.find(q => {
+      const qId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
+      return qId && (qId === currentSellerId || sellerCandidateIds.includes(qId));
+    });
+    if (matchById) return matchById;
+
+    // 2. Check phone match
+    if (cleanSellerPhone) {
+      const matchByPhone = order.quotations.find(q => {
+        const qPhone = String(q.sellerPhone || '').replace(/\D/g, '').slice(-10);
+        return qPhone && qPhone === cleanSellerPhone;
+      });
+      if (matchByPhone) return matchByPhone;
+    }
+
+    // 3. Check store name match
+    if (cleanSellerStore) {
+      const matchByStore = order.quotations.find(q => {
+        const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
+        return qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore));
+      });
+      if (matchByStore) return matchByStore;
+    }
+
+    return null;
+  }, [order?.quotations, currentSellerId, sellerCandidateIds, cleanSellerPhone, cleanSellerStore]);
+
+  const isMyQuote = (q) => {
+    if (!q) return false;
+    const qSellerId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
+    if (qSellerId && (qSellerId === currentSellerId || sellerCandidateIds.includes(qSellerId))) return true;
+    const qPhone = String(q.sellerPhone || '').replace(/\D/g, '').slice(-10);
+    if (cleanSellerPhone && qPhone && qPhone === cleanSellerPhone) return true;
+    const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
+    if (cleanSellerStore && qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore))) return true;
+    if (existingSellerQuote && String(existingSellerQuote._id || existingSellerQuote.id) === String(q._id || q.id)) return true;
+    return false;
+  };
+
   // Active Specific Demand Item Detail Modal
   const [selectedItemForDetail, setSelectedItemForDetail] = useState(null);
   const [itemSellerPriceInput, setItemSellerPriceInput] = useState('');
@@ -333,65 +393,6 @@ export default function BulkOrderPreviewModal({
     (order?.invitedSellerIds || []).map(s => (typeof s === 'object' ? (s._id || s.id) : s))
   );
   const [sellerSearchQuery, setSellerSearchQuery] = useState('');
-
-  // Seller Quotation State & Robust Candidate Matching
-  const sellerCandidateIds = useMemo(() => {
-    return [
-      sellerUser?.id,
-      sellerUser?._id,
-      sellerUser?.merchantId,
-      typeof window !== 'undefined' ? localStorage.getItem('bv_seller_id') : '',
-      typeof window !== 'undefined' ? localStorage.getItem('bookvardi_seller_id') : '',
-      typeof window !== 'undefined' ? localStorage.getItem('user_id') : ''
-    ].filter(Boolean).map(String);
-  }, [sellerUser]);
-
-  const currentSellerId = String(sellerUser?.id || sellerUser?._id || sellerCandidateIds[0] || '');
-  const cleanSellerPhone = String(sellerUser?.phone || '').replace(/\D/g, '').slice(-10);
-  const cleanSellerStore = (sellerUser?.storeName || sellerUser?.name || '').trim().toLowerCase();
-
-  const existingSellerQuote = useMemo(() => {
-    if (!Array.isArray(order?.quotations) || order.quotations.length === 0) return null;
-
-    // 1. Check direct candidate ID match
-    const matchById = order.quotations.find(q => {
-      const qId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
-      return qId && (qId === currentSellerId || sellerCandidateIds.includes(qId));
-    });
-    if (matchById) return matchById;
-
-    // 2. Check phone match
-    if (cleanSellerPhone) {
-      const matchByPhone = order.quotations.find(q => {
-        const qPhone = String(q.sellerPhone || '').replace(/\D/g, '').slice(-10);
-        return qPhone && qPhone === cleanSellerPhone;
-      });
-      if (matchByPhone) return matchByPhone;
-    }
-
-    // 3. Check store name match
-    if (cleanSellerStore) {
-      const matchByStore = order.quotations.find(q => {
-        const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
-        return qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore));
-      });
-      if (matchByStore) return matchByStore;
-    }
-
-    return null;
-  }, [order?.quotations, currentSellerId, sellerCandidateIds, cleanSellerPhone, cleanSellerStore]);
-
-  const isMyQuote = (q) => {
-    if (!q) return false;
-    const qSellerId = String(q.sellerId?._id || q.sellerId?.id || q.sellerId || '');
-    if (qSellerId && (qSellerId === currentSellerId || sellerCandidateIds.includes(qSellerId))) return true;
-    const qPhone = String(q.sellerPhone || '').replace(/\D/g, '').slice(-10);
-    if (cleanSellerPhone && qPhone && qPhone === cleanSellerPhone) return true;
-    const qStore = (q.sellerStoreName || q.sellerName || '').trim().toLowerCase();
-    if (cleanSellerStore && qStore && (qStore === cleanSellerStore || cleanSellerStore.includes(qStore) || qStore.includes(cleanSellerStore))) return true;
-    if (existingSellerQuote && String(existingSellerQuote._id || existingSellerQuote.id) === String(q._id || q.id)) return true;
-    return false;
-  };
 
   const targetBudgetNum = Number(order?.targetBudgetPerKit || order?.estimatedBudget || 0);
   const totalQtyNum = Number(
