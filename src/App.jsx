@@ -1,52 +1,90 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
-import { SellerDataProvider } from './context/SellerDataContext';
+import { SellerDataProvider, useSellerData } from './context/SellerDataContext';
 import SellerDashboard from './pages/SellerDashboard';
+import SellerLogin from './components/SellerLogin';
 import DeliveryPartnerPage from './components/DeliveryPartnerPage';
+import { SELLER_ROUTE_PATHS } from './constants/routes';
 
-export default function App() {
-  const [isDeliveryPartnerRoute, setIsDeliveryPartnerRoute] = useState(() => {
-    try {
-      const hash = window.location.hash.toLowerCase();
-      const path = window.location.pathname.toLowerCase();
-      const search = window.location.search.toLowerCase();
-      return hash.includes('delivery-partner') || path.includes('delivery-partner') || search.includes('token=dlv-');
-    } catch {
-      return false;
-    }
-  });
+function ProtectedRoute({ children }) {
+  const { isAuthenticated } = useSellerData();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
 
-  useEffect(() => {
-    const checkRoute = () => {
-      const hash = window.location.hash.toLowerCase();
-      const path = window.location.pathname.toLowerCase();
-      const search = window.location.search.toLowerCase();
-      setIsDeliveryPartnerRoute(hash.includes('delivery-partner') || path.includes('delivery-partner') || search.includes('token=dlv-'));
-    };
+function PublicLoginRoute() {
+  const { isAuthenticated } = useSellerData();
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <SellerLogin />;
+}
 
-    window.addEventListener('popstate', checkRoute);
-    window.addEventListener('hashchange', checkRoute);
-    return () => {
-      window.removeEventListener('popstate', checkRoute);
-      window.removeEventListener('hashchange', checkRoute);
-    };
-  }, []);
-
+function SellerRoutes() {
   const handleExitToCustomerStore = () => {
     const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
     window.location.href = websiteUrl;
   };
 
   return (
+    <Routes>
+      {/* Public Login Route */}
+      <Route path="/login" element={<PublicLoginRoute />} />
+
+      {/* Delivery Partner Portal */}
+      <Route path="/delivery-partner" element={<DeliveryPartnerPage onNavigate={handleExitToCustomerStore} />} />
+
+      {/* Redirect root to /dashboard */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Navigate to="/dashboard" replace />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Alias for camelCase schoolOrders */}
+      <Route
+        path="/schoolOrders"
+        element={
+          <ProtectedRoute>
+            <Navigate to="/school-orders" replace />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Protected Seller Dashboard Routes */}
+      {SELLER_ROUTE_PATHS.map((path) => (
+        <Route
+          key={path}
+          path={`/${path}`}
+          element={
+            <ProtectedRoute>
+              <SellerDashboard onNavigate={handleExitToCustomerStore} />
+            </ProtectedRoute>
+          }
+        />
+      ))}
+
+      {/* Catch-all unknown routes: Redirect to /dashboard */}
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}
+
+export default function App() {
+  return (
     <ToastProvider>
       <SellerDataProvider>
-        <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal">
-          {isDeliveryPartnerRoute ? (
-            <DeliveryPartnerPage onNavigate={handleExitToCustomerStore} />
-          ) : (
-            <SellerDashboard onNavigate={handleExitToCustomerStore} />
-          )}
-        </div>
+        <BrowserRouter>
+          <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal">
+            <SellerRoutes />
+          </div>
+        </BrowserRouter>
       </SellerDataProvider>
     </ToastProvider>
   );

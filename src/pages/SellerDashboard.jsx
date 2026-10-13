@@ -1,6 +1,8 @@
 import React, { useState, lazy, Suspense } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Overview from '../components/Overview';
 import SellerLogin from '../components/SellerLogin';
+import { getTabFromPath, getPathFromTab } from '../constants/routes';
 
 const ProductsTab = lazy(() => import('../components/ProductsTab'));
 const KitsTab = lazy(() => import('../components/KitsTab'));
@@ -20,7 +22,7 @@ const ProfileTab = lazy(() => import('../components/ProfileTab'));
 import { 
   Home, 
   Package, 
-  Boxes,
+  Boxes, 
   ShoppingBag, 
   Box, 
   Building2, 
@@ -63,7 +65,14 @@ const getMediaUrl = (path) => {
 };
 
 export default function SellerDashboardPage({ onNavigate }) {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = getTabFromPath(location.pathname);
+
+  const setActiveTab = (tabId) => {
+    navigate(getPathFromTab(tabId));
+  };
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [isApproving, setIsApproving] = useState(false);

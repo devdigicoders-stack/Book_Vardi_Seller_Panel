@@ -81,10 +81,13 @@ export default function SchoolSelectorWithCustom({
       if (raw) localSchools = JSON.parse(raw);
     } catch (e) {}
 
-    // Deduplicate prioritizing ALL_SCHOOLS_OPTION first, then authoritative apiSchools, then local, then fallbacks
+    // Deduplicate prioritizing ALL_SCHOOLS_OPTION first, then authoritative apiSchools from MongoDB
     const schoolMap = new Map();
     const seenIds = new Set();
-    const combined = [ALL_SCHOOLS_OPTION, ...apiSchools, ...localSchools, ...DEFAULT_FALLBACK_SCHOOLS];
+    const hasRealSchools = apiSchools.length > 0 || localSchools.length > 0;
+    const combined = hasRealSchools
+      ? [ALL_SCHOOLS_OPTION, ...apiSchools, ...localSchools]
+      : [ALL_SCHOOLS_OPTION];
 
     combined.forEach((sch, idx) => {
       if (sch && sch.name) {
