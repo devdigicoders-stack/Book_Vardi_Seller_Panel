@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
 import { SellerDataProvider, useSellerData } from './context/SellerDataContext';
 import SellerDashboard from './pages/SellerDashboard';
@@ -23,29 +23,64 @@ function PublicLoginRoute() {
   return <SellerLogin />;
 }
 
+// Special handler for root path to ensure rider links with hash (/#delivery-partner)
+// do NOT get redirected to the seller dashboard
+function RootRoute() {
+  const hash = (typeof window !== 'undefined' ? window.location.hash : '') || '';
+  if (hash.includes('delivery-partner')) {
+    const query = hash.includes('?') ? '?' + hash.split('?')[1] : '';
+    return <Navigate to={`/delivery-partner${query}`} replace />;
+  }
+  return (
+    <ProtectedRoute>
+      <Navigate to="/dashboard" replace />
+    </ProtectedRoute>
+  );
+}
+
+// Fallback for unknown routes to also capture /#delivery-partner
+function CatchAllRoute() {
+  const hash = (typeof window !== 'undefined' ? window.location.hash : '') || '';
+  if (hash.includes('delivery-partner')) {
+    const query = hash.includes('?') ? '?' + hash.split('?')[1] : '';
+    return <Navigate to={`/delivery-partner${query}`} replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
+}
+
 function SellerRoutes() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const handleExitToCustomerStore = () => {
     const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
     window.location.href = websiteUrl;
   };
+
+  // Immediate listener for hash change or on-load hash check (e.g. if driver opens /#delivery-partner?token=...)
+  React.useEffect(() => {
+    const checkHashForDelivery = () => {
+      const hash = window.location.hash || '';
+      if (hash.includes('delivery-partner')) {
+        const query = hash.includes('?') ? '?' + hash.split('?')[1] : '';
+        navigate(`/delivery-partner${query}`, { replace: true });
+      }
+    };
+    checkHashForDelivery();
+    window.addEventListener('hashchange', checkHashForDelivery);
+    return () => window.removeEventListener('hashchange', checkHashForDelivery);
+  }, [navigate]);
 
   return (
     <Routes>
       {/* Public Login Route */}
       <Route path="/login" element={<PublicLoginRoute />} />
 
-      {/* Delivery Partner Portal */}
+      {/* Delivery Partner Portal - Public for Delivery Executives */}
       <Route path="/delivery-partner" element={<DeliveryPartnerPage onNavigate={handleExitToCustomerStore} />} />
 
-      {/* Redirect root to /dashboard */}
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Navigate to="/dashboard" replace />
-          </ProtectedRoute>
-        }
-      />
+      {/* Root Route: checks for delivery-partner hash before dashboard */}
+      <Route path="/" element={<RootRoute />} />
 
       {/* Alias for camelCase schoolOrders */}
       <Route
@@ -70,8 +105,8 @@ function SellerRoutes() {
         />
       ))}
 
-      {/* Catch-all unknown routes: Redirect to /dashboard */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Catch-all unknown routes: Checks for delivery-partner before redirecting to /dashboard */}
+      <Route path="*" element={<CatchAllRoute />} />
     </Routes>
   );
 }

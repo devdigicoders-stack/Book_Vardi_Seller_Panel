@@ -337,14 +337,8 @@ export const SellerDataProvider = ({ children }) => {
     }
   });
   const [isLoadingKits, setIsLoadingKits] = useState(false);
-  const [orders, setOrders] = useState(() => {
-    try {
-      const saved = localStorage.getItem('bv_seller_orders');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [orders, setOrders] = useState([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   // Track recently applied seller order statuses with 30s lock to eliminate status flicker
   const latestStatusMapRef = useRef(new Map());
   const [promotions, setPromotions] = useState([]);
@@ -672,52 +666,17 @@ export const SellerDataProvider = ({ children }) => {
       Promise.allSettled([fetchSellerOrdersApi(), fetchSchoolOrdersApi()]).then(([sellerRes, schoolRes]) => {
         if (sellerRes.status === 'fulfilled' && Array.isArray(sellerRes.value)) {
           const freshNormalized = normalizeOrderList(sellerRes.value);
-          setOrders(prev => {
-            const prevMap = new Map();
-            prev.forEach(p => {
-              if (p.id) prevMap.set(String(p.id), p);
-              if (p._id) prevMap.set(String(p._id), p);
-              if (p.orderId) prevMap.set(String(p.orderId), p);
-            });
-
-            const merged = freshNormalized.map(fresh => {
-              const prevMatch = prevMap.get(String(fresh.id)) ||
-                                (fresh.orderId ? prevMap.get(String(fresh.orderId)) : null) ||
-                                (fresh._id ? prevMap.get(String(fresh._id)) : null);
-              if (!prevMatch) return fresh;
-
-              const lockedStatusEntry = latestStatusMapRef.current.get(String(fresh.id)) ||
-                                        (fresh.orderId ? latestStatusMapRef.current.get(String(fresh.orderId)) : null);
-              const isLocked = lockedStatusEntry && (Date.now() - lockedStatusEntry.timestamp < 30000);
-
-              return {
-                ...prevMatch,
-                ...fresh,
-                status: isLocked ? lockedStatusEntry.status : (fresh.status || prevMatch.status),
-                overallStatus: isLocked ? lockedStatusEntry.status : (fresh.overallStatus || prevMatch.overallStatus),
-                customerName: fresh.customerName || prevMatch.customerName || 'Customer',
-                customerPhone: fresh.customerPhone || prevMatch.customerPhone || '',
-                school: fresh.school || prevMatch.school || 'General School',
-                total: fresh.total !== undefined ? fresh.total : prevMatch.total,
-                date: fresh.date || prevMatch.date
-              };
-            });
-
-            try {
-              localStorage.setItem('bv_seller_orders', JSON.stringify(merged));
-            } catch (e) {}
-            return merged;
-          });
+          setOrders(freshNormalized);
         }
 
         if (schoolRes.status === 'fulfilled' && Array.isArray(schoolRes.value)) {
           const schoolList = schoolRes.value;
           setSchoolOrders(schoolList);
-          try {
-            localStorage.setItem('bv_sync_school_orders', JSON.stringify(schoolList));
-          } catch (e) {}
         }
-      }).catch(() => {}).finally(() => {
+      }).catch((err) => {
+        console.error('Failed to sync seller orders from DB:', err);
+      }).finally(() => {
+        setIsLoadingOrders(false);
         isOrderSyncingRef.current = false;
       });
     };
@@ -736,6 +695,7 @@ export const SellerDataProvider = ({ children }) => {
           try {
             const data = JSON.parse(event.data);
             if (data && (data.type === 'ORDER_CREATED' || data.type === 'ORDER_UPDATED' || data.type === 'SCHOOL_ORDER_UPDATED')) {
+              isOrderSyncingRef.current = false;
               handleOrderSync(false);
             }
           } catch (e) {}
@@ -943,9 +903,6 @@ export const SellerDataProvider = ({ children }) => {
               : (o.shippingAddress || 'Store / Counter Pickup')
           }));
           setOrders(normalizedOrders);
-          try {
-            localStorage.setItem('bv_seller_orders', JSON.stringify(normalizedOrders));
-          } catch (e) {}
         }
 
         if (customersRes.status === 'fulfilled' && Array.isArray(customersRes.value)) {
@@ -1957,9 +1914,6 @@ export const SellerDataProvider = ({ children }) => {
         }
         return o;
       });
-      try {
-        localStorage.setItem('bv_seller_orders', JSON.stringify(updated));
-      } catch (e) {}
       return updated;
     });
   };
@@ -2065,7 +2019,7 @@ export const SellerDataProvider = ({ children }) => {
       }
       return res;
     } catch (err) {
-      showToast(`Failed to update Return/Exchange status.`);
+      showToast(err?.message || `Failed to update Return/Exchange status.`);
       return null;
     }
   };
@@ -2832,6 +2786,7 @@ export const SellerDataProvider = ({ children }) => {
         isLoadingProducts,
         isLoadingKits,
         isLoadingSellerData,
+        isLoadingOrders,
         // State (Guaranteed Array Safety)
         products: Array.isArray(products) ? products : [],
         kits: Array.isArray(kits) ? kits : [],
