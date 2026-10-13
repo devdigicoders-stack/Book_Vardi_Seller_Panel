@@ -205,15 +205,28 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
   const normStatus = rawStatus.replace(/[\s-]+/g, '_');
 
-  const isPendingUnconfirmed = !normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus);
+  const isBulkOrder = Boolean(
+    order.isBulkOrder ||
+    order.isSchoolOrder ||
+    Array.isArray(order.requirements) ||
+    order.bulkOrderId ||
+    order.schoolName ||
+    String(order.id || order._id || '').startsWith('BULK-')
+  );
+
+  const isPendingUnconfirmed = !isBulkOrder && (!normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus));
 
   const isConfirmedAndOnward = [
+    'assigned',
+    'accepted',
     'confirmed',
     'quote_accepted',
     'buyer_accepted',
     'seller_accepted',
+    'seller_accepted_counter',
     'processing',
     'production',
+    'in_production',
     'packed',
     'packed_and_sealed',
     'shipped',
@@ -222,6 +235,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     'out_for_delivery',
     'delivered',
     'completed',
+    'fulfilled',
     'delivered_to_customer',
     'order_delivered',
     'return_requested',
@@ -234,12 +248,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     'refunded',
     'cancelled',
     'canceled'
-  ].includes(normStatus) || (!isPendingUnconfirmed && normStatus.length > 0);
+  ].includes(normStatus) || (isBulkOrder && normStatus.length > 0) || (!isPendingUnconfirmed && normStatus.length > 0);
 
-  const hasPendingProduct = isPendingUnconfirmed || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
+  const hasPendingProduct = !isBulkOrder && (isPendingUnconfirmed || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
     const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
     return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
-  }));
+  })));
 
   const hasConfirmedItem = Array.isArray(order.items) && order.items.some(it => {
     const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
@@ -250,11 +264,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
     Number(order.advancePaidAmount || 0) > 0;
 
-  const confirmed = !hasPendingProduct && (isConfirmedAndOnward || hasConfirmedItem);
+  const confirmed = isBulkOrder ? (isConfirmedAndOnward || normStatus.length > 0) : (!hasPendingProduct && (isConfirmedAndOnward || hasConfirmedItem));
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
-    : { street: order.address || order.shippingAddress || 'Customer Delivery Address' };
+    : { street: order.address || order.shippingAddress || order.deliveryLocation || order.location || 'Institutional Delivery Address' };
 
   const formattedAddressStr = typeof order.shippingAddress === 'string'
     ? order.shippingAddress
@@ -263,18 +277,30 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
         shippingAddr.city,
         shippingAddr.state,
         shippingAddr.pincode ? `- ${shippingAddr.pincode}` : ''
-      ].filter(Boolean).join(', ');
+      ].filter(Boolean).join(', ') || order.deliveryLocation || order.location || 'Lucknow, Uttar Pradesh';
 
-  const items = Array.isArray(order.items) && order.items.length > 0 ? order.items : [
-    {
-      id: 1,
-      name: order.itemName || order.product || 'School Supply Item',
-      image: order.image || (Array.isArray(order.images) && order.images[0]) || FALLBACK_IMAGE,
-      quantity: order.quantity || 1,
-      price: order.total || order.amount || 499,
-      category: 'School Uniform'
-    }
-  ];
+  const items = Array.isArray(order.items) && order.items.length > 0
+    ? order.items
+    : (Array.isArray(order.requirements) && order.requirements.length > 0
+        ? order.requirements.map((req, rIdx) => ({
+            id: req._id || rIdx + 1,
+            name: req.itemName || req.name || 'School Demand Item',
+            image: (req.sampleImages && req.sampleImages[0]) || order.image || FALLBACK_IMAGE,
+            quantity: Number(req.quantity) || 1,
+            price: Number(req.sellerPricePerUnit || req.sellerPrice || req.budgetPerUnit || req.unitPrice || (order.targetBudgetPerKit && req.quantity ? Math.round(Number(order.targetBudgetPerKit) / Number(req.quantity)) : 0) || 480),
+            category: req.category || 'School Supply'
+          }))
+        : [
+            {
+              id: 1,
+              name: order.itemName || order.product || (order.requirements && order.requirements[0]?.itemName) || 'School Supply Item',
+              image: order.image || (Array.isArray(order.images) && order.images[0]) || FALLBACK_IMAGE,
+              quantity: order.quantity || order.totalQuantity || 1,
+              price: order.total || order.amount || 499,
+              category: 'School Uniform'
+            }
+          ]
+    );
 
   let totalTaxableValue = 0;
   let totalTaxAmount = 0;
@@ -812,10 +838,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <p className="text-gray-700 font-mono font-bold mt-0.5">GSTIN: {primarySellerGst}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Billed To (Customer)</span>
-                  <p className="font-extrabold text-gray-900 text-sm">{typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || 'Customer')}</p>
-                  <p className="text-gray-600 mt-0.5">{formattedAddressStr}</p>
-                  <p className="text-gray-500 mt-1">Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId}</strong> | Payment: <strong>{order.paymentMethod || 'Online UPI'}</strong></p>
+                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Billed To (Customer / Institution)</span>
+                  <p className="font-extrabold text-gray-900 text-sm">{order.schoolName || (typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || order.contactPerson || 'School Representative'))}</p>
+                  <p className="text-gray-600 mt-0.5">{order.deliveryLocation || order.location || formattedAddressStr}</p>
+                  <p className="text-gray-500 mt-1">Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId || order._id}</strong> | Payment: <strong>{order.paymentMethod || 'Institutional Procurement / Advance ESCROW'}</strong></p>
                 </div>
               </div>
             );
