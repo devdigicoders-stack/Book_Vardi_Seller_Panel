@@ -650,7 +650,8 @@ export default function SchoolOrdersTab() {
                         {/* Live Delivery Tracker Verification Link */}
                         {(() => {
                           const tokenVal = req.deliveryDetails.trackingId || req.deliveryDetails.deliveryPartnerToken || `BV-SLF-${req.referenceId}`;
-                          const trackerUrl = `${window.location.origin.replace(':5174', ':5173')}/#delivery-partner?token=${tokenVal}`;
+                          const websiteOrigin = (import.meta.env.VITE_WEBSITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`).replace(/\/+$/, '');
+                          const trackerUrl = `${websiteOrigin}/#delivery-partner?token=${tokenVal}`;
                           return (
                             <div className="pt-2 border-t border-teal-100 flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 flex-1 min-w-[240px]">
@@ -1668,7 +1669,8 @@ export default function SchoolOrdersTab() {
               {/* Generated Delivery Tracker Verification Link Preview */}
               {(() => {
                 const modalToken = `BV-SLF-${dispatchModalOrder.referenceId || dispatchModalOrder.id}`;
-                const modalTrackerUrl = `${window.location.origin.replace(':5174', ':5173')}/#delivery-partner?token=${modalToken}`;
+                const websiteOrigin = (import.meta.env.VITE_WEBSITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`).replace(/\/+$/, '');
+                const modalTrackerUrl = `${websiteOrigin}/#delivery-partner?token=${modalToken}`;
                 return (
                   <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-2">
                     <div className="flex items-center justify-between">

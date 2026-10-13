@@ -37,6 +37,16 @@ import CreateShipmentModal from './CreateShipmentModal';
 import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
 import { SERVER_URL } from '../utils/api';
 
+// Helper to generate absolute Storefront Website Delivery Partner portal link
+export const getDriverWebsiteUrl = (tokenVal) => {
+  const origin = (
+    import.meta.env.VITE_WEBSITE_URL ||
+    import.meta.env.VITE_CLIENT_URL ||
+    (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:5173` : 'http://localhost:5173')
+  ).replace(/\/+$/, '');
+  return `${origin}/#delivery-partner?token=${encodeURIComponent(tokenVal || '')}`;
+};
+
 // Helper to generate dynamic tracking ID based on courier name
 export const generateDynamicTrackingId = (courierName) => {
   const prefix = String(courierName || 'BLUEDART')
@@ -155,18 +165,18 @@ export default function OrdersTab() {
             ...payload
           }
         } : null);
+        setReturnActionState({
+          showRejectInput: false,
+          rejectionReason: '',
+          showPickupInput: false,
+          pickupDate: '',
+          showRefundInput: false,
+          refundTxnId: '',
+          showDispatchInput: false,
+          exchangeAwb: '',
+          exchangeCourier: 'Shiprocket'
+        });
       }
-      setReturnActionState({
-        showRejectInput: false,
-        rejectionReason: '',
-        showPickupInput: false,
-        pickupDate: '',
-        showRefundInput: false,
-        refundTxnId: '',
-        showDispatchInput: false,
-        exchangeAwb: '',
-        exchangeCourier: 'Shiprocket'
-      });
     } catch (err) {
       console.error('Failed to handle return/exchange action:', err);
     }
@@ -195,9 +205,10 @@ export default function OrdersTab() {
         Boolean(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken);
       setDeliveryModeInput(isSelf ? 'self_delivery' : (activeOrderModal.deliveryMode || activeOrderModal.deliveryType || 'third_party'));
       setModalDriverName(activeOrderModal.selfDeliveryDetails?.deliveryPersonName || '');
-      setModalDriverPhone(activeOrderModal.selfDeliveryDetails?.deliveryPersonPhone || '');
-      setModalVehicleNumber(activeOrderModal.selfDeliveryDetails?.vehicleNumber || '');
-      setModalSelfDeliveryToken(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`);
+      setModalSelfDeliveryToken(
+        activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken ||
+        `DLV-${activeOrderModal.orderId || activeOrderModal.id || Math.floor(100000 + Math.random() * 900000)}`
+      );
       
       if (activeOrderModal.selfDeliveryDetails?.whatsappStatus) {
         setWhatsappDispatchResult({
@@ -298,12 +309,16 @@ export default function OrdersTab() {
         : selectedStatus === 'Returns & Exchanges'
         ? isReturnExchangeOrder(order)
         : order.status === selectedStatus;
-      const query = searchQuery.toLowerCase();
-      const matchesSearch = 
-        order.id?.toLowerCase().includes(query) ||
-        order.customerName?.toLowerCase().includes(query) ||
-        order.school?.toLowerCase().includes(query) ||
-        order.customerPhone?.toLowerCase().includes(query);
+      const query = (searchQuery || '').trim().toLowerCase();
+      const oId = String(order.id || order.orderId || order._id || '');
+      const cName = typeof order.customerName === 'object' ? String(order.customerName?.name || '') : String(order.customerName || '');
+      const oSchool = String(order.school || '');
+      const cPhone = String(order.customerPhone || '');
+      const matchesSearch = !query ||
+        oId.toLowerCase().includes(query) ||
+        cName.toLowerCase().includes(query) ||
+        oSchool.toLowerCase().includes(query) ||
+        cPhone.toLowerCase().includes(query);
       return matchesStatus && matchesSearch;
     });
   }, [orders, selectedStatus, searchQuery]);
@@ -339,8 +354,7 @@ export default function OrdersTab() {
         }
         const ord = orders.find(o => String(o.id || o._id) === String(shippingOrderId));
         const tokenVal = String(ord?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
-        const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
-        const trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+        const trackingLink = getDriverWebsiteUrl(tokenVal);
 
         updateOrderStatus(shippingOrderId, 'Shipped', {
           deliveryMode: 'self_delivery',
@@ -370,15 +384,43 @@ export default function OrdersTab() {
     }
   };
 
-  const handleRegenerateFreshDeliveryLink = () => {
-    const newToken = `DLV-${Math.floor(100000 + Math.random() * 900000)}`;
+  const handleRegenerateFreshDeliveryLink = async () => {
+    const fallbackSeed = activeOrderModal?.orderId || activeOrderModal?.id || Math.floor(100000 + Math.random() * 900000);
+    const newToken = `DLV-${fallbackSeed}`;
     setModalSelfDeliveryToken(newToken);
-    alert('🔄 Fresh delivery link token generated! Click "Save & Update Order" to save and share the new link.');
+
+    if (activeOrderModal?.id && modalDriverPhone?.trim()) {
+      try {
+        const trackingLink = getDriverWebsiteUrl(newToken);
+        await updateOrderStatus(activeOrderModal.id, modalStatusInput, {
+          deliveryMode: 'self_delivery',
+          deliveryType: 'self_delivery',
+          trackingNumber: newToken,
+          trackingUrl: trackingLink,
+          selfDeliveryDetails: {
+            deliveryPersonName: modalDriverName.trim(),
+            deliveryPersonPhone: modalDriverPhone.trim(),
+            vehicleNumber: modalVehicleNumber.trim(),
+            deliveryPartnerToken: newToken,
+            trackingUrl: trackingLink
+          }
+        });
+        alert(`✅ Fresh delivery token (${newToken}) generated and synced!`);
+        return;
+      } catch (e) {
+        console.warn('Auto-save of fresh delivery token skipped:', e);
+      }
+    }
+    alert('🔄 Fresh delivery link token generated! Click "Save Delivery Partner & Tracking Details" to save and share the new link.');
   };
 
   const generateSelfDeliveryDetails = (order = activeOrderModal) => {
-    const tokenVal = String(modalSelfDeliveryToken || order?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
-    const trackingLink = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+    const tokenVal = String(
+      modalSelfDeliveryToken ||
+      order?.selfDeliveryDetails?.deliveryPartnerToken ||
+      `DLV-${order?.orderId || order?.id || Math.floor(100000 + Math.random() * 900000)}`
+    ).trim();
+    const trackingLink = getDriverWebsiteUrl(tokenVal);
 
     return {
       deliveryPersonName: modalDriverName || order?.selfDeliveryDetails?.deliveryPersonName || '',
@@ -428,9 +470,12 @@ export default function OrdersTab() {
           setIsSavingDelivery(false);
           return;
         }
-        tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
-        const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
-        trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+        tokenVal = String(
+          modalSelfDeliveryToken ||
+          activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken ||
+          `DLV-${activeOrderModal.orderId || activeOrderModal.id || Math.floor(100000 + Math.random() * 900000)}`
+        ).trim();
+        trackingLink = getDriverWebsiteUrl(tokenVal);
         finalAwb = tokenVal;
       } else if (effectiveDeliveryMode === 'third_party') {
         if (!effectiveCourier.trim()) {
@@ -543,9 +588,8 @@ export default function OrdersTab() {
       alert('⚠️ No delivery partner phone number found to send WhatsApp message.');
       return;
     }
-    const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
     const tokenVal = String(modalSelfDeliveryToken || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${activeOrderModal.id}`).trim();
-    const trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+    const trackingLink = getDriverWebsiteUrl(tokenVal);
 
     const waMsg = generateRiderWhatsAppMessage({
       order: activeOrderModal,
@@ -852,24 +896,25 @@ export default function OrdersTab() {
                       {/* Interactive Status Selector */}
                       <td className="py-3.5 px-3">
                         <div className="flex flex-col gap-1">
+                          {isReturnExchangeOrder(o) ? (
+                            /* Return/Exchange orders: lock the inline dropdown and redirect to detail modal */
+                            <div className="flex flex-col gap-1">
+                              <div className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${conf.bg} ${conf.text} ${conf.border}`}>
+                                {o.status?.replace(/_/g, ' ') || 'Return/Exchange'}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setActiveOrderModal(o)}
+                                className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg hover:bg-amber-100 cursor-pointer transition-colors text-left"
+                                title="Return & Exchange orders must be managed through the order detail panel to ensure proper approval workflow"
+                              >
+                                🔄 Manage via Details →
+                              </button>
+                            </div>
+                          ) : (
                           <select
                             value={o.status || 'Pending'}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              const isReturnEx = [
-                                'Return Requested', 'Exchange Requested',
-                                'Return Approved', 'Exchange Approved',
-                                'Return Rejected', 'Exchange Rejected',
-                                'Pickup Scheduled', 'Product Received',
-                                'Refunded', 'Exchange Dispatched', 'Exchanged'
-                              ].includes(val);
-                              if (isReturnEx) {
-                                const canonicalStatus = val.toLowerCase().replace(/\s+/g, '_');
-                                handleReturnExchangeAction(o.id, canonicalStatus);
-                              } else {
-                                updateOrderStatus(o.id, val);
-                              }
-                            }}
+                            onChange={(e) => updateOrderStatus(o.id, e.target.value)}
                             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-500 ${conf.bg} ${conf.text} ${conf.border}`}
                           >
                             <option value="Pending">🕒 Pending</option>
@@ -880,21 +925,11 @@ export default function OrdersTab() {
                             <option value="Out for Delivery">🛵 Out for Delivery</option>
                             <option value="Delivered">🎉 Delivered</option>
                             <option value="Cancelled">❌ Cancelled</option>
-                            <option value="Return Requested">🔄 Return Requested</option>
-                            <option value="Exchange Requested">🔄 Exchange Requested</option>
-                            <option value="Return Approved">✅ Return Approved</option>
-                            <option value="Exchange Approved">✅ Exchange Approved</option>
-                            <option value="Pickup Scheduled">📦 Pickup Scheduled</option>
-                            <option value="Product Received">📥 Product Received</option>
-                            <option value="Refunded">💳 Refunded</option>
-                            <option value="Exchange Dispatched">🚚 Exchange Dispatched</option>
-                            <option value="Exchanged">🎉 Exchanged</option>
-                            <option value="Return Rejected">❌ Return Rejected</option>
-                            <option value="Exchange Rejected">❌ Exchange Rejected</option>
-                            {o.status && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled', 'Return Requested', 'Exchange Requested', 'Return Approved', 'Exchange Approved', 'Pickup Scheduled', 'Product Received', 'Refunded', 'Exchange Dispatched', 'Exchanged', 'Return Rejected', 'Exchange Rejected'].includes(o.status) && (
+                            {o.status && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(o.status) && (
                               <option value={o.status}>{o.status}</option>
                             )}
                           </select>
+                          )}
                           {(o.status === 'Cancelled' || o.cancellationReason) && (
                             <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 truncate max-w-[130px]" title={`Cancelled by ${o.cancelledBy || 'Customer'}. Reason: ${o.cancellationReason || 'Customer requested cancellation'}`}>
                               Reason: {o.cancellationReason || 'Cancelled'}
@@ -1270,7 +1305,7 @@ export default function OrdersTab() {
                               </button>
                             )}
 
-                            {(isProductReceived || isApproved) && isReturn && (
+                            {isProductReceived && isReturn && (
                               <button
                                 type="button"
                                 onClick={() => setReturnActionState(prev => ({ ...prev, showRefundInput: !prev.showRefundInput }))}
@@ -1280,7 +1315,7 @@ export default function OrdersTab() {
                               </button>
                             )}
 
-                            {(isProductReceived || isApproved) && isExchange && (
+                            {isProductReceived && isExchange && (
                               <button
                                 type="button"
                                 onClick={() => setReturnActionState(prev => ({ ...prev, showDispatchInput: !prev.showDispatchInput }))}
@@ -1751,13 +1786,13 @@ export default function OrdersTab() {
                         <input
                           type="text"
                           readOnly
-                          value={`${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`}
+                          value={getDriverWebsiteUrl(modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id))}
                           className="flex-1 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-mono text-gray-700 truncate select-all"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            const link = `${window.location.protocol}//${window.location.host}/#delivery-partner?token=${modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id)}`;
+                            const link = getDriverWebsiteUrl(modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id));
                             navigator.clipboard.writeText(link);
                             alert('📋 Rider Executive Link copied! (Share with Driver only)');
                           }}
@@ -1765,6 +1800,14 @@ export default function OrdersTab() {
                         >
                           Copy Driver Link
                         </button>
+                        <a
+                          href={getDriverWebsiteUrl(modalSelfDeliveryToken || ('DLV-' + activeOrderModal?.id))}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <ExternalLink size={12} /> Open Driver Link
+                        </a>
                         <button
                           type="button"
                           onClick={() => {

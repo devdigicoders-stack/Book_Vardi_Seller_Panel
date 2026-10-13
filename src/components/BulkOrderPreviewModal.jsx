@@ -422,7 +422,8 @@ export default function BulkOrderPreviewModal({
 
   const deliveryPartnerDisplay = riderName ? `Direct Self-Delivery (Rider: ${riderName})` : 'Direct Self-Delivery (Store Fleet)';
   const trackingNumberDisplay = tokenVal;
-  const trackingLinkDisplay = order?.deliveryDetails?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || order?.trackingUrl || `${window.location.origin.replace(':5174', ':5173')}/#delivery-partner?token=${tokenVal}`;
+  const websiteOrigin = (import.meta.env.VITE_WEBSITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`).replace(/\/+$/, '');
+  const trackingLinkDisplay = order?.deliveryDetails?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || order?.trackingUrl || `${websiteOrigin}/#delivery-partner?token=${tokenVal}`;
 
   // Transform bulk order into TaxInvoice-compatible object
   const taxInvoiceOrder = useMemo(() => {
@@ -614,7 +615,7 @@ export default function BulkOrderPreviewModal({
     if (!onUpdateLogistics) return;
 
     const riderToken = order.deliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPartnerToken || `BV-SLF-${order.referenceId || order.id || Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    const websiteOrigin = window.location.origin.replace(':5174', ':5173');
+    const websiteOrigin = (import.meta.env.VITE_WEBSITE_URL || (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:5173` : 'http://localhost:5173')).replace(/\/+$/, '');
     const riderUrl = `${websiteOrigin}/#delivery-partner?token=${riderToken}`;
 
     const selfDetails = {
@@ -1136,7 +1137,7 @@ export default function BulkOrderPreviewModal({
                             {/* Live Delivery Tracker Verification Link Card */}
                             {(() => {
                               const tokenVal = order.deliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPartnerToken || `BV-SLF-${order.referenceId || order.id}`;
-                              const websiteOrigin = window.location.origin.replace(':5174', ':5173');
+                              const websiteOrigin = (import.meta.env.VITE_WEBSITE_URL || (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:5173` : 'http://localhost:5173')).replace(/\/+$/, '');
                               const trackerUrl = `${websiteOrigin}/#delivery-partner?token=${tokenVal}`;
                               return (
                                 <div className="p-2.5 bg-teal-50 border border-teal-200 rounded-xl space-y-1.5 text-xs">
