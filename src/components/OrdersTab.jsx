@@ -144,9 +144,11 @@ export default function OrdersTab() {
     exchangeAwb: '',
     exchangeCourier: 'Shiprocket'
   });
+  const [isUpdatingReturnStatus, setIsUpdatingReturnStatus] = useState(false);
 
   const handleReturnExchangeAction = async (orderId, targetStatus, payload = {}) => {
-    if (!orderId) return;
+    if (!orderId || isUpdatingReturnStatus) return;
+    setIsUpdatingReturnStatus(true);
     try {
       const res = await updateReturnExchangeStatus(orderId, {
         status: targetStatus,
@@ -179,6 +181,8 @@ export default function OrdersTab() {
       }
     } catch (err) {
       console.error('Failed to handle return/exchange action:', err);
+    } finally {
+      setIsUpdatingReturnStatus(false);
     }
   };
 
@@ -1297,11 +1301,12 @@ export default function OrdersTab() {
                             {isPickupScheduled && (
                               <button
                                 type="button"
+                                disabled={isUpdatingReturnStatus}
                                 onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'product_received', { notes: 'Item received back & stock auto-restored' })}
-                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                                 title="Mark item received & automatically restore inventory stock"
                               >
-                                📥 Mark Product Received (Auto-Restores Stock)
+                                {isUpdatingReturnStatus ? '⏳ Restoring Stock...' : '📥 Mark Product Received (Auto-Restores Stock)'}
                               </button>
                             )}
 
