@@ -10,6 +10,7 @@ export default function Overview() {
     schoolOrders = [], 
     notifications = [], 
     sellerUser, 
+    finance,
     isLoadingSellerData, 
     isLoadingProducts 
   } = useSellerData();
@@ -33,7 +34,14 @@ export default function Overview() {
 
   const hasNoData = products.length === 0 && orders.length === 0;
 
-  const activeCommission = sellerUser?.commissionPercentage ?? sellerUser?.commissionRate ?? 5;
+  const activeCommission = Number(
+    sellerUser?.commissionPercentage ?? 
+    sellerUser?.commissionRate ?? 
+    finance?.wallet?.commissionPercentage ?? 
+    finance?.wallet?.commissionRate ?? 
+    finance?.commissionPercentage ?? 
+    5
+  );
 
   return (
     <div className="space-y-6">

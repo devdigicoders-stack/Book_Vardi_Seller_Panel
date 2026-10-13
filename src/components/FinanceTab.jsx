@@ -163,19 +163,24 @@ export default function FinanceTab() {
 
   // Dynamic platform commission & seller net margin
   const commissionRate = useMemo(() => {
-    if (typeof sellerUser?.commissionPercentage === 'number') return sellerUser.commissionPercentage;
-    if (typeof sellerUser?.commissionRate === 'number') return sellerUser.commissionRate;
-    if (typeof finance?.wallet?.commissionPercentage === 'number') return finance.wallet.commissionPercentage;
-    if (typeof finance?.wallet?.commissionRate === 'number') return finance.wallet.commissionRate;
-    if (typeof finance?.commissionPercentage === 'number') return finance.commissionPercentage;
+    const raw = sellerUser?.commissionPercentage ?? sellerUser?.commissionRate ?? finance?.wallet?.commissionPercentage ?? finance?.wallet?.commissionRate ?? finance?.commissionPercentage ?? finance?.commissionRate;
+    if (raw !== undefined && raw !== null && !isNaN(Number(raw))) {
+      return Number(raw);
+    }
     return 5;
   }, [sellerUser, finance]);
 
   const sellerPayoutPercentage = 100 - commissionRate;
 
   const netMargin = useMemo(() => {
-    return Math.round(totalGross * (sellerPayoutPercentage / 100));
-  }, [totalGross, sellerPayoutPercentage]);
+    if (!orders || orders.length === 0) return Math.round(totalGross * (sellerPayoutPercentage / 100));
+    return Math.round(orders.reduce((sum, o) => {
+      const ordTotal = Number(o.total || 0);
+      const ordRate = Number(o.commissionRate ?? o.items?.[0]?.commissionRate ?? commissionRate);
+      const sellerCut = Math.round(ordTotal * ((100 - ordRate) / 100) * 100) / 100;
+      return sum + sellerCut;
+    }, 0));
+  }, [orders, totalGross, sellerPayoutPercentage, commissionRate]);
 
   const pendingEscrow = useMemo(() => {
     return orders

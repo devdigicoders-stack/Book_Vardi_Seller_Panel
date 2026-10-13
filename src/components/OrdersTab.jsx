@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   ShoppingBag, 
   Search, 
@@ -32,7 +32,7 @@ import {
   Lock
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
-import TaxInvoiceModal from './TaxInvoiceModal';
+import TaxInvoiceModal, { parseStateInfo } from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
 import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
 import { SERVER_URL } from '../utils/api';
@@ -98,8 +98,12 @@ export default function OrdersTab() {
   const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
   const [shippingOrderId, setShippingOrderId] = useState(null);
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
-  const [courierInput, setCourierInput] = useState('Delhivery');
+  const [courierInput, setCourierInput] = useState('Shiprocket');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [shipModalDeliveryMode, setShipModalDeliveryMode] = useState('third_party');
+  const [shipModalDriverName, setShipModalDriverName] = useState('');
+  const [shipModalDriverPhone, setShipModalDriverPhone] = useState('');
+  const [shipModalVehicleNumber, setShipModalVehicleNumber] = useState('');
 
   // Bulk selection state
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -119,9 +123,69 @@ export default function OrdersTab() {
   const [isResendingWhatsApp, setIsResendingWhatsApp] = useState(false);
   const [whatsappDispatchResult, setWhatsappDispatchResult] = useState(null);
 
+  const [returnActionState, setReturnActionState] = useState({
+    showRejectInput: false,
+    rejectionReason: '',
+    showPickupInput: false,
+    pickupDate: '',
+    showRefundInput: false,
+    refundTxnId: '',
+    showDispatchInput: false,
+    exchangeAwb: '',
+    exchangeCourier: 'Shiprocket'
+  });
+
+  const handleReturnExchangeAction = async (orderId, targetStatus, payload = {}) => {
+    if (!orderId) return;
+    try {
+      const res = await updateReturnExchangeStatus(orderId, {
+        status: targetStatus,
+        ...payload
+      });
+      if (res && (res.order || res.success)) {
+        const updated = res.order || {};
+        setActiveOrderModal(prev => prev ? {
+          ...prev,
+          ...updated,
+          status: updated.status || targetStatus,
+          overallStatus: updated.status || targetStatus,
+          returnRequest: updated.returnRequest || {
+            ...(prev.returnRequest || {}),
+            status: targetStatus,
+            ...payload
+          }
+        } : null);
+      }
+      setReturnActionState({
+        showRejectInput: false,
+        rejectionReason: '',
+        showPickupInput: false,
+        pickupDate: '',
+        showRefundInput: false,
+        refundTxnId: '',
+        showDispatchInput: false,
+        exchangeAwb: '',
+        exchangeCourier: 'Shiprocket'
+      });
+    } catch (err) {
+      console.error('Failed to handle return/exchange action:', err);
+    }
+  };
+
+  const activeModalOrderIdRef = useRef(null);
+
   // Sync active modal input values when activeOrderModal opens
   useEffect(() => {
-    if (activeOrderModal) {
+    if (!activeOrderModal) {
+      activeModalOrderIdRef.current = null;
+      return;
+    }
+
+    const orderId = activeOrderModal.id || activeOrderModal._id || activeOrderModal.orderId;
+    const isNewOrderSelection = activeModalOrderIdRef.current !== orderId;
+
+    if (isNewOrderSelection) {
+      activeModalOrderIdRef.current = orderId;
       setModalStatusInput(activeOrderModal.status || 'Pending');
       setModalCourierInput(activeOrderModal.courierName || 'Delhivery');
       setModalTrackingInput(activeOrderModal.trackingNumber || '');
@@ -146,7 +210,7 @@ export default function OrdersTab() {
         setWhatsappDispatchResult(null);
       }
     }
-  }, [activeOrderModal]);
+  }, [activeOrderModal?.id, activeOrderModal?._id, activeOrderModal?.orderId]);
 
   // Manual order form
   const [manualForm, setManualForm] = useState({
@@ -205,7 +269,7 @@ export default function OrdersTab() {
     if (req && typeof req === 'object') {
       const type = req.requestType || req.type;
       const status = String(req.status || '').toLowerCase().trim();
-      const invalidStatuses = ['', 'none', 'n/a', 'no_request', 'normal', 'null', 'undefined', 'requesting', 'requested'];
+      const invalidStatuses = ['', 'none', 'n/a', 'no_request', 'normal', 'null', 'undefined'];
       
       if (type && !['none', 'n/a', ''].includes(String(type).toLowerCase())) return true;
       if (status && !invalidStatuses.includes(status)) return true;
@@ -247,19 +311,60 @@ export default function OrdersTab() {
   const handleOpenShipModal = (orderId) => {
     setShippingOrderId(orderId);
     const ord = orders.find(o => String(o.id || o._id) === String(orderId));
-    const assignedCourier = ord?.courierName && ord.courierName !== 'N/A' ? ord.courierName : (courierInput || 'Delhivery');
+    const isSelf = ord?.deliveryMode === 'self_delivery' || ord?.deliveryType === 'self_delivery' || Boolean(ord?.selfDeliveryDetails?.deliveryPartnerToken);
+    setShipModalDeliveryMode(isSelf ? 'self_delivery' : 'third_party');
+    const assignedCourier = ord?.courierName && ord.courierName !== 'N/A' ? ord.courierName : 'Shiprocket';
     setCourierInput(assignedCourier);
     setTrackingNumberInput(ord?.trackingNumber || generateDynamicTrackingId(assignedCourier));
+    setShipModalDriverName(ord?.selfDeliveryDetails?.deliveryPersonName || '');
+    setShipModalDriverPhone(ord?.selfDeliveryDetails?.deliveryPersonPhone || '');
+    setShipModalVehicleNumber(ord?.selfDeliveryDetails?.vehicleNumber || '');
     setIsShipModalOpen(true);
   };
 
   const handleConfirmShip = () => {
     if (shippingOrderId) {
-      const finalAwb = trackingNumberInput.trim() || generateDynamicTrackingId(courierInput || 'BlueDart');
-      updateOrderStatus(shippingOrderId, 'Shipped', {
-        trackingNumber: finalAwb,
-        courierName: courierInput
-      });
+      if (shipModalDeliveryMode === 'self_delivery') {
+        if (!shipModalDriverName.trim()) {
+          alert('⚠️ Please enter Driver / Delivery Person Name.');
+          return;
+        }
+        if (!shipModalDriverPhone.trim()) {
+          alert('⚠️ Please enter Driver Phone Number.');
+          return;
+        }
+        if (!shipModalVehicleNumber.trim()) {
+          alert('⚠️ Please enter Vehicle Number (e.g. UP32 AB 1234).');
+          return;
+        }
+        const ord = orders.find(o => String(o.id || o._id) === String(shippingOrderId));
+        const tokenVal = String(ord?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
+        const websiteOrigin = import.meta.env.VITE_WEBSITE_URL || import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:5173`;
+        const trackingLink = `${websiteOrigin.replace(/\/+$/, '')}/#delivery-partner?token=${encodeURIComponent(tokenVal)}`;
+
+        updateOrderStatus(shippingOrderId, 'Shipped', {
+          deliveryMode: 'self_delivery',
+          deliveryType: 'self_delivery',
+          courierName: '',
+          trackingNumber: tokenVal,
+          trackingUrl: trackingLink,
+          selfDeliveryDetails: {
+            deliveryPersonName: shipModalDriverName.trim(),
+            deliveryPersonPhone: shipModalDriverPhone.trim(),
+            vehicleNumber: shipModalVehicleNumber.trim(),
+            deliveryPartnerToken: tokenVal,
+            trackingUrl: trackingLink
+          }
+        });
+      } else {
+        const finalAwb = trackingNumberInput.trim() || generateDynamicTrackingId(courierInput || 'Shiprocket');
+        updateOrderStatus(shippingOrderId, 'Shipped', {
+          deliveryMode: 'third_party',
+          deliveryType: 'third_party',
+          courierName: courierInput || 'Shiprocket',
+          trackingNumber: finalAwb
+        });
+      }
       setIsShipModalOpen(false);
       setShippingOrderId(null);
     }
@@ -304,8 +409,8 @@ export default function OrdersTab() {
         (activeOrderModal.courierName && activeOrderModal.courierName !== 'N/A' && activeOrderModal.courierName !== '')
       );
 
-      const effectiveDeliveryMode = isExistingSelf ? 'self_delivery' : (isExistingThirdParty ? 'third_party' : deliveryModeInput);
-      const effectiveCourier = isExistingThirdParty && activeOrderModal.courierName ? activeOrderModal.courierName : modalCourierInput;
+      const effectiveDeliveryMode = deliveryModeInput;
+      const effectiveCourier = modalCourierInput || 'Shiprocket';
 
       if (effectiveDeliveryMode === 'self_delivery') {
         if (!modalDriverName.trim()) {
@@ -420,7 +525,7 @@ export default function OrdersTab() {
         trackingNumber: deliveryModeInput === 'third_party' ? modalTrackingInput.trim() : tokenVal,
         trackingUrl: deliveryModeInput === 'self_delivery' ? trackingLink : carrierUrl,
         sellerDetails: sellerPayload,
-        selfDeliveryDetails: serverSelfDetails
+        selfDeliveryDetails: deliveryModeInput === 'self_delivery' ? serverSelfDetails : undefined
       } : null);
 
       if (deliveryModeInput === 'self_delivery') {
@@ -749,7 +854,22 @@ export default function OrdersTab() {
                         <div className="flex flex-col gap-1">
                           <select
                             value={o.status || 'Pending'}
-                            onChange={(e) => updateOrderStatus(o.id, e.target.value)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const isReturnEx = [
+                                'Return Requested', 'Exchange Requested',
+                                'Return Approved', 'Exchange Approved',
+                                'Return Rejected', 'Exchange Rejected',
+                                'Pickup Scheduled', 'Product Received',
+                                'Refunded', 'Exchange Dispatched', 'Exchanged'
+                              ].includes(val);
+                              if (isReturnEx) {
+                                const canonicalStatus = val.toLowerCase().replace(/\s+/g, '_');
+                                handleReturnExchangeAction(o.id, canonicalStatus);
+                              } else {
+                                updateOrderStatus(o.id, val);
+                              }
+                            }}
                             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-500 ${conf.bg} ${conf.text} ${conf.border}`}
                           >
                             <option value="Pending">🕒 Pending</option>
@@ -762,8 +882,16 @@ export default function OrdersTab() {
                             <option value="Cancelled">❌ Cancelled</option>
                             <option value="Return Requested">🔄 Return Requested</option>
                             <option value="Exchange Requested">🔄 Exchange Requested</option>
+                            <option value="Return Approved">✅ Return Approved</option>
+                            <option value="Exchange Approved">✅ Exchange Approved</option>
+                            <option value="Pickup Scheduled">📦 Pickup Scheduled</option>
+                            <option value="Product Received">📥 Product Received</option>
                             <option value="Refunded">💳 Refunded</option>
-                            {o.status && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled', 'Return Requested', 'Exchange Requested', 'Refunded'].includes(o.status) && (
+                            <option value="Exchange Dispatched">🚚 Exchange Dispatched</option>
+                            <option value="Exchanged">🎉 Exchanged</option>
+                            <option value="Return Rejected">❌ Return Rejected</option>
+                            <option value="Exchange Rejected">❌ Exchange Rejected</option>
+                            {o.status && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled', 'Return Requested', 'Exchange Requested', 'Return Approved', 'Exchange Approved', 'Pickup Scheduled', 'Product Received', 'Refunded', 'Exchange Dispatched', 'Exchanged', 'Return Rejected', 'Exchange Rejected'].includes(o.status) && (
                               <option value={o.status}>{o.status}</option>
                             )}
                           </select>
@@ -892,6 +1020,21 @@ export default function OrdersTab() {
                   >
                     <FileText size={14} />
                     <span>GST Credit Note</span>
+                  </a>
+                )}
+
+                {(activeOrderModal.returnRequest?.type === 'exchange' ||
+                  activeOrderModal.returnRequest?.requestType === 'exchange' ||
+                  String(activeOrderModal.status).toLowerCase().includes('exchange')) && (
+                  <a
+                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200"
+                    title="Download GST Replacement / Exchange Tax Invoice"
+                  >
+                    <FileText size={14} />
+                    <span>Exchange Invoice</span>
                   </a>
                 )}
 
@@ -1068,76 +1211,265 @@ export default function OrdersTab() {
                   </div>
 
                   {/* Return / Exchange Action Controls */}
-                  <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-bold text-amber-900 mr-1">Manage Request:</span>
-                    
-                    <button
-                      type="button"
-                      onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'approved', { notes: 'Approved by merchant' })}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                    >
-                      ✓ Approve {activeOrderModal.returnRequest?.type === 'exchange' ? 'Exchange' : 'Return'}
-                    </button>
+                  <div className="pt-2 border-t border-amber-200/80 space-y-2">
+                    <div className="text-[11px] font-bold text-amber-900">Manage Request Workflow:</div>
+                    {(() => {
+                      const retReq = activeOrderModal.returnRequest || {};
+                      const retStatus = String(retReq.status || activeOrderModal.status || '').toLowerCase().trim();
+                      const retType = String(retReq.type || retReq.requestType || (retStatus.includes('exchange') ? 'exchange' : 'return')).toLowerCase().trim();
+                      const isExchange = retType === 'exchange';
+                      const isReturn = retType === 'return';
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const reason = prompt('Enter rejection reason for customer:');
-                        if (reason !== null) {
-                          handleReturnExchangeAction(activeOrderModal.id, 'rejected', { rejectionReason: reason || 'Criteria not met' });
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                    >
-                      ✕ Reject Request
-                    </button>
+                      const isRequested = ['requested', 'return_requested', 'exchange_requested'].includes(retStatus);
+                      const isApproved = ['approved', 'return_approved', 'exchange_approved'].includes(retStatus);
+                      const isPickupScheduled = retStatus === 'pickup_scheduled';
+                      const isProductReceived = ['product_received', 'product_return_received'].includes(retStatus);
+                      const isExchangeDispatched = retStatus === 'exchange_dispatched';
+                      const isCompleted = ['refund_completed', 'refunded', 'exchanged'].includes(retStatus);
 
-                    <button
-                      type="button"
-                      onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'pickup_scheduled', { pickupDate: new Date() })}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                    >
-                      📦 Schedule Pickup
-                    </button>
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {isRequested && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReturnExchangeAction(activeOrderModal.id, isExchange ? 'exchange_approved' : 'return_approved')}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                >
+                                  ✓ Approve {isExchange ? 'Exchange' : 'Return'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnActionState(prev => ({ ...prev, showRejectInput: !prev.showRejectInput }))}
+                                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                >
+                                  ✕ Reject Request
+                                </button>
+                              </>
+                            )}
 
-                    <button
-                      type="button"
-                      onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'product_received', { notes: 'Item received back & stock auto-restored' })}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                      title="Mark item received & automatically restore inventory stock"
-                    >
-                      📥 Mark Product Received (Auto-Restores Stock)
-                    </button>
+                            {isApproved && (
+                              <button
+                                type="button"
+                                onClick={() => setReturnActionState(prev => ({ ...prev, showPickupInput: !prev.showPickupInput }))}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                              >
+                                📦 Schedule Pickup
+                              </button>
+                            )}
 
-                    {(activeOrderModal.returnRequest?.type === 'return' || !activeOrderModal.returnRequest?.type) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const txnId = prompt('Enter Refund Reference/Transaction ID:');
-                          if (txnId !== null) {
-                            handleReturnExchangeAction(activeOrderModal.id, 'refund_completed', { refundTxnId: txnId || `REF-${Date.now()}` });
-                          }
-                        }}
-                        className="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                      >
-                        💳 Process Refund
-                      </button>
-                    )}
+                            {isPickupScheduled && (
+                              <button
+                                type="button"
+                                onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'product_received', { notes: 'Item received back & stock auto-restored' })}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                title="Mark item received & automatically restore inventory stock"
+                              >
+                                📥 Mark Product Received (Auto-Restores Stock)
+                              </button>
+                            )}
 
-                    {activeOrderModal.returnRequest?.type === 'exchange' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const awb = prompt('Enter Replacement Courier Tracking AWB:');
-                          if (awb !== null) {
-                            handleReturnExchangeAction(activeOrderModal.id, 'exchange_dispatched', { exchangeAwb: awb || 'AWB-EXCHANGE', exchangeCourier: 'Delhivery' });
-                          }
-                        }}
-                        className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                      >
-                        🚀 Dispatch Replacement Unit
-                      </button>
-                    )}
+                            {(isProductReceived || isApproved) && isReturn && (
+                              <button
+                                type="button"
+                                onClick={() => setReturnActionState(prev => ({ ...prev, showRefundInput: !prev.showRefundInput }))}
+                                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                              >
+                                💳 Process Refund
+                              </button>
+                            )}
+
+                            {(isProductReceived || isApproved) && isExchange && (
+                              <button
+                                type="button"
+                                onClick={() => setReturnActionState(prev => ({ ...prev, showDispatchInput: !prev.showDispatchInput }))}
+                                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                              >
+                                🚀 Dispatch Replacement Unit
+                              </button>
+                            )}
+
+                            {isExchangeDispatched && (
+                              <button
+                                type="button"
+                                onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'exchanged')}
+                                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                              >
+                                ✓ Complete Exchange
+                              </button>
+                            )}
+
+                            {isCompleted && (
+                              <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-[11px] bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                                <span>✅ Lifecycle Completed</span>
+                                {isReturn ? (
+                                  <a
+                                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline text-emerald-900 ml-1"
+                                  >
+                                    View Credit Note
+                                  </a>
+                                ) : (
+                                  <a
+                                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline text-indigo-900 ml-1"
+                                  >
+                                    View Exchange Invoice
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {returnActionState.showRejectInput && (
+                            <div className="p-3 bg-white rounded-xl border border-rose-200 space-y-2">
+                              <label className="font-semibold text-rose-900 text-[11px] block">Rejection Reason for Customer:</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Return policy window expired, or item used / tags missing"
+                                value={returnActionState.rejectionReason}
+                                onChange={e => setReturnActionState(prev => ({ ...prev, rejectionReason: e.target.value }))}
+                                className="w-full px-3 py-1.5 text-xs border border-rose-300 rounded-lg outline-none"
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReturnExchangeAction(activeOrderModal.id, isExchange ? 'exchange_rejected' : 'return_rejected', { rejectionReason: returnActionState.rejectionReason || 'Policy criteria not met' })}
+                                  className="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Confirm Rejection
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnActionState(prev => ({ ...prev, showRejectInput: false }))}
+                                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {returnActionState.showPickupInput && (
+                            <div className="p-3 bg-white rounded-xl border border-blue-200 space-y-2">
+                              <label className="font-semibold text-blue-900 text-[11px] block">Select Pickup Date:</label>
+                              <input
+                                type="date"
+                                value={returnActionState.pickupDate || new Date().toISOString().split('T')[0]}
+                                onChange={e => setReturnActionState(prev => ({ ...prev, pickupDate: e.target.value }))}
+                                className="w-full px-3 py-1.5 text-xs border border-blue-300 rounded-lg outline-none"
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'pickup_scheduled', { pickupScheduledDate: returnActionState.pickupDate || new Date().toISOString().split('T')[0] })}
+                                  className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Confirm Pickup Schedule
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnActionState(prev => ({ ...prev, showPickupInput: false }))}
+                                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {returnActionState.showRefundInput && (
+                            <div className="p-3 bg-white rounded-xl border border-emerald-200 space-y-2">
+                              <label className="font-semibold text-emerald-900 text-[11px] block">Refund Transaction Reference / ID:</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="e.g. UPI-REF-99238491823"
+                                  value={returnActionState.refundTxnId}
+                                  onChange={e => setReturnActionState(prev => ({ ...prev, refundTxnId: e.target.value }))}
+                                  className="flex-1 px-3 py-1.5 text-xs border border-emerald-300 rounded-lg outline-none font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnActionState(prev => ({ ...prev, refundTxnId: `UPI-REF-${Date.now().toString().slice(-8)}` }))}
+                                  className="px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer"
+                                >
+                                  Generate ID
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'refund_completed', { refundTransactionId: returnActionState.refundTxnId || `REF-${Date.now()}`, refundAmount: activeOrderModal.returnRequest?.refundAmount || activeOrderModal.total })}
+                                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Complete Refund
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnActionState(prev => ({ ...prev, showRefundInput: false }))}
+                                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {returnActionState.showDispatchInput && (
+                            <div className="p-3 bg-white rounded-xl border border-purple-200 space-y-2">
+                              <label className="font-semibold text-purple-900 text-[11px] block">Replacement Dispatch Details:</label>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Courier Name (e.g. Shiprocket / Delhivery)"
+                                  value={returnActionState.exchangeCourier}
+                                  onChange={e => setReturnActionState(prev => ({ ...prev, exchangeCourier: e.target.value }))}
+                                  className="px-3 py-1.5 text-xs border border-purple-300 rounded-lg outline-none"
+                                />
+                                <div className="flex gap-1.5">
+                                  <input
+                                    type="text"
+                                    placeholder="Replacement AWB"
+                                    value={returnActionState.exchangeAwb}
+                                    onChange={e => setReturnActionState(prev => ({ ...prev, exchangeAwb: e.target.value }))}
+                                    className="flex-1 px-3 py-1.5 text-xs border border-purple-300 rounded-lg outline-none font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setReturnActionState(prev => ({ ...prev, exchangeAwb: generateDynamicTrackingId(prev.exchangeCourier || 'Shiprocket') }))}
+                                    className="px-2 py-1 bg-purple-50 text-purple-800 border border-purple-300 rounded-lg text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Auto AWB
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'exchange_dispatched', { exchangeCourierName: returnActionState.exchangeCourier || 'Shiprocket', exchangeAwbNumber: returnActionState.exchangeAwb || generateDynamicTrackingId('Shiprocket') })}
+                                  className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Confirm Dispatch Replacement
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnActionState(prev => ({ ...prev, showDispatchInput: false }))}
+                                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -1235,13 +1567,8 @@ export default function OrdersTab() {
                   (activeOrderModal.courierName && activeOrderModal.courierName !== 'N/A' && activeOrderModal.courierName !== '')
                 );
 
-                const isDeliveryPartnerLocked = Boolean(
-                  isSelfDeliveryAssigned ||
-                  isThirdPartyAssigned ||
-                  ['Shipped', 'Out for Delivery', 'Delivered', 'Completed'].includes(activeOrderModal.status)
-                );
-
-                const lockedPartnerName = isSelfDeliveryAssigned
+                const isFinalStatus = ['Delivered', 'Completed'].includes(activeOrderModal.status);
+                const currentPartnerDisplay = (activeOrderModal.deliveryMode === 'self_delivery' || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken)
                   ? 'Self-Delivery (Direct Store Fleet)'
                   : (activeOrderModal.courierName || '3rd-Party Courier');
 
@@ -1256,52 +1583,35 @@ export default function OrdersTab() {
                       </span>
                     </div>
 
-                    {/* Delivery Partner Permanent Lock Banner */}
-                    {isDeliveryPartnerLocked && (
-                      <div className="bg-amber-100/90 border border-amber-300 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs text-amber-950 font-bold shadow-2xs">
-                        <div className="flex items-center gap-2">
-                          <Lock size={15} className="text-amber-800 shrink-0" />
-                          <span>Delivery Partner Locked: <strong className="text-amber-950 underline decoration-amber-400">{lockedPartnerName}</strong></span>
-                        </div>
-                        <span className="text-[10px] uppercase tracking-wider bg-amber-200/90 px-2 py-0.5 rounded text-amber-900 border border-amber-300 font-extrabold">
-                          Permanent
-                        </span>
-                      </div>
-                    )}
-
                     {/* Mode Selector Tabs */}
                     <div className="grid grid-cols-2 gap-2 bg-teal-100/60 p-1 rounded-xl">
                       <button
                         type="button"
-                        disabled={isDeliveryPartnerLocked}
-                        onClick={() => {
-                          if (!isDeliveryPartnerLocked) setDeliveryModeInput('third_party');
-                        }}
-                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all ${
-                          isDeliveryPartnerLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'
+                        disabled={isFinalStatus}
+                        onClick={() => setDeliveryModeInput('third_party')}
+                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                          isFinalStatus ? 'cursor-not-allowed opacity-75' : ''
                         } ${
                           deliveryModeInput === 'third_party'
                             ? 'bg-white text-teal-900 shadow-xs'
                             : 'text-teal-800 hover:text-teal-950'
                         }`}
                       >
-                        🚚 3rd-Party Courier (Delhivery/BlueDart)
+                        🚚 3rd-Party Courier (Shiprocket / Delhivery)
                       </button>
                       <button
                         type="button"
-                        disabled={isDeliveryPartnerLocked}
-                        onClick={() => {
-                          if (!isDeliveryPartnerLocked) setDeliveryModeInput('self_delivery');
-                        }}
-                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all ${
-                          isDeliveryPartnerLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'
+                        disabled={isFinalStatus}
+                        onClick={() => setDeliveryModeInput('self_delivery')}
+                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                          isFinalStatus ? 'cursor-not-allowed opacity-75' : ''
                         } ${
                           deliveryModeInput === 'self_delivery'
                             ? 'bg-white text-teal-900 shadow-xs'
                             : 'text-teal-800 hover:text-teal-950'
                         }`}
                       >
-                        🛵 Self-Delivery (Direct / Store)
+                        🛵 Direct Self-Delivery (Store Fleet / Rider)
                       </button>
                     </div>
 
@@ -1313,7 +1623,7 @@ export default function OrdersTab() {
                             <strong className="block text-amber-950 font-bold text-xs">Automated Courier Dispatch (Shiprocket / Delhivery / BlueDart)</strong>
                             <span className="text-[10px] text-amber-800">Auto-calculate freight rate, generate AWB, and print shipping label PDF</span>
                           </div>
-                          {(isThirdPartyAssigned || activeOrderModal.trackingNumber || activeOrderModal.shipmentDetails?.awbNumber) ? (
+                          {(activeOrderModal.trackingNumber || activeOrderModal.shipmentDetails?.awbNumber) && activeOrderModal.deliveryMode === 'third_party' ? (
                             <div className="px-3 py-1.5 bg-emerald-100 text-emerald-900 font-extrabold text-[11px] rounded-lg border border-emerald-300 shrink-0 flex items-center gap-1 shadow-2xs">
                               <CheckCircle size={13} className="text-emerald-700" />
                               <span>Shipment Assigned</span>
@@ -1333,29 +1643,19 @@ export default function OrdersTab() {
                           <div className="space-y-1">
                             <div className="flex items-center justify-between">
                               <label className="font-semibold text-gray-700">Courier Partner</label>
-                              {isThirdPartyAssigned && (
-                                <span className="text-[10px] text-amber-800 font-bold flex items-center gap-1">
-                                  <Lock size={10} /> Locked
-                                </span>
-                              )}
                             </div>
                             <select
-                              disabled={isThirdPartyAssigned}
                               value={modalCourierInput}
                               onChange={(e) => {
-                                if (isThirdPartyAssigned) return;
                                 const selected = e.target.value;
                                 setModalCourierInput(selected);
                                 if (!modalTrackingInput.trim()) {
                                   setModalTrackingInput(generateDynamicTrackingId(selected));
                                 }
                               }}
-                              className={`w-full px-3 py-2 rounded-xl border font-medium focus:outline-none ${
-                                isThirdPartyAssigned
-                                  ? 'bg-gray-100 text-gray-700 border-gray-300 cursor-not-allowed'
-                                  : 'bg-white border-gray-200 focus:border-teal-600'
-                              }`}
+                              className="w-full px-3 py-2 rounded-xl border font-medium focus:outline-none bg-white border-gray-200 focus:border-teal-600"
                             >
+                              <option value="Shiprocket">Shiprocket (Multi-Courier Aggregator)</option>
                               <option value="Delhivery">Delhivery Express</option>
                               <option value="BlueDart">BlueDart Air</option>
                               <option value="Ekart">Ekart Logistics</option>
@@ -1732,54 +2032,21 @@ export default function OrdersTab() {
                   }
                 });
 
-                const parseStateKeyFromText = (text) => {
-                  if (!text) return '';
-                  const str = String(text).toLowerCase();
-                  const states = [
-                    { key: 'uttarpradesh', aliases: ['uttar pradesh', 'uttarpradesh', 'up', 'noida', 'lucknow', 'kanpur', 'ghaziabad', 'agra', 'varanasi', 'prayagraj'] },
-                    { key: 'delhi', aliases: ['delhi', 'new delhi', 'nct of delhi', 'nct', 'dl'] },
-                    { key: 'maharashtra', aliases: ['maharashtra', 'mumbai', 'pune', 'nagpur', 'thane', 'mh'] },
-                    { key: 'karnataka', aliases: ['karnataka', 'bangalore', 'bengaluru', 'mysore', 'ka'] },
-                    { key: 'tamilnadu', aliases: ['tamil nadu', 'tamilnadu', 'chennai', 'coimbatore', 'tn'] },
-                    { key: 'haryana', aliases: ['haryana', 'gurugram', 'gurgaon', 'faridabad', 'hr'] },
-                    { key: 'rajasthan', aliases: ['rajasthan', 'jaipur', 'jodhpur', 'udaipur', 'rj'] },
-                    { key: 'westbengal', aliases: ['west bengal', 'westbengal', 'kolkata', 'wb'] },
-                    { key: 'gujarat', aliases: ['gujarat', 'ahmedabad', 'surat', 'vadodara', 'gj'] },
-                    { key: 'punjab', aliases: ['punjab', 'ludhiana', 'amritsar', 'pb'] },
-                    { key: 'madhyapradesh', aliases: ['madhya pradesh', 'madhyapradesh', 'bhopal', 'indore', 'mp'] },
-                    { key: 'bihar', aliases: ['bihar', 'patna', 'br'] },
-                    { key: 'telangana', aliases: ['telangana', 'hyderabad', 'tg', 'ts'] },
-                    { key: 'andhrapradesh', aliases: ['andhra pradesh', 'andhrapradesh', 'visakhapatnam', 'ap'] },
-                    { key: 'kerala', aliases: ['kerala', 'kochi', 'thiruvananthapuram', 'kl'] },
-                    { key: 'uttarakhand', aliases: ['uttarakhand', 'dehradun', 'uk'] }
-                  ];
-
-                  for (const st of states) {
-                    for (const alias of st.aliases) {
-                      if (new RegExp(`\\b${alias}\\b`, 'i').test(str)) {
-                        return st.key;
-                      }
-                    }
-                  }
-                  return str.trim();
-                };
-
-                const getDynamicState = (obj, fallbackText) => {
-                  if (obj && typeof obj === 'object') {
-                    if (obj.state && String(obj.state).trim()) return parseStateKeyFromText(obj.state);
-                    const combined = `${obj.street || ''} ${obj.addressLine || ''} ${obj.city || ''} ${obj.address || ''}`;
-                    if (combined.trim()) return parseStateKeyFromText(combined);
-                  }
-                  return parseStateKeyFromText(fallbackText || '');
-                };
-
                 const firstSellerObj = activeOrderModal.items?.[0]?.sellerId;
-                const sellerStateKey = getDynamicState(firstSellerObj, `${activeOrderModal.sellerState || ''} ${activeOrderModal.sellerCity || ''} ${activeOrderModal.sellerAddress || ''}`);
-                const customerStateKey = getDynamicState(activeOrderModal.shippingAddress, typeof activeOrderModal.shippingAddress === 'string' ? activeOrderModal.shippingAddress : '');
+                const sellerStateInfo = parseStateInfo(
+                  firstSellerObj,
+                  `${activeOrderModal.sellerState || ''} ${activeOrderModal.sellerCity || ''} ${activeOrderModal.sellerAddress || ''} ${activeOrderModal.sellerGst || ''}`
+                );
+                const customerStateInfo = parseStateInfo(
+                  activeOrderModal.shippingAddress,
+                  typeof activeOrderModal.shippingAddress === 'string'
+                    ? activeOrderModal.shippingAddress
+                    : `${activeOrderModal.shippingAddress?.street || ''} ${activeOrderModal.shippingAddress?.city || ''} ${activeOrderModal.shippingAddress?.state || ''} ${activeOrderModal.shippingAddress?.pincode || ''}`
+                );
 
-                const isSameState = !sellerStateKey || !customerStateKey || sellerStateKey === customerStateKey;
-                const sellerStateStr = (typeof firstSellerObj === 'object' ? firstSellerObj.state || firstSellerObj.city : '') || activeOrderModal.sellerState || sellerStateKey || 'Seller Location';
-                const customerStateStr = (typeof activeOrderModal.shippingAddress === 'object' ? activeOrderModal.shippingAddress?.state || activeOrderModal.shippingAddress?.city : '') || customerStateKey || 'Customer Location';
+                const isSameState = !sellerStateInfo.key || !customerStateInfo.key || sellerStateInfo.key === customerStateInfo.key;
+                const sellerStateStr = sellerStateInfo.name || 'Uttar Pradesh';
+                const customerStateStr = customerStateInfo.name || 'Uttar Pradesh';
 
                 return (
                   <div className="p-3.5 bg-teal-50/50 rounded-xl border border-teal-100 space-y-2 text-xs">
@@ -1844,68 +2111,113 @@ export default function OrdersTab() {
       {/* Ship & Dispatch Modal */}
       {isShipModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-xs space-y-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 text-xs space-y-4">
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
-              <Truck className="text-purple-700" size={20} /> Pack & Dispatch Order
+              <Truck className="text-purple-700" size={20} /> Pack & Dispatch Order #{shippingOrderId}
             </h4>
-            {(() => {
-              const shipTargetOrder = orders.find(o => String(o.id || o._id) === String(shippingOrderId));
-              const isShipTargetCourierLocked = Boolean(shipTargetOrder?.courierName && shipTargetOrder.courierName !== 'N/A');
-              return (
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="font-semibold text-gray-700">Courier Partner</label>
-                      {isShipTargetCourierLocked && (
-                        <span className="text-[10px] text-amber-800 font-bold flex items-center gap-1">
-                          <Lock size={10} /> Locked: {shipTargetOrder.courierName}
-                        </span>
-                      )}
-                    </div>
-                    <select
-                      disabled={isShipTargetCourierLocked}
-                      value={courierInput}
-                      onChange={(e) => {
-                        if (isShipTargetCourierLocked) return;
-                        const selected = e.target.value;
-                        setCourierInput(selected);
-                        setTrackingNumberInput(generateDynamicTrackingId(selected));
-                      }}
-                      className={`w-full px-3 py-2 rounded-xl border focus:outline-none ${
-                        isShipTargetCourierLocked
-                          ? 'bg-gray-100 text-gray-700 border-gray-300 cursor-not-allowed'
-                          : 'border-gray-200'
-                      }`}
-                    >
-                      <option value="Delhivery">Delhivery Express</option>
-                      <option value="BlueDart">BlueDart Air Premium</option>
-                      <option value="Ekart">Ekart Logistics</option>
-                      <option value="DTDC">DTDC Courier</option>
-                    </select>
-                  </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-gray-700">Tracking AWB Number</label>
-                  <button
-                    type="button"
-                    onClick={() => setTrackingNumberInput(generateDynamicTrackingId(courierInput))}
-                    className="text-[10px] text-teal-700 hover:text-teal-900 font-bold underline cursor-pointer"
-                  >
-                    ⚡ Generate Dynamic AWB
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  value={trackingNumberInput}
-                  onChange={(e) => setTrackingNumberInput(e.target.value)}
-                  placeholder="Not Assigned"
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono"
-                />
-              </div>
+            {/* Mode Selector Tabs */}
+            <div className="grid grid-cols-2 gap-2 bg-teal-100/60 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setShipModalDeliveryMode('third_party')}
+                className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                  shipModalDeliveryMode === 'third_party'
+                    ? 'bg-white text-teal-900 shadow-xs'
+                    : 'text-teal-800 hover:text-teal-950'
+                }`}
+              >
+                🚚 3rd-Party (Shiprocket)
+              </button>
+              <button
+                type="button"
+                onClick={() => setShipModalDeliveryMode('self_delivery')}
+                className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                  shipModalDeliveryMode === 'self_delivery'
+                    ? 'bg-white text-teal-900 shadow-xs'
+                    : 'text-teal-800 hover:text-teal-950'
+                }`}
+              >
+                🛵 Direct Self-Delivery
+              </button>
             </div>
-          );
-        })()}
+
+            {shipModalDeliveryMode === 'self_delivery' ? (
+              <div className="space-y-3 bg-teal-50/40 p-3 rounded-xl border border-teal-100">
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Driver / Rider Name *</label>
+                  <input
+                    type="text"
+                    value={shipModalDriverName}
+                    onChange={(e) => setShipModalDriverName(e.target.value)}
+                    placeholder="e.g. Ramesh Kumar"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Driver Phone Number *</label>
+                  <input
+                    type="text"
+                    value={shipModalDriverPhone}
+                    onChange={(e) => setShipModalDriverPhone(e.target.value)}
+                    placeholder="+91 98765 00000"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Vehicle Number *</label>
+                  <input
+                    type="text"
+                    value={shipModalVehicleNumber}
+                    onChange={(e) => setShipModalVehicleNumber(e.target.value)}
+                    placeholder="e.g. UP32 AB 1234"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-700">Courier Partner</label>
+                  <select
+                    value={courierInput}
+                    onChange={(e) => {
+                      const selected = e.target.value;
+                      setCourierInput(selected);
+                      setTrackingNumberInput(generateDynamicTrackingId(selected));
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white focus:outline-none"
+                  >
+                    <option value="Shiprocket">Shiprocket (Multi-Courier Aggregator)</option>
+                    <option value="Delhivery">Delhivery Express</option>
+                    <option value="BlueDart">BlueDart Air Premium</option>
+                    <option value="Ekart">Ekart Logistics</option>
+                    <option value="DTDC">DTDC Courier</option>
+                    <option value="IndiaPost">SpeedPost / India Post</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-gray-700">Tracking AWB Number</label>
+                    <button
+                      type="button"
+                      onClick={() => setTrackingNumberInput(generateDynamicTrackingId(courierInput))}
+                      className="text-[10px] text-teal-700 hover:text-teal-900 font-bold underline cursor-pointer"
+                    >
+                      ⚡ Generate Dynamic AWB
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={trackingNumberInput}
+                    onChange={(e) => setTrackingNumberInput(e.target.value)}
+                    placeholder="Not Assigned"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono bg-white"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2 pt-2">
               <button

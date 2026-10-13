@@ -45,7 +45,8 @@ import {
   fetchSellerSettingsApi,
   updateSellerSettingsApi,
   fetchSellerCustomersApi,
-  downloadSellerInvoiceApi
+  downloadSellerInvoiceApi,
+  SERVER_URL
 } from '../utils/api';
 
 export const APPROVED_SELLER_ROLES = [
@@ -500,28 +501,104 @@ export const SellerDataProvider = ({ children }) => {
   // 10. Settings State (Resolves active store settings)
   const [settings, setSettings] = useState(() => readActiveSellerSettings());
 
-  // Listen to active user changes / tab focus / status updates to keep seller user in sync
+  const isProfileSyncingRef = useRef(false);
+  const isOrderSyncingRef = useRef(false);
+
+  // Listen to active user changes / tab focus / status updates to keep seller user in sync with backend
   useEffect(() => {
-    const handleActiveUserChange = () => {
+    const handleActiveUserChange = (isPeriodic = false) => {
+      if (isPeriodic && typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+      if (isProfileSyncingRef.current) return;
+      isProfileSyncingRef.current = true;
+
       const activeUser = readActiveSellerProfile();
       const activeSettings = readActiveSellerSettings();
       setSellerUser(activeUser);
       setSettings(activeSettings);
-      try {
-        localStorage.setItem('seller_user_profile', JSON.stringify(activeUser));
-        localStorage.setItem('seller_settings', JSON.stringify(activeSettings));
-      } catch (e) {}
+
+      // Automatically re-fetch latest profile & status from backend on tab focus or change
+      Promise.allSettled([fetchSellerProfileApi(), fetchSellerStatusApi(), fetchSellerWalletApi()]).then(([pRes, sRes, wRes]) => {
+        let updatedComm = undefined;
+        let updatedStatus = undefined;
+
+        if (pRes.status === 'fulfilled' && pRes.value) {
+          const val = pRes.value;
+          if (val.commissionRate !== undefined && !isNaN(Number(val.commissionRate))) {
+            updatedComm = Number(val.commissionRate);
+          } else if (val.commissionPercentage !== undefined && !isNaN(Number(val.commissionPercentage))) {
+            updatedComm = Number(val.commissionPercentage);
+          }
+          if (val.status || val.approvalStatus) updatedStatus = val.status || val.approvalStatus;
+        }
+
+        if (sRes.status === 'fulfilled' && sRes.value) {
+          const sVal = sRes.value;
+          if (updatedComm === undefined && (sVal.commissionRate !== undefined || sVal.commissionPercentage !== undefined)) {
+            updatedComm = Number(sVal.commissionRate ?? sVal.commissionPercentage);
+          }
+          if (!updatedStatus && (sVal.status || sVal.approvalStatus || sVal.sellerStatus)) {
+            updatedStatus = sVal.status || sVal.approvalStatus || sVal.sellerStatus;
+          }
+        }
+
+        if (wRes.status === 'fulfilled' && wRes.value) {
+          setFinance(wRes.value);
+          const wComm = wRes.value.wallet?.commissionRate ?? wRes.value.wallet?.commissionPercentage ?? wRes.value.commissionRate ?? wRes.value.commissionPercentage;
+          if (updatedComm === undefined && wComm !== undefined && !isNaN(Number(wComm))) updatedComm = Number(wComm);
+        }
+
+        if (updatedComm !== undefined || updatedStatus !== undefined) {
+          setSellerUser(prev => {
+            const next = { 
+              ...prev, 
+              ...(updatedComm !== undefined ? { commissionRate: updatedComm, commissionPercentage: updatedComm } : {}),
+              ...(updatedStatus !== undefined ? { status: updatedStatus, approvalStatus: updatedStatus } : {})
+            };
+            try {
+              localStorage.setItem('seller_user_profile', JSON.stringify(next));
+              const regRaw = localStorage.getItem('bv_seller_reg_data');
+              if (regRaw) {
+                const regParsed = JSON.parse(regRaw);
+                if (updatedComm !== undefined) {
+                  regParsed.commissionRate = updatedComm;
+                  regParsed.commissionPercentage = updatedComm;
+                }
+                if (updatedStatus !== undefined) regParsed.status = updatedStatus;
+                localStorage.setItem('bv_seller_reg_data', JSON.stringify(regParsed));
+              }
+            } catch (e) {}
+            return next;
+          });
+          if (updatedStatus) {
+            setSellerStatus(updatedStatus);
+            localStorage.setItem('bv_seller_status', updatedStatus);
+          }
+        }
+      }).catch(() => {}).finally(() => {
+        isProfileSyncingRef.current = false;
+      });
     };
 
-    handleActiveUserChange();
-    window.addEventListener('storage', handleActiveUserChange);
-    window.addEventListener('focus', handleActiveUserChange);
-    window.addEventListener('bv_seller_status_updated', handleActiveUserChange);
+    handleActiveUserChange(false);
+    const storageHandler = (e) => {
+      if (e.key === 'seller_token' || e.key === 'bv_seller_token' || e.key === 'bv_active_seller') {
+        handleActiveUserChange(false);
+      }
+    };
+    window.addEventListener('storage', storageHandler);
+    const onFocus = () => handleActiveUserChange(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('bv_seller_status_updated', onFocus);
+
+    const interval = setInterval(() => handleActiveUserChange(true), 45000);
 
     return () => {
-      window.removeEventListener('storage', handleActiveUserChange);
-      window.removeEventListener('focus', handleActiveUserChange);
-      window.removeEventListener('bv_seller_status_updated', handleActiveUserChange);
+      window.removeEventListener('storage', storageHandler);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('bv_seller_status_updated', onFocus);
+      clearInterval(interval);
     };
   }, []);
 
@@ -581,11 +658,20 @@ export const SellerDataProvider = ({ children }) => {
 
   // Real-time synchronization of orders for seller panel
   useEffect(() => {
-    const handleOrderSync = () => {
+    let sseSource = null;
+    let reconnectTimeout = null;
+
+    const handleOrderSync = (isPeriodic = false) => {
       if (!isAuthenticated) return;
-      fetchSellerOrdersApi().then(ordersList => {
-        if (Array.isArray(ordersList)) {
-          const freshNormalized = normalizeOrderList(ordersList);
+      if (isPeriodic && typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+      if (isOrderSyncingRef.current) return;
+      isOrderSyncingRef.current = true;
+
+      Promise.allSettled([fetchSellerOrdersApi(), fetchSchoolOrdersApi()]).then(([sellerRes, schoolRes]) => {
+        if (sellerRes.status === 'fulfilled' && Array.isArray(sellerRes.value)) {
+          const freshNormalized = normalizeOrderList(sellerRes.value);
           setOrders(prev => {
             const prevMap = new Map();
             prev.forEach(p => {
@@ -623,35 +709,89 @@ export const SellerDataProvider = ({ children }) => {
             return merged;
           });
         }
-      }).catch(() => {});
 
-      fetchSchoolOrdersApi().then(schoolList => {
-        if (Array.isArray(schoolList)) {
+        if (schoolRes.status === 'fulfilled' && Array.isArray(schoolRes.value)) {
+          const schoolList = schoolRes.value;
           setSchoolOrders(schoolList);
           try {
             localStorage.setItem('bv_sync_school_orders', JSON.stringify(schoolList));
           } catch (e) {}
         }
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => {
+        isOrderSyncingRef.current = false;
+      });
     };
 
-    handleOrderSync();
+    handleOrderSync(false);
 
-    window.addEventListener('bv_orders_updated', handleOrderSync);
-    window.addEventListener('bv_school_orders_updated', handleOrderSync);
-    window.addEventListener('focus', handleOrderSync);
+    // 1. Establish Real-Time SSE connection to backend
+    const connectSSE = () => {
+      if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
+      try {
+        const rawServer = SERVER_URL || 'http://localhost:5000/api';
+        const streamUrl = `${rawServer.replace(/\/+$/, '')}/realtime/stream`;
+        sseSource = new EventSource(streamUrl);
+
+        sseSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data && (data.type === 'ORDER_CREATED' || data.type === 'ORDER_UPDATED' || data.type === 'SCHOOL_ORDER_UPDATED')) {
+              handleOrderSync(false);
+            }
+          } catch (e) {}
+        };
+
+        sseSource.onerror = () => {
+          if (sseSource) {
+            sseSource.close();
+            sseSource = null;
+          }
+          reconnectTimeout = setTimeout(() => {
+            if (isAuthenticated) connectSSE();
+          }, 5000);
+        };
+      } catch (err) {}
+    };
+
+    if (isAuthenticated) {
+      connectSSE();
+    }
+
+    // 2. High-Responsiveness Event Listeners
+    const onOrderEvent = () => handleOrderSync(false);
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        handleOrderSync(false);
+      }
+    };
+
+    window.addEventListener('bv_orders_updated', onOrderEvent);
+    window.addEventListener('bv_school_orders_updated', onOrderEvent);
+    window.addEventListener('focus', onOrderEvent);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     const storageHandler = (e) => {
-      if (e.key === 'bv_order_sync_timestamp' || e.key === 'admin_orders' || e.key === 'bv_seller_orders' || e.key === 'bv_sync_school_orders') {
-        handleOrderSync();
+      if (e.key === 'bv_order_sync_timestamp') {
+        handleOrderSync(false);
       }
     };
     window.addEventListener('storage', storageHandler);
 
-    const pollInterval = setInterval(handleOrderSync, 5000);
+    // 3. Fast polling fallback every 4 seconds
+    const pollInterval = setInterval(() => handleOrderSync(true), 4000);
 
     return () => {
-      window.removeEventListener('bv_orders_updated', handleOrderSync);
-      window.removeEventListener('focus', handleOrderSync);
+      if (sseSource) {
+        sseSource.close();
+        sseSource = null;
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      window.removeEventListener('bv_orders_updated', onOrderEvent);
+      window.removeEventListener('bv_school_orders_updated', onOrderEvent);
+      window.removeEventListener('focus', onOrderEvent);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('storage', storageHandler);
       clearInterval(pollInterval);
     };
@@ -701,6 +841,7 @@ export const SellerDataProvider = ({ children }) => {
         if (statusRes.status === 'fulfilled' && (statusRes.value?.status || statusRes.value?.approvalStatus || statusRes.value?.sellerStatus)) {
           const backendStatus = statusRes.value.status || statusRes.value.approvalStatus || statusRes.value.sellerStatus;
           const backendReason = statusRes.value.rejectionReason || statusRes.value.reason || statusRes.value.message || '';
+          const backendComm = statusRes.value.commissionRate ?? statusRes.value.commissionPercentage;
           setSellerStatus(backendStatus);
           localStorage.setItem('bv_seller_status', backendStatus);
           setSellerUser(prev => {
@@ -709,22 +850,27 @@ export const SellerDataProvider = ({ children }) => {
               status: backendStatus, 
               approvalStatus: backendStatus, 
               submissionStatus: backendStatus,
-              rejectionReason: backendReason || prev?.rejectionReason || ''
+              rejectionReason: backendReason || prev?.rejectionReason || '',
+              ...(backendComm !== undefined && !isNaN(Number(backendComm)) ? { commissionRate: Number(backendComm), commissionPercentage: Number(backendComm) } : {})
             };
-            try { localStorage.setItem('seller_user_profile', JSON.stringify(updated)); } catch (e) {}
+            try { 
+              localStorage.setItem('seller_user_profile', JSON.stringify(updated)); 
+              const regData = localStorage.getItem('bv_seller_reg_data');
+              if (regData) {
+                const parsed = JSON.parse(regData);
+                parsed.status = backendStatus;
+                parsed.submissionStatus = backendStatus;
+                parsed.approvalStatus = backendStatus;
+                if (backendReason) parsed.rejectionReason = backendReason;
+                if (backendComm !== undefined) {
+                  parsed.commissionRate = Number(backendComm);
+                  parsed.commissionPercentage = Number(backendComm);
+                }
+                localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
+              }
+            } catch (e) {}
             return updated;
           });
-          try {
-            const regData = localStorage.getItem('bv_seller_reg_data');
-            if (regData) {
-              const parsed = JSON.parse(regData);
-              parsed.status = backendStatus;
-              parsed.submissionStatus = backendStatus;
-              parsed.approvalStatus = backendStatus;
-              if (backendReason) parsed.rejectionReason = backendReason;
-              localStorage.setItem('bv_seller_reg_data', JSON.stringify(parsed));
-            }
-          } catch (e) {}
         }
 
         if (productsRes.status === 'fulfilled' && Array.isArray(productsRes.value)) {
@@ -818,6 +964,24 @@ export const SellerDataProvider = ({ children }) => {
 
         if (walletRes.status === 'fulfilled' && walletRes.value) {
           setFinance(walletRes.value);
+          const walletComm = walletRes.value.wallet?.commissionRate ?? walletRes.value.wallet?.commissionPercentage ?? walletRes.value.commissionRate ?? walletRes.value.commissionPercentage;
+          if (walletComm !== undefined && !isNaN(Number(walletComm))) {
+            const numComm = Number(walletComm);
+            setSellerUser(prev => {
+              const updated = { ...prev, commissionRate: numComm, commissionPercentage: numComm };
+              try { 
+                localStorage.setItem('seller_user_profile', JSON.stringify(updated));
+                const savedReg = localStorage.getItem('bv_seller_reg_data');
+                if (savedReg) {
+                  const regObj = JSON.parse(savedReg);
+                  regObj.commissionRate = numComm;
+                  regObj.commissionPercentage = numComm;
+                  localStorage.setItem('bv_seller_reg_data', JSON.stringify(regObj));
+                }
+              } catch (e) {}
+              return updated;
+            });
+          }
         }
 
         if (reviewsRes.status === 'fulfilled' && Array.isArray(reviewsRes.value)) {
@@ -870,6 +1034,12 @@ export const SellerDataProvider = ({ children }) => {
             accountType: val.bankDetails?.accountType || val.accountType,
             storeTagline: val.storeDetails?.storeTagline || val.storeTagline,
             storeDescription: val.storeDescription || val.storeDetails?.storeDescription,
+            commissionRate: (val.commissionRate !== undefined && val.commissionRate !== null && !isNaN(Number(val.commissionRate))) 
+              ? Number(val.commissionRate) 
+              : ((val.commissionPercentage !== undefined && val.commissionPercentage !== null && !isNaN(Number(val.commissionPercentage))) ? Number(val.commissionPercentage) : undefined),
+            commissionPercentage: (val.commissionPercentage !== undefined && val.commissionPercentage !== null && !isNaN(Number(val.commissionPercentage))) 
+              ? Number(val.commissionPercentage) 
+              : ((val.commissionRate !== undefined && val.commissionRate !== null && !isNaN(Number(val.commissionRate))) ? Number(val.commissionRate) : undefined),
             avatar: val.avatar || val.profilePhoto,
             documents: val.documents || {}
           };
@@ -884,6 +1054,10 @@ export const SellerDataProvider = ({ children }) => {
               localStorage.setItem('seller_user_profile', JSON.stringify(updated));
               const savedReg = localStorage.getItem('bv_seller_reg_data');
               const regObj = savedReg ? JSON.parse(savedReg) : {};
+              if (normalizedProfile.commissionRate !== undefined) {
+                regObj.commissionRate = normalizedProfile.commissionRate;
+                regObj.commissionPercentage = normalizedProfile.commissionRate;
+              }
               localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...regObj, ...normalizedProfile }));
             } catch (e) {}
             return updated;

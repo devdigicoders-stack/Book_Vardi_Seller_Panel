@@ -24,6 +24,173 @@ export function getProductGstRate(item) {
   return 5;
 }
 
+export const GST_STATE_CODES = {
+  '01': 'jammu_kashmir', '02': 'himachal_pradesh', '03': 'punjab', '04': 'chandigarh',
+  '05': 'uttarakhand', '06': 'haryana', '07': 'delhi', '08': 'rajasthan',
+  '09': 'uttar_pradesh', '10': 'bihar', '11': 'sikkim', '12': 'arunachal_pradesh',
+  '13': 'manipur', '14': 'nagaland', '15': 'mizoram', '16': 'tripura',
+  '17': 'meghalaya', '18': 'assam', '19': 'west_bengal', '20': 'jharkhand',
+  '21': 'odisha', '22': 'chhattisgarh', '23': 'madhya_pradesh', '24': 'gujarat',
+  '27': 'maharashtra', '29': 'karnataka', '30': 'goa', '32': 'kerala',
+  '33': 'tamil_nadu', '36': 'telangana', '37': 'andhra_pradesh'
+};
+
+export const PINCODE_PREFIX_MAP = [
+  { regex: /^(20|21|22|23|24[0-7]|25|26[12]|27|28)/, key: 'uttar_pradesh', name: 'Uttar Pradesh' },
+  { regex: /^(24[89]|26[3-9])/, key: 'uttarakhand', name: 'Uttarakhand' },
+  { regex: /^11/, key: 'delhi', name: 'Delhi' },
+  { regex: /^(12|13)/, key: 'haryana', name: 'Haryana' },
+  { regex: /^(14|15|16)/, key: 'punjab', name: 'Punjab' },
+  { regex: /^3[0-4]/, key: 'rajasthan', name: 'Rajasthan' },
+  { regex: /^3[6-9]/, key: 'gujarat', name: 'Gujarat' },
+  { regex: /^4[0-4]/, key: 'maharashtra', name: 'Maharashtra' },
+  { regex: /^4[5-9]/, key: 'madhya_pradesh', name: 'Madhya Pradesh' },
+  { regex: /^5[0-3]/, key: 'telangana', name: 'Telangana' },
+  { regex: /^5[6-9]/, key: 'karnataka', name: 'Karnataka' },
+  { regex: /^6[0-4]/, key: 'tamil_nadu', name: 'Tamil Nadu' },
+  { regex: /^6[7-9]/, key: 'kerala', name: 'Kerala' },
+  { regex: /^7[0-4]/, key: 'west_bengal', name: 'West Bengal' },
+  { regex: /^8[0-5]/, key: 'bihar', name: 'Bihar' }
+];
+
+export const INDIAN_STATES = [
+  {
+    key: 'uttar_pradesh',
+    name: 'Uttar Pradesh',
+    aliases: [
+      'uttar pradesh', 'uttarpradesh', 'utter pradesh', 'utterpradesh', 'uttarpardesh', 'uttar pardesh', 'uttar prdesh', 'uttarprdesh', 'u.p.', 'u.p', 'up', 'u p',
+      'lucknow', 'kanpur', 'varanasi', 'mirzapur', 'behat', 'saharanpur', 'noida', 'greater noida', 'ghaziabad', 'agra', 'prayagraj', 'allahabad', 'gorakhpur', 'meerut', 'bareilly', 'aligarh', 'moradabad', 'jhansi', 'ayodhya', 'faizabad', 'azamgarh', 'muzaffarnagar', 'mathura', 'firozabad', 'bulandshahr', 'sambhal', 'amroha', 'hardoi', 'fatehpur', 'raebareli', 'sitapur', 'bahraich', 'gonda', 'basti', 'deoria', 'ballia', 'jaunpur', 'ghazipur', 'chandauli', 'bhadohi', 'sonbhadra', 'unnao', 'lakhimpur', 'pilibhit', 'shahjahanpur', 'budaun', 'rampur', 'bijnor', 'shamli', 'baghpat', 'hapur', 'kasganj', 'hathras', 'etah', 'mainpuri', 'etawah', 'auraiya', 'kannauj', 'farrukhabad', 'kanpur dehat', 'jalaun', 'hamirpur', 'mahoba', 'banda', 'chitrakoot', 'kaushambi', 'pratapgarh', 'amethi', 'sultanpur', 'barabanki', 'shravasti', 'balrampur', 'siddharthnagar', 'sant kabir nagar', 'maharajganj', 'kushinagar', 'mau', 'lalitpur'
+    ]
+  },
+  {
+    key: 'maharashtra',
+    name: 'Maharashtra',
+    aliases: [
+      'maharashtra', 'maharastra', 'maharashtr', 'maharastr', 'maha rashtra', 'maha rastra', 'maharasthra', 'maharashtra state', 'm.h.', 'mh', 'm h',
+      'mumbai', 'bombay', 'pune', 'nagpur', 'thane', 'navi mumbai', 'nashik', 'aurangabad', 'chhatrapati sambhaji nagar', 'solapur', 'kolhapur', 'amravati', 'nanded', 'jalgaon', 'akola', 'latur', 'dhule', 'ahmednagar', 'chandrapur', 'parbhani', 'panvel', 'kalyan', 'dombivli', 'vasai', 'virar', 'mira bhayandar', 'ulhasnagar', 'satara'
+    ]
+  },
+  { key: 'delhi', name: 'Delhi', aliases: ['delhi', 'new delhi', 'nct of delhi', 'nct', 'dl', 'newdelhi', 'd.l.'] },
+  { key: 'uttarakhand', name: 'Uttarakhand', aliases: ['uttarakhand', 'uttaranchal', 'dehradun', 'haridwar', 'roorkee', 'rishikesh', 'nainital', 'haldwani', 'uk', 'u.k.'] },
+  { key: 'karnataka', name: 'Karnataka', aliases: ['karnataka', 'karnatka', 'karnatak', 'bangalore', 'bengaluru', 'mysore', 'mysuru', 'ka', 'k.a.', 'hubli', 'mangalore', 'mangaluru'] },
+  { key: 'tamil_nadu', name: 'Tamil Nadu', aliases: ['tamil nadu', 'tamilnadu', 'tamil nad', 'chennai', 'madras', 'coimbatore', 'madurai', 'tn', 't.n.'] },
+  { key: 'haryana', name: 'Haryana', aliases: ['haryana', 'hariyana', 'gurugram', 'gurgaon', 'faridabad', 'panipat', 'ambala', 'hr', 'h.r.'] },
+  { key: 'rajasthan', name: 'Rajasthan', aliases: ['rajasthan', 'rajisthan', 'rajashtan', 'jaipur', 'jodhpur', 'udaipur', 'kota', 'bikaner', 'rj', 'r.j.'] },
+  { key: 'west_bengal', name: 'West Bengal', aliases: ['west bengal', 'westbengal', 'paschim banga', 'kolkata', 'calcutta', 'howrah', 'siliguri', 'wb', 'w.b.'] },
+  { key: 'gujarat', name: 'Gujarat', aliases: ['gujarat', 'gujrat', 'gujarath', 'ahmedabad', 'amdavad', 'surat', 'vadodara', 'baroda', 'rajkot', 'gj', 'g.j.'] },
+  { key: 'punjab', name: 'Punjab', aliases: ['punjab', 'panjab', 'ludhiana', 'amritsar', 'jalandhar', 'pb', 'p.b.'] },
+  { key: 'madhya_pradesh', name: 'Madhya Pradesh', aliases: ['madhya pradesh', 'madhyapradesh', 'madhya pardesh', 'bhopal', 'indore', 'gwalior', 'jabalpur', 'mp', 'm.p.'] },
+  { key: 'bihar', name: 'Bihar', aliases: ['bihar', 'patna', 'gaya', 'bhagalpur', 'muzaffarpur', 'br', 'b.r.'] },
+  { key: 'telangana', name: 'Telangana', aliases: ['telangana', 'telengana', 'hyderabad', 'secunderabad', 'warangal', 'tg', 'ts'] },
+  { key: 'andhra_pradesh', name: 'Andhra Pradesh', aliases: ['andhra pradesh', 'andhrapradesh', 'visakhapatnam', 'vizag', 'vijayawada', 'guntur', 'ap', 'a.p.'] },
+  { key: 'kerala', name: 'Kerala', aliases: ['kerala', 'keralam', 'kochi', 'cochin', 'thiruvananthapuram', 'trivandrum', 'kozhikode', 'kl', 'k.l.'] },
+  { key: 'assam', name: 'Assam', aliases: ['assam', 'asom', 'guwahati', 'as'] },
+  { key: 'jharkhand', name: 'Jharkhand', aliases: ['jharkhand', 'jharkand', 'ranchi', 'jamshedpur', 'dhanbad', 'jh'] },
+  { key: 'odisha', name: 'Odisha', aliases: ['odisha', 'orissa', 'bhubaneswar', 'cuttack', 'od', 'or'] },
+  { key: 'chhattisgarh', name: 'Chhattisgarh', aliases: ['chhattisgarh', 'chhatisgarh', 'chattisgarh', 'raipur', 'bilaspur', 'cg'] },
+  { key: 'himachal_pradesh', name: 'Himachal Pradesh', aliases: ['himachal pradesh', 'himachal', 'shimla', 'dharamshala', 'hp'] },
+  { key: 'jammu_kashmir', name: 'Jammu & Kashmir', aliases: ['jammu & kashmir', 'jammu and kashmir', 'jammu', 'kashmir', 'srinagar', 'jk'] },
+  { key: 'goa', name: 'Goa', aliases: ['goa', 'panaji', 'panjim', 'margao', 'ga'] }
+];
+
+export function matchStateByText(inputStr) {
+  if (!inputStr || typeof inputStr !== 'string') return null;
+  const clean = inputStr.trim().toLowerCase();
+  if (!clean) return null;
+
+  for (const st of INDIAN_STATES) {
+    for (const alias of st.aliases) {
+      const regex = new RegExp(`(^|[^a-z0-9])${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
+      if (regex.test(clean)) {
+        return { key: st.key, name: st.name };
+      }
+    }
+  }
+  return null;
+}
+
+export function parseStateInfo(sourceObj, fallbackString = '') {
+  // 1. FIRST PRIORITY: Explicit declared State Field (Place of Supply authoritative field)
+  const explicitState = String(
+    sourceObj?.state ||
+    sourceObj?.province ||
+    sourceObj?.stateName ||
+    sourceObj?.shippingAddress?.state ||
+    ''
+  ).trim();
+
+  if (explicitState) {
+    const matched = matchStateByText(explicitState);
+    if (matched) return matched;
+  }
+
+  // 2. SECOND PRIORITY: Explicit declared City Field
+  const explicitCity = String(
+    sourceObj?.city ||
+    sourceObj?.district ||
+    sourceObj?.cityName ||
+    sourceObj?.shippingAddress?.city ||
+    ''
+  ).trim();
+
+  if (explicitCity) {
+    const matched = matchStateByText(explicitCity);
+    if (matched) return matched;
+  }
+
+  // 3. THIRD PRIORITY: Address text scan (Combined address lines, street, landmark)
+  let addressText = '';
+  if (sourceObj && typeof sourceObj === 'object') {
+    addressText = [
+      sourceObj.state,
+      sourceObj.city,
+      sourceObj.addressLine,
+      sourceObj.addressLine1,
+      sourceObj.street,
+      sourceObj.address,
+      sourceObj.colony,
+      sourceObj.landmark,
+      fallbackString
+    ].filter(Boolean).join(' ');
+  } else if (typeof sourceObj === 'string') {
+    addressText = `${sourceObj} ${fallbackString}`;
+  } else if (fallbackString) {
+    addressText = String(fallbackString);
+  }
+
+  if (addressText.trim()) {
+    const matched = matchStateByText(addressText);
+    if (matched) return matched;
+  }
+
+  // 4. FOURTH PRIORITY: GSTIN Prefix (2-digit state code)
+  const rawGst = String(
+    sourceObj?.gstNumber || sourceObj?.gstin || sourceObj?.gst || ''
+  ).trim();
+  if (rawGst.length >= 2 && /^\d{2}/.test(rawGst)) {
+    const code = rawGst.slice(0, 2);
+    if (GST_STATE_CODES[code]) {
+      const found = INDIAN_STATES.find(s => s.key === GST_STATE_CODES[code]);
+      if (found) return { key: found.key, name: found.name };
+    }
+  }
+
+  // 5. FIFTH PRIORITY: 6-Digit Pincode (Fallback if State & City text was not provided)
+  const explicitPin = String(sourceObj?.pincode || sourceObj?.pin || sourceObj?.postalCode || '').trim();
+  const isolatedPinMatch = explicitPin.match(/\b([1-9]\d{5})\b/) || String(addressText || '').match(/\b([1-9]\d{5})\b/);
+  const sixPin = isolatedPinMatch ? isolatedPinMatch[1] : (explicitPin.replace(/\D/g, '').length >= 6 ? explicitPin.replace(/\D/g, '').slice(0, 6) : '');
+  if (sixPin) {
+    for (const p of PINCODE_PREFIX_MAP) {
+      if (p.regex.test(sixPin)) {
+        return { key: p.key, name: p.name };
+      }
+    }
+  }
+
+  // 6. DEFAULT FALLBACK: Uttar Pradesh
+  return { key: 'uttar_pradesh', name: 'Uttar Pradesh' };
+}
+
 export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: passedSellerUser }) {
   if (!isOpen || !order) return null;
 
@@ -396,25 +563,50 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       activeSellerUser?.city,
       activeSettings?.city
     ].find(Boolean) || 'Lucknow, Uttar Pradesh';
+
+    const primaryState = [
+      order.sellerDetails?.state,
+      order.sellerState,
+      items[0]?.sellerDetails?.state,
+      items[0]?.sellerState,
+      activeSellerUser?.state,
+      activeSettings?.state
+    ].find(Boolean) || 'Uttar Pradesh';
     
     return {
       storeName: primaryName || 'Partner Store',
       gstNumber: primaryGst,
-      city: primaryCity
+      city: primaryCity,
+      state: primaryState
     };
   };
 
   const resolvedSeller = resolveSeller();
 
+  // Dynamic Intra-State vs Inter-State detection
+  const sellerStateInfo = parseStateInfo(resolvedSeller, `${resolvedSeller.city} ${resolvedSeller.state}`);
+  const customerStateInfo = parseStateInfo(shippingAddr, `${formattedAddressStr} ${shippingAddr?.state || ''}`);
+  const isIntraState = !sellerStateInfo.key || !customerStateInfo.key || (sellerStateInfo.key === customerStateInfo.key);
+
+  // Dynamic CGST + SGST vs IGST Split on total order tax
+  const cgstAmount = isIntraState ? Math.round((taxAmount / 2) * 100) / 100 : 0;
+  const sgstAmount = isIntraState ? Math.round((taxAmount - cgstAmount) * 100) / 100 : 0;
+  const igstAmount = !isIntraState ? taxAmount : 0;
+
   // Helper to resolve dynamic seller commission rate
   const getSellerCommissionRate = () => {
+    // 1. Order-level saved commission
     if (order.commissionRate !== undefined && order.commissionRate !== null && !isNaN(Number(order.commissionRate))) {
       return Number(order.commissionRate);
     }
     if (order.sellerCommissionRate !== undefined && order.sellerCommissionRate !== null && !isNaN(Number(order.sellerCommissionRate))) {
       return Number(order.sellerCommissionRate);
     }
+    if (order.commissionPercentage !== undefined && order.commissionPercentage !== null && !isNaN(Number(order.commissionPercentage))) {
+      return Number(order.commissionPercentage);
+    }
 
+    // 2. Item-level saved commission
     const firstItem = items[0];
     if (firstItem?.commissionRate !== undefined && firstItem.commissionRate !== null && !isNaN(Number(firstItem.commissionRate))) {
       return Number(firstItem.commissionRate);
@@ -426,7 +618,31 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       return Number(firstItem.commissionPercentage);
     }
 
-    const targetSellerId = String(firstItem?.sellerId || order.sellerId || '');
+    // 3. Embedded seller details on order
+    if (order.sellerDetails?.commissionRate !== undefined && order.sellerDetails.commissionRate !== null && !isNaN(Number(order.sellerDetails.commissionRate))) {
+      return Number(order.sellerDetails.commissionRate);
+    }
+    if (order.sellerDetails?.commissionPercentage !== undefined && order.sellerDetails.commissionPercentage !== null && !isNaN(Number(order.sellerDetails.commissionPercentage))) {
+      return Number(order.sellerDetails.commissionPercentage);
+    }
+
+    // 4. Active seller profile in Seller Panel
+    try {
+      const activeSellerKeys = ['seller_user_profile', 'bv_seller_user', 'bv_seller_profile', 'bv_seller_reg_data'];
+      for (const k of activeSellerKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const s = JSON.parse(raw);
+          const rate = s.commissionRate ?? s.commissionPercentage;
+          if (rate !== undefined && rate !== null && !isNaN(Number(rate))) {
+            return Number(rate);
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 5. Admin / Synced Sellers Registry
+    const targetSellerId = String(firstItem?.sellerId?._id || firstItem?.sellerId || order.sellerId?._id || order.sellerId || '');
     const targetSellerName = String(getItemSellerName(firstItem) || '').toLowerCase();
 
     try {
@@ -450,12 +666,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       }
     } catch (e) {}
 
+    // 6. Platform Global Settings
     try {
-      const savedSettings = localStorage.getItem('admin_settings');
+      const savedSettings = localStorage.getItem('admin_settings') || localStorage.getItem('platform_settings');
       if (savedSettings) {
         const settings = JSON.parse(savedSettings);
-        if (settings?.commissionRate !== undefined && !isNaN(Number(settings.commissionRate))) {
-          return Number(settings.commissionRate);
+        const setRate = settings?.defaultCommissionRate ?? settings?.commissionRate;
+        if (setRate !== undefined && !isNaN(Number(setRate))) {
+          return Number(setRate);
         }
       }
     } catch (e) {}
@@ -666,19 +884,28 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
               </div>
             </div>
 
-            <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200 space-y-1.5 text-[11px]">
-              <div className="flex justify-between text-gray-600">
-                <span>Taxable Amount (Base):</span>
-                <span className="font-mono">₹{(grandTotal - taxAmount).toFixed(2)}</span>
+            <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200 space-y-2 text-[11px]">
+              <div className="flex items-center justify-between border-b border-gray-200 pb-1">
+                <span className="font-extrabold text-[10px] text-gray-700 uppercase tracking-wider">
+                  Price & Tax Breakdown
+                </span>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                  isIntraState 
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                }`}>
+                  {isIntraState ? `Intra-State (${customerStateInfo.name})` : `Inter-State (${sellerStateInfo.name} ➔ ${customerStateInfo.name})`}
+                </span>
               </div>
+
               <div className="flex justify-between text-gray-600">
-                <span>GST Tax (Included):</span>
-                <span className="font-mono font-bold text-brand-teal">₹{taxAmount.toFixed(2)}</span>
+                <span>Items Subtotal:</span>
+                <span className="font-mono font-semibold text-gray-900">₹{Number(subtotal).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Delivery Charges:</span>
                 <span className="font-mono text-emerald-700 font-semibold">
-                  {Number(order.shippingFee || order.shippingCost || 0) === 0 ? 'Not Applied (FREE)' : `₹${Number(order.shippingFee || order.shippingCost).toFixed(2)}`}
+                  {shippingCost === 0 ? 'FREE' : `₹${shippingCost.toFixed(2)}`}
                 </span>
               </div>
               {Number(order.discount || order.discountAmount || 0) > 0 ? (
@@ -692,6 +919,37 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <span className="font-mono">Not Applied (₹0.00)</span>
                 </div>
               )}
+
+              <div className="bg-white rounded-lg p-2.5 border border-gray-200 space-y-1">
+                <div className="flex justify-between text-gray-600">
+                  <span>Taxable Value (Base Price):</span>
+                  <span className="font-mono font-bold text-gray-900">₹{(grandTotal - taxAmount).toFixed(2)}</span>
+                </div>
+
+                {isIntraState ? (
+                  <>
+                    <div className="flex justify-between text-gray-600">
+                      <span>CGST (Central Tax 50%):</span>
+                      <span className="font-mono font-semibold text-brand-teal">₹{cgstAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>SGST / UTGST (State Tax 50%):</span>
+                      <span className="font-mono font-semibold text-brand-teal">₹{sgstAmount.toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between text-gray-600">
+                    <span>IGST (Integrated Tax 100%):</span>
+                    <span className="font-mono font-semibold text-brand-teal">₹{igstAmount.toFixed(2)}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-gray-900 pt-1 border-t border-gray-100 font-bold">
+                  <span>Total GST Tax (Included):</span>
+                  <span className="font-mono text-brand-teal font-extrabold">₹{taxAmount.toFixed(2)}</span>
+                </div>
+              </div>
+
               <div className="border-t-2 border-gray-300 pt-1.5 flex justify-between items-center text-xs font-black text-gray-900">
                 <div>
                   <span className="block">Grand Total:</span>
