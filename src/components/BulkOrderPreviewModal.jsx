@@ -28,12 +28,74 @@ import {
   Printer,
   Percent,
   SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  Download,
   XCircle
 } from 'lucide-react';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import PartialAdvanceReceiptModal from './PartialAdvanceReceiptModal';
 import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
 import NegotiationTimelineDiv from './NegotiationTimelineDiv';
+
+// Robust helper to extract and normalize all sample photos from line item & order data
+export const extractSampleImages = (item, order = null) => {
+  if (!item && !order) return [];
+  const found = [];
+
+  const addImage = (val) => {
+    if (!val) return;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === 'None') return;
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          addImage(parsed);
+          return;
+        } catch {}
+      }
+      if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('data:') && !trimmed.startsWith('blob:')) {
+        const fullUrl = `http://localhost:5000${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+        if (!found.includes(fullUrl)) found.push(fullUrl);
+      } else {
+        if (!found.includes(trimmed)) found.push(trimmed);
+      }
+    } else if (Array.isArray(val)) {
+      val.forEach(v => addImage(v));
+    } else if (typeof val === 'object' && val !== null) {
+      if (val.url) addImage(val.url);
+      else if (val.path) addImage(val.path);
+      else if (val.secure_url) addImage(val.secure_url);
+      else if (val.src) addImage(val.src);
+    }
+  };
+
+  if (item) {
+    addImage(item.sampleImages);
+    addImage(item.sampleImage);
+    addImage(item.samplePhotos);
+    addImage(item.samplePhoto);
+    addImage(item.images);
+    addImage(item.image);
+    addImage(item.photos);
+    addImage(item.photo);
+    addImage(item.attachments);
+    addImage(item.attachment);
+  }
+
+  if (found.length === 0 && order) {
+    addImage(order.sampleImages);
+    addImage(order.sampleImage);
+    addImage(order.samplePhotos);
+    addImage(order.samplePhoto);
+    addImage(order.attachments);
+  }
+
+  return found;
+};
 
 export default function BulkOrderPreviewModal({
   order,
@@ -52,6 +114,58 @@ export default function BulkOrderPreviewModal({
 }) {
   // Active Lightbox / Image Preview
   const [zoomImage, setZoomImage] = useState(null);
+
+  // Active Dynamic Photo Gallery Modal State
+  const [activePhotoGallery, setActivePhotoGallery] = useState(null);
+
+  const openPhotoGallery = (images, startIndex = 0, item = null) => {
+    const list = Array.isArray(images) ? images : (images ? [images] : []);
+    if (list.length === 0) return;
+    setActivePhotoGallery({
+      images: list,
+      activeIndex: Math.max(0, Math.min(startIndex, list.length - 1)),
+      title: item?.itemName || item?.name || 'Sample Requirement Photo',
+      category: item?.category || '',
+      quantity: item?.quantity ? `${item.quantity} Units` : '',
+      zoomLevel: 1
+    });
+  };
+
+  const closePhotoGallery = () => {
+    setActivePhotoGallery(null);
+    setZoomImage(null);
+  };
+
+  // Keyboard navigation for active photo modal
+  useEffect(() => {
+    if (!activePhotoGallery) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        closePhotoGallery();
+      } else if (e.key === 'ArrowRight' && activePhotoGallery.images.length > 1) {
+        setActivePhotoGallery(prev => prev ? ({
+          ...prev,
+          activeIndex: (prev.activeIndex + 1) % prev.images.length,
+          zoomLevel: 1
+        }) : null);
+      } else if (e.key === 'ArrowLeft' && activePhotoGallery.images.length > 1) {
+        setActivePhotoGallery(prev => prev ? ({
+          ...prev,
+          activeIndex: (prev.activeIndex - 1 + prev.images.length) % prev.images.length,
+          zoomLevel: 1
+        }) : null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activePhotoGallery]);
+
+  // Compatibility hook if zoomImage is invoked elsewhere
+  useEffect(() => {
+    if (zoomImage && !activePhotoGallery) {
+      openPhotoGallery([zoomImage], 0, null);
+    }
+  }, [zoomImage]);
 
   // Active Specific Demand Item Detail Modal
   const [selectedItemForDetail, setSelectedItemForDetail] = useState(null);
@@ -1233,10 +1347,7 @@ export default function BulkOrderPreviewModal({
                     </thead>
                     <tbody className="divide-y divide-gray-200 text-xs">
                       {requirementsList.map((item, idx) => {
-                        const rawImages = Array.isArray(item.sampleImages) && item.sampleImages.length > 0
-                          ? item.sampleImages
-                          : (item.sampleImage ? [item.sampleImage] : []);
-                        const imagesList = rawImages.filter(img => typeof img === 'string' && img.trim() !== '');
+                        const imagesList = extractSampleImages(item, order);
 
                         const custBudget = Number(item.budgetPerUnit || item.budgetUnit || 0);
                         const myQuotedPrice = existingSellerQuote?.itemPrices?.find(
@@ -1269,20 +1380,25 @@ export default function BulkOrderPreviewModal({
                             <td className="py-3 px-3 text-center font-extrabold text-gray-900">{item.quantity} Units</td>
                             <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                               {imagesList.length > 0 ? (
-                                <div className="flex items-center justify-center -space-x-2">
+                                <div className="flex items-center justify-center gap-1.5">
                                   {imagesList.slice(0, 3).map((img, iIdx) => (
                                     <div
                                       key={iIdx}
-                                      onClick={() => setZoomImage(img)}
-                                      className="relative w-9 h-9 rounded-lg overflow-hidden border-2 border-white shadow-2xs cursor-pointer group hover:z-10 hover:scale-110 transition-transform"
+                                      onClick={() => openPhotoGallery(imagesList, iIdx, item)}
+                                      className="relative w-10 h-10 rounded-xl overflow-hidden border-2 border-teal-500/40 shadow-xs cursor-pointer group hover:border-teal-600 hover:scale-110 transition-all bg-gray-100"
+                                      title="Click to open sample photo in dynamic modal"
                                     >
-                                      <img src={img || null} alt="Sample" className="w-full h-full object-cover" />
+                                      <img src={img} alt={`Sample ${iIdx + 1}`} className="w-full h-full object-cover group-hover:brightness-95 transition-all" />
+                                      <div className="absolute inset-0 bg-teal-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                                        <Eye size={14} className="drop-shadow" />
+                                      </div>
                                     </div>
                                   ))}
                                   {imagesList.length > 3 && (
                                     <div
-                                      onClick={() => setSelectedItemForDetail(item)}
-                                      className="w-7 h-7 rounded-lg bg-teal-800 text-white font-bold text-[10px] flex items-center justify-center border border-white cursor-pointer"
+                                      onClick={() => openPhotoGallery(imagesList, 3, item)}
+                                      className="w-8 h-8 rounded-xl bg-teal-800 text-white font-extrabold text-[10px] flex items-center justify-center border-2 border-white cursor-pointer shadow-xs hover:bg-teal-900 transition-colors"
+                                      title={`View all ${imagesList.length} photos`}
                                     >
                                       +{imagesList.length - 3}
                                     </div>
@@ -2778,23 +2894,6 @@ export default function BulkOrderPreviewModal({
 
       </div>
 
-      {/* SAMPLE IMAGE LIGHTBOX POPUP MODAL */}
-      {zoomImage && (
-        <div
-          onClick={() => setZoomImage(null)}
-          className="fixed inset-0 z-60 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in"
-        >
-          <div className="relative max-w-3xl max-h-[85vh] bg-white rounded-3xl overflow-hidden p-2 shadow-2xl">
-            <button
-              onClick={() => setZoomImage(null)}
-              className="absolute top-4 right-4 bg-black/60 hover:bg-black text-white p-2 rounded-full z-10 cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-            <img src={zoomImage || null} alt="Sample Zoomed" className="w-full h-full object-contain max-h-[80vh] rounded-2xl" />
-          </div>
-        </div>
-      )}
 
       {/* SPECIFIC DEMAND ITEM DETAIL VIEW MODAL */}
       {selectedItemForDetail && (
@@ -2829,10 +2928,7 @@ export default function BulkOrderPreviewModal({
               
               {/* Image Gallery */}
               {(() => {
-                const rawItemImages = Array.isArray(selectedItemForDetail.sampleImages) && selectedItemForDetail.sampleImages.length > 0
-                  ? selectedItemForDetail.sampleImages
-                  : (selectedItemForDetail.sampleImage ? [selectedItemForDetail.sampleImage] : []);
-                const itemImages = rawItemImages.filter(img => typeof img === 'string' && img.trim() !== '');
+                const itemImages = extractSampleImages(selectedItemForDetail, order);
 
                 return (
                   <div className="space-y-2">
@@ -2845,13 +2941,18 @@ export default function BulkOrderPreviewModal({
                         {itemImages.map((imgSrc, iIdx) => (
                           <div
                             key={iIdx}
-                            onClick={() => setZoomImage(imgSrc)}
-                            className="relative aspect-square rounded-xl overflow-hidden border border-gray-300 shadow-2xs group cursor-pointer"
+                            onClick={() => openPhotoGallery(itemImages, iIdx, selectedItemForDetail)}
+                            className="relative aspect-square rounded-xl overflow-hidden border-2 border-teal-200 hover:border-teal-600 shadow-2xs group cursor-pointer bg-white transition-all hover:scale-105"
+                            title="Click to view full photo in modal"
                           >
-                            <img src={imgSrc || null} alt={`Sample ${iIdx + 1}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
-                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
-                              <Eye size={16} />
+                            <img src={imgSrc} alt={`Sample ${iIdx + 1}`} className="w-full h-full object-cover group-hover:brightness-95 transition-all" />
+                            <div className="absolute inset-0 bg-teal-950/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
+                              <Eye size={18} className="drop-shadow" />
+                              <span className="text-[9px] font-bold mt-1 bg-black/60 px-1.5 py-0.5 rounded">View Full</span>
                             </div>
+                            <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                              #{iIdx + 1}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -2995,6 +3096,218 @@ export default function BulkOrderPreviewModal({
           quotation={comparingQuote}
           order={order}
         />
+      )}
+
+      {/* FULLY DYNAMIC SAMPLE PHOTO LIGHTBOX / GALLERY MODAL */}
+      {activePhotoGallery && (
+        <div
+          className="fixed inset-0 bg-black/92 backdrop-blur-md flex flex-col justify-between p-3 sm:p-6 transition-all duration-200 select-none animate-in fade-in"
+          style={{ zIndex: 99999 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              closePhotoGallery();
+            }
+          }}
+        >
+          {/* Top Header Bar */}
+          <div className="flex items-center justify-between text-white pb-3 border-b border-white/10 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-400/40 text-teal-300 flex items-center justify-center font-bold">
+                <Camera size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-base text-white tracking-wide">
+                    {activePhotoGallery.title || 'Sample Requirement Photo'}
+                  </h3>
+                  {activePhotoGallery.images.length > 1 && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-teal-600/90 text-white text-xs font-semibold">
+                      {activePhotoGallery.activeIndex + 1} / {activePhotoGallery.images.length}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5">
+                  {activePhotoGallery.category && (
+                    <span className="text-teal-300 font-medium">{activePhotoGallery.category}</span>
+                  )}
+                  {activePhotoGallery.quantity && (
+                    <>
+                      <span>•</span>
+                      <span>Qty: {activePhotoGallery.quantity}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons: Zoom, Open in New Tab, Download, Close */}
+            <div className="flex items-center gap-2">
+              {/* Zoom In/Out Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActivePhotoGallery(prev => ({
+                    ...prev,
+                    zoomLevel: prev.zoomLevel === 1 ? 1.75 : prev.zoomLevel === 1.75 ? 2.5 : 1
+                  }));
+                }}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                title="Toggle Zoom level (1x / 1.75x / 2.5x)"
+              >
+                {activePhotoGallery.zoomLevel > 1 ? <ZoomOut size={16} /> : <ZoomIn size={16} />}
+                <span className="hidden sm:inline font-mono">{activePhotoGallery.zoomLevel || 1}x</span>
+              </button>
+
+              {/* Open In New Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  const currentSrc = activePhotoGallery.images[activePhotoGallery.activeIndex];
+                  if (currentSrc) {
+                    const newTab = window.open();
+                    if (newTab) {
+                      newTab.document.write(`<title>Sample Photo Preview</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${currentSrc}" style="max-width:95vw;max-height:95vh;object-fit:contain;box-shadow:0 0 30px rgba(0,0,0,0.8);border-radius:12px;"/></body>`);
+                    }
+                  }
+                }}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                title="Open photo in new tab"
+              >
+                <ExternalLink size={18} />
+              </button>
+
+              {/* Download Image Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const currentSrc = activePhotoGallery.images[activePhotoGallery.activeIndex];
+                  if (currentSrc) {
+                    const link = document.createElement('a');
+                    link.href = currentSrc;
+                    link.download = `sample-photo-${(activePhotoGallery.title || 'item').toLowerCase().replace(/\s+/g, '-')}-${activePhotoGallery.activeIndex + 1}.webp`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }
+                }}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                title="Download photo"
+              >
+                <Download size={18} />
+              </button>
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={closePhotoGallery}
+                className="p-2 rounded-xl bg-red-600/80 hover:bg-red-600 text-white transition-colors cursor-pointer ml-1"
+                title="Close photo viewer (Esc)"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Image Display with Next / Previous Nav */}
+          <div
+            className="relative flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closePhotoGallery();
+            }}
+          >
+            {/* Previous Button (if multiple images) */}
+            {activePhotoGallery.images.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActivePhotoGallery(prev => ({
+                    ...prev,
+                    activeIndex: (prev.activeIndex - 1 + prev.images.length) % prev.images.length,
+                    zoomLevel: 1
+                  }));
+                }}
+                className="absolute left-2 sm:left-6 z-20 p-3 rounded-full bg-black/60 hover:bg-teal-600 text-white transition-all shadow-xl backdrop-blur-sm cursor-pointer border border-white/20"
+                title="Previous Photo (Left Arrow)"
+              >
+                <ChevronLeft size={24} />
+              </button>
+            )}
+
+            {/* Main Image Container */}
+            <div
+              className="relative max-w-5xl max-h-[75vh] flex items-center justify-center overflow-auto rounded-2xl transition-transform duration-200"
+              style={{
+                transform: `scale(${activePhotoGallery.zoomLevel || 1})`,
+                cursor: (activePhotoGallery.zoomLevel || 1) > 1 ? 'grab' : 'zoom-in'
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePhotoGallery(prev => ({
+                  ...prev,
+                  zoomLevel: (prev.zoomLevel || 1) > 1 ? 1 : 1.75
+                }));
+              }}
+            >
+              <img
+                src={activePhotoGallery.images[activePhotoGallery.activeIndex]}
+                alt={activePhotoGallery.title || "Sample"}
+                className="max-h-[72vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/15 bg-black/40"
+              />
+            </div>
+
+            {/* Next Button (if multiple images) */}
+            {activePhotoGallery.images.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActivePhotoGallery(prev => ({
+                    ...prev,
+                    activeIndex: (prev.activeIndex + 1) % prev.images.length,
+                    zoomLevel: 1
+                  }));
+                }}
+                className="absolute right-2 sm:right-6 z-20 p-3 rounded-full bg-black/60 hover:bg-teal-600 text-white transition-all shadow-xl backdrop-blur-sm cursor-pointer border border-white/20"
+                title="Next Photo (Right Arrow)"
+              >
+                <ChevronRight size={24} />
+              </button>
+            )}
+          </div>
+
+          {/* Bottom Gallery Thumbnail Strip (if multiple photos) */}
+          {activePhotoGallery.images.length > 1 && (
+            <div className="shrink-0 flex items-center justify-center gap-2 pt-3 border-t border-white/10 overflow-x-auto max-w-full py-1">
+              {activePhotoGallery.images.map((thumbSrc, tIdx) => {
+                const isActive = tIdx === activePhotoGallery.activeIndex;
+                return (
+                  <button
+                    key={tIdx}
+                    type="button"
+                    onClick={() => {
+                      setActivePhotoGallery(prev => ({
+                        ...prev,
+                        activeIndex: tIdx,
+                        zoomLevel: 1
+                      }));
+                    }}
+                    className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
+                      isActive
+                        ? 'border-teal-400 scale-105 shadow-md shadow-teal-500/30 ring-2 ring-teal-400/50'
+                        : 'border-white/20 opacity-60 hover:opacity-100 hover:border-white/60'
+                    }`}
+                  >
+                    <img src={thumbSrc} alt={`Thumbnail ${tIdx + 1}`} className="w-full h-full object-cover" />
+                    {isActive && (
+                      <div className="absolute inset-0 bg-teal-500/10 pointer-events-none" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
     </div>
