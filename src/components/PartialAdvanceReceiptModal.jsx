@@ -23,8 +23,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
   const totalBudget = Number(order.overallBudget || order.targetBudgetPerKit || order.estimatedBudget || order.quoteAmount || 0);
 
   // Check advance from seller demand or buyer offer
-  const advType = order.sellerAdvanceType || order.buyerAdvanceType || 'percentage';
-  const advPct = Number(order.sellerAdvancePercentage || order.buyerAdvancePercentage || 20);
+  const advPct = Number(order.sellerAdvancePercentage || order.buyerAdvancePercentage || order.prepaymentPercentage || 20);
   const advAmount = Number(
     order.advancePaidAmount ||
     order.sellerAdvanceAmount ||
@@ -61,8 +60,76 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
 
   const sellerStoreName = resolveSellerStoreName();
 
+  // Bulletproof Isolated Print Handler: Zero blank pages, zero background bleeding
   const handlePrint = () => {
-    window.print();
+    const printContent = document.getElementById('printableAdvanceReceiptArea');
+    if (!printContent) {
+      window.print();
+      return;
+    }
+
+    let iframe = document.getElementById('receipt-print-iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'receipt-print-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+    }
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+
+    // Collect all stylesheets from parent document
+    const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Advance Payment Receipt - ${receiptNo}</title>
+          <meta charset="utf-8" />
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 8mm 10mm;
+            }
+            * { box-sizing: border-box; }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff !important;
+              color: #0f172a;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+          </style>
+          ${styleSheets}
+        </head>
+        <body class="p-6 bg-white">
+          <div class="max-w-2xl mx-auto">
+            ${printContent.innerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (err) {
+        window.print();
+      }
+    }, 300);
   };
 
   const handleDownloadPdf = () => {
@@ -72,60 +139,29 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
 
   return (
     <>
-      {/* Print Specific CSS to ensure single-page, borderless, crystal clear letterhead print */}
+      {/* Standard print fallback stylesheet */}
       <style>{`
         @media print {
           @page {
             size: A4 portrait;
-            margin: 10mm 12mm;
+            margin: 8mm 10mm;
           }
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
+          body {
             background: #ffffff !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
-          }
-          body * {
-            visibility: hidden !important;
-          }
-          #advanceReceiptModalOverlay,
-          #advanceReceiptModalOverlay * {
-            visibility: hidden !important;
-          }
-          #printableAdvanceReceiptArea,
-          #printableAdvanceReceiptArea * {
-            visibility: visible !important;
-          }
-          #printableAdvanceReceiptArea {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
-            border-radius: 0 !important;
-            background: #ffffff !important;
-            overflow: visible !important;
-            display: block !important;
-          }
-          .no-print-element {
-            display: none !important;
           }
         }
       `}</style>
 
       <div
         id="advanceReceiptModalOverlay"
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn print:static print:inset-auto print:p-0 print:bg-white print:block"
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn print:p-0 print:bg-white print:static print:inset-auto print:block"
       >
         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-200 print:max-h-none print:shadow-none print:border-none print:rounded-none print:w-full print:max-w-none print:overflow-visible">
           
           {/* Header Bar (Hidden in Print) */}
-          <div className="px-6 py-4 bg-teal-800 text-white flex items-center justify-between shrink-0 no-print-element">
+          <div className="px-6 py-4 bg-teal-800 text-white flex items-center justify-between shrink-0 print:hidden">
             <div className="flex items-center gap-2.5">
               <FileText size={20} className="text-amber-400" />
               <div>
@@ -192,7 +228,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
               {/* Printable Receipt Body */}
               <div
                 id="printableAdvanceReceiptArea"
-                className="p-6 sm:p-8 overflow-y-auto space-y-5 text-xs text-gray-800 bg-white print:overflow-visible print:p-6 print:max-w-none print:space-y-4"
+                className="p-6 sm:p-8 overflow-y-auto space-y-5 text-xs text-gray-800 bg-white print:overflow-visible print:p-0 print:max-w-none print:space-y-4"
               >
                 {/* Brand & Receipt Meta */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b-2 border-teal-800 gap-3">
@@ -287,7 +323,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
                   <div className="space-y-1.5 text-xs">
                     <div className="flex items-center justify-between text-gray-600">
                       <span>Total Agreed Project / Order Amount:</span>
-                      <span className="font-bold text-gray-900 font-mono">₹{totalBudget.toLocaleString()}</span>
+                      <span className="font-bold text-gray-900 font-mono">₹{totalBudget.toLocaleString('en-IN')}</span>
                     </div>
 
                     <div className="flex items-center justify-between text-gray-600">
@@ -300,12 +336,12 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
                         <CheckCircle2 size={16} className="text-emerald-600" />
                         Mobilization Advance Paid & Secured:
                       </span>
-                      <span className="text-emerald-700 text-base font-black font-mono">₹{advAmount.toLocaleString()}</span>
+                      <span className="text-emerald-700 text-base font-black font-mono">₹{advAmount.toLocaleString('en-IN')}</span>
                     </div>
 
                     <div className="flex items-center justify-between text-gray-600 px-3.5 pt-0.5">
                       <span>Estimated Balance Payable Upon Delivery & Inspection:</span>
-                      <span className="font-bold text-gray-800 font-mono">₹{balanceDue.toLocaleString()}</span>
+                      <span className="font-bold text-gray-800 font-mono">₹{balanceDue.toLocaleString('en-IN')}</span>
                     </div>
                   </div>
                 </div>
@@ -348,7 +384,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
               </div>
 
               {/* Modal Actions (Hidden in Print) */}
-              <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between shrink-0 no-print-element">
+              <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between shrink-0 print:hidden">
                 <span className="text-[11px] text-gray-500">Need physical copy? Click print or download signed PDF.</span>
                 <div className="flex items-center gap-2">
                   <button
