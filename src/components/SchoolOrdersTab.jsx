@@ -163,10 +163,10 @@ export default function SchoolOrdersTab() {
       // Channel Filter
       let channelMatch = true;
       if (channelFilter === 'Accepted') {
-        const isAcceptedOrder = ['quote_accepted', 'accepted', 'confirmed', 'seller_accepted_counter', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
+        const isAcceptedOrder = ['assigned', 'quote_accepted', 'accepted', 'confirmed', 'seller_accepted_counter', 'packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered', 'completed', 'fulfilled'].includes(req.status);
         channelMatch = (isAssignedToMe || isWinningSeller) && isAcceptedOrder;
       } else if (channelFilter === 'Direct') {
-        channelMatch = req.assignmentMode === 'direct';
+        channelMatch = req.assignmentMode === 'direct' || isAssignedToMe;
       } else if (channelFilter === 'Invited') {
         channelMatch = req.assignmentMode === 'selected' || isInvitedToMe;
       } else if (channelFilter === 'Broadcast') {
@@ -450,6 +450,7 @@ export default function SchoolOrdersTab() {
             const advRequired = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || req.prepaymentAmount || 0) > 0 || Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || req.prepaymentPercentage || 0) > 0 || req.advancePaymentStatus === 'pending';
             const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
             const isPrepaymentPending = advRequired && !isPrepaymentPaid;
+            const isConfirmedFulfilment = isAssignedToMe && (isTargetBudgetAccepted || isPrepaymentPaid || isPacked || isOutForDelivery || isReceived || isCompleted || ['quote_accepted', 'confirmed'].includes(req.status));
 
             const isOutbidOrRejected = isMyQuoteRejected || Boolean(
               (isAcceptedStatus || req.acceptedQuoteId || assignedSellerId) && !isAssignedToMe && Boolean(assignedSellerId || req.acceptedQuoteId) && isPrepaymentPaid
@@ -487,9 +488,9 @@ export default function SchoolOrdersTab() {
                       <h3 className="font-bold text-gray-900 text-base">{req.institutionName || req.schoolName}</h3>
                       
                       {/* Distribution Tag */}
-                      {req.assignmentMode === 'direct' && (
-                        <span className="bg-blue-50 text-blue-800 font-bold text-[10px] px-2 py-0.5 rounded flex items-center gap-1 border border-blue-200">
-                          <UserCheck size={11} /> Directly Assigned
+                      {(req.assignmentMode === 'direct' || (isAssignedToMe && !isBroadcast)) && (
+                        <span className="bg-blue-100 text-blue-900 font-extrabold text-[10px] px-2 py-0.5 rounded flex items-center gap-1 border border-blue-300">
+                          <UserCheck size={11} className="text-blue-700" /> ✨ Directly Assigned to Your Store
                         </span>
                       )}
                       {req.assignmentMode === 'selected' && (
@@ -570,6 +571,7 @@ export default function SchoolOrdersTab() {
                        (isAssignedToMe && isPrepaymentPaid && isTargetBudgetAccepted) ? `🎯 Accepted at Target Budget (${budgetVal > 0 ? `₹${Number(budgetVal).toLocaleString()}` : 'Agreed'})` :
                        (isAssignedToMe && isPrepaymentPending) ? '⏳ Pitch Selected • Prepayment Pending' :
                        (isAssignedToMe && isPrepaymentPaid) ? '🎉 Order Accepted & Prepayment Confirmed!' :
+                       (isAssignedToMe && req.status === 'assigned' && !hasSellerQuote) ? '✨ Directly Assigned to Your Store • Awaiting Your Pitch / Acceptance' :
                        (myQuote && isMyTargetBudgetQuote) ? `🎯 Accepted Order at Target Budget (${myQuote.quoteAmount > 0 ? `₹${Number(myQuote.quoteAmount).toLocaleString()}` : 'Agreed'}) • Awaiting Buyer Advance` :
                        (!isAssignedToMe && assignedSellerId && !isPrepaymentPaid) ? '⚡ Pending Prepayment Confirmation (Open for Pitches & Acceptance)' :
                        hasSellerQuote ? 'Your Pitch Submitted' : 'RFQ Open for Quotations'}
@@ -784,6 +786,47 @@ export default function SchoolOrdersTab() {
                     <div className="text-[10px] text-teal-700 font-medium">Logo Embroidery Included</div>
                   </div>
                 </div>
+
+                {/* Direct Assignment Notification Banner for Seller */}
+                {isAssignedToMe && !isConfirmedFulfilment && !isOutbidOrRejected && (
+                  <div className="p-3.5 bg-gradient-to-r from-blue-50 via-teal-50 to-blue-50 border-2 border-blue-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                        <UserCheck size={16} />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-xs text-blue-950 flex items-center gap-1.5">
+                          <span>✨ Admin Assigned This School Bulk Requisition Directly to Your Store</span>
+                          <span className="bg-blue-200 text-blue-900 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">Direct Requisition</span>
+                        </h4>
+                        <p className="text-[11px] text-blue-800">
+                          Review requested items, quantities, and target budget. You can accept at the target budget or pitch custom unit prices.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => acceptSchoolOrder(req.id || req._id)}
+                        className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>Accept at Target Budget</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreviewOrder(req);
+                          setInitialPreviewTab('submit_quote');
+                        }}
+                        className="px-3.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Send size={13} />
+                        <span>Pitch Custom Quotation</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Active Buyer Counter-Demand Alert Card on Order Card */}
                 {myQuote && !isOutbidOrRejected && (myQuote.negotiationStage === 'buyer_countered' || (myQuote.latestBuyerCounter && (Number(myQuote.latestBuyerCounter.targetBudget) > 0 || myQuote.latestBuyerCounter.notes))) && (
@@ -1049,11 +1092,11 @@ export default function SchoolOrdersTab() {
                       </button>
                     )}
 
-                    {/* Order Processing Buttons for Seller on Accepted Orders */}
-                    {isAssignedToMe && (
+                    {/* Order Processing Buttons for Seller on Accepted Orders in Fulfillment */}
+                    {isConfirmedFulfilment && (
                       <>
                         {/* 1. If Accepted -> Advance to Packed (Gated behind prepayment) */}
-                        {(!req.status || req.status === 'quote_accepted' || req.status === 'accepted' || req.status === 'assigned') && (
+                        {(!isPacked && !isOutForDelivery && !isReceived && !isCompleted) && (
                           isPrepaymentPending ? (
                             <button
                               type="button"
@@ -1122,7 +1165,7 @@ export default function SchoolOrdersTab() {
                       </>
                     )}
 
-                    {/* Unassigned order action buttons or locked indicator */}
+                    {/* Quotation & Acceptance Phase (Open RFQ or Direct Assignment awaiting seller pitch) */}
                     {isLockedToOther ? (
                       <button
                         type="button"
@@ -1132,7 +1175,7 @@ export default function SchoolOrdersTab() {
                         <Lock size={14} />
                         <span>Consignment Awarded & Locked</span>
                       </button>
-                    ) : !isAssignedToMe ? (
+                    ) : !isConfirmedFulfilment ? (
                       <>
                         {isMyTargetBudgetQuote ? (
                           <span className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-300">
@@ -1156,7 +1199,7 @@ export default function SchoolOrdersTab() {
                           className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-xl transition-colors cursor-pointer border border-emerald-300 shadow-2xs"
                         >
                           <Send size={14} />
-                          <span>{hasSellerQuote ? 'Update Quotation Pitch' : 'Pitch Updated Quotation'}</span>
+                          <span>{hasSellerQuote ? 'Update Quotation Pitch' : 'Pitch Proposal Quotation'}</span>
                         </button>
                       </>
                     ) : null}

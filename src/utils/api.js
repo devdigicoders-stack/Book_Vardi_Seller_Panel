@@ -998,4 +998,21 @@ export const verifySchoolBulkRemainingPaymentApi = async (orderId, verificationP
   }
 };
 
+export const updateItemSellerPricesApi = async (id, itemPrices, extra = {}) => {
+  try {
+    const res = await loggedFetch(`${SERVER_URL}/schools/bulk-orders/${id}/item-prices`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ itemPrices, callerRole: 'seller', ...extra })
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+
 

@@ -39,6 +39,7 @@ import TaxInvoiceModal from './TaxInvoiceModal';
 import PartialAdvanceReceiptModal from './PartialAdvanceReceiptModal';
 import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
 import NegotiationTimelineDiv from './NegotiationTimelineDiv';
+import { updateItemSellerPricesApi } from '../utils/api';
 
 // Robust helper to extract and normalize all sample photos from line item & order data
 export const extractSampleImages = (item, order = null) => {
@@ -170,6 +171,132 @@ export default function BulkOrderPreviewModal({
   // Active Specific Demand Item Detail Modal
   const [selectedItemForDetail, setSelectedItemForDetail] = useState(null);
   const [itemSellerPriceInput, setItemSellerPriceInput] = useState('');
+  const [isUpdatingPrice, setIsUpdatingPrice] = useState(false);
+  const [priceUpdateSuccess, setPriceUpdateSuccess] = useState(false);
+
+  // Pre-fill price input when opening item detail
+  useEffect(() => {
+    if (selectedItemForDetail) {
+      const curPrice = Number(
+        selectedItemForDetail.sellerPricePerUnit ||
+        selectedItemForDetail.sellerPrice ||
+        existingSellerQuote?.itemPrices?.find(
+          ip => String(ip.itemId) === String(selectedItemForDetail._id || selectedItemForDetail.id) || String(ip.itemName) === String(selectedItemForDetail.itemName)
+        )?.pricePerUnit ||
+        0
+      );
+      setItemSellerPriceInput(curPrice > 0 ? String(curPrice) : '');
+    } else {
+      setItemSellerPriceInput('');
+      setPriceUpdateSuccess(false);
+    }
+  }, [selectedItemForDetail, existingSellerQuote]);
+
+  const handleUpdateItemPrice = async () => {
+    const numPrice = Number(itemSellerPriceInput);
+    if (!itemSellerPriceInput || isNaN(numPrice) || numPrice < 0) {
+      alert("Please enter a valid price per unit (₹).");
+      return;
+    }
+
+    if (!selectedItemForDetail) return;
+
+    setIsUpdatingPrice(true);
+    try {
+      const orderId = order?._id || order?.id || order?.referenceId;
+      const itemId = selectedItemForDetail._id || selectedItemForDetail.id;
+      const itemName = selectedItemForDetail.itemName;
+
+      const payload = [{
+        itemId: itemId || '',
+        itemName: itemName || '',
+        quantity: Number(selectedItemForDetail.quantity) || 1,
+        sellerPricePerUnit: numPrice
+      }];
+
+      // 1. Optimistically update local selected item
+      selectedItemForDetail.sellerPricePerUnit = numPrice;
+      selectedItemForDetail.sellerPrice = numPrice;
+      setSelectedItemForDetail({
+        ...selectedItemForDetail,
+        sellerPricePerUnit: numPrice,
+        sellerPrice: numPrice
+      });
+
+      // 2. Update order requirements in memory
+      if (Array.isArray(order?.requirements)) {
+        const targetReq = order.requirements.find(
+          (r, idx) => String(r._id || idx) === String(itemId) || (itemName && String(r.itemName).trim().toLowerCase() === String(itemName).trim().toLowerCase())
+        );
+        if (targetReq) {
+          targetReq.sellerPricePerUnit = numPrice;
+          targetReq.sellerPrice = numPrice;
+        }
+      }
+
+      // 3. Update existingSellerQuote itemPrices in memory
+      if (existingSellerQuote && Array.isArray(existingSellerQuote.itemPrices)) {
+        const targetIp = existingSellerQuote.itemPrices.find(
+          ip => String(ip.itemId) === String(itemId) || String(ip.itemName) === String(itemName)
+        );
+        if (targetIp) {
+          targetIp.pricePerUnit = numPrice;
+          targetIp.sellerPricePerUnit = numPrice;
+          targetIp.totalPrice = (Number(targetIp.quantity) || 1) * numPrice;
+        } else {
+          existingSellerQuote.itemPrices.push({
+            itemId: itemId || '',
+            itemName: itemName || '',
+            quantity: Number(selectedItemForDetail.quantity) || 1,
+            pricePerUnit: numPrice,
+            sellerPricePerUnit: numPrice,
+            totalPrice: (Number(selectedItemForDetail.quantity) || 1) * numPrice
+          });
+        }
+      }
+
+      // 4. Send API request
+      const res = await updateItemSellerPricesApi(orderId, payload, {
+        sellerId: sellerUser?.id || sellerUser?._id,
+        callerRole: 'seller'
+      });
+
+      if (res?.success) {
+        setPriceUpdateSuccess(true);
+        setTimeout(() => setPriceUpdateSuccess(false), 3000);
+
+        // Sync localStorage
+        try {
+          ['bv_sync_school_orders', 'admin_school_orders', 'bv_customer_bulk_orders'].forEach(key => {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                const targetOrder = list.find(o => String(o._id || o.id || o.referenceId) === String(orderId));
+                if (targetOrder && Array.isArray(targetOrder.requirements)) {
+                  const rItem = targetOrder.requirements.find((r, idx) => String(r._id || idx) === String(itemId) || (itemName && String(r.itemName).trim().toLowerCase() === String(itemName).trim().toLowerCase()));
+                  if (rItem) {
+                    rItem.sellerPricePerUnit = numPrice;
+                    rItem.sellerPrice = numPrice;
+                    localStorage.setItem(key, JSON.stringify(list));
+                  }
+                }
+              }
+            }
+          });
+          window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+          window.dispatchEvent(new Event('storage'));
+        } catch (e) {}
+      } else {
+        alert(res?.message || "Failed to update item seller price on server.");
+      }
+    } catch (err) {
+      console.error("Error updating item price:", err);
+      alert("Error: " + (err.message || "Failed to update price."));
+    } finally {
+      setIsUpdatingPrice(false);
+    }
+  };
 
   // Active Tab inside modal
   const [modalSubTab, setModalSubTab] = useState(initialTab || 'specs'); // 'specs', 'distribution', 'quotes', 'submit_quote'
@@ -1355,7 +1482,7 @@ export default function BulkOrderPreviewModal({
                         )?.pricePerUnit;
                         const sellerPrice = userRole === 'admin'
                           ? Number(item.sellerPricePerUnit || item.sellerPrice || 0)
-                          : Number(myQuotedPrice || 0);
+                          : Number(myQuotedPrice || item.sellerPricePerUnit || item.sellerPrice || 0);
 
                         return (
                           <tr
@@ -2982,11 +3109,14 @@ export default function BulkOrderPreviewModal({
                     {userRole === 'seller' ? 'Your Quoted Price / Unit' : 'Seller Offered Price / Unit'}
                   </span>
                   {(() => {
-                    const myItemPrice = userRole === 'admin'
-                      ? Number(selectedItemForDetail.sellerPricePerUnit || selectedItemForDetail.sellerPrice || 0)
-                      : Number(existingSellerQuote?.itemPrices?.find(
-                          ip => String(ip.itemId) === String(selectedItemForDetail._id || selectedItemForDetail.id) || String(ip.itemName) === String(selectedItemForDetail.itemName)
-                        )?.pricePerUnit || 0);
+                    const myItemPrice = Number(
+                      selectedItemForDetail.sellerPricePerUnit ||
+                      selectedItemForDetail.sellerPrice ||
+                      existingSellerQuote?.itemPrices?.find(
+                        ip => String(ip.itemId) === String(selectedItemForDetail._id || selectedItemForDetail.id) || String(ip.itemName) === String(selectedItemForDetail.itemName)
+                      )?.pricePerUnit ||
+                      0
+                    );
 
                     return (
                       <>
@@ -3024,10 +3154,17 @@ export default function BulkOrderPreviewModal({
               {/* Seller / Admin Item Price Input */}
               {(userRole === 'admin' || userRole === 'seller') && (
                 <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl space-y-3">
-                  <h4 className="font-extrabold text-xs text-teal-950 uppercase tracking-wider flex items-center gap-1.5">
-                    <DollarSign size={15} className="text-teal-700" />
-                    Set / Update Seller Offered Price Per Unit (₹)
-                  </h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-extrabold text-xs text-teal-950 uppercase tracking-wider flex items-center gap-1.5">
+                      <DollarSign size={15} className="text-teal-700" />
+                      Set / Update Seller Offered Price Per Unit (₹)
+                    </h4>
+                    {priceUpdateSuccess && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white font-extrabold text-[10px] flex items-center gap-1 animate-in fade-in">
+                        <Check size={12} /> Price Saved!
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
@@ -3035,19 +3172,30 @@ export default function BulkOrderPreviewModal({
                       placeholder="e.g. 480"
                       value={itemSellerPriceInput}
                       onChange={(e) => setItemSellerPriceInput(e.target.value)}
-                      className="flex-1 bg-white border border-teal-300 rounded-xl p-2.5 text-xs font-mono font-bold text-teal-950 focus:outline-none"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleUpdateItemPrice();
+                        }
+                      }}
+                      className="flex-1 bg-white border border-teal-300 rounded-xl p-2.5 text-xs font-mono font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-500"
                     />
                     <button
                       type="button"
-                      onClick={() => {
-                        if (itemSellerPriceInput) {
-                          selectedItemForDetail.sellerPricePerUnit = Number(itemSellerPriceInput);
-                          setSelectedItemForDetail({ ...selectedItemForDetail, sellerPricePerUnit: Number(itemSellerPriceInput) });
-                        }
-                      }}
-                      className="px-4 py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                      disabled={isUpdatingPrice}
+                      onClick={handleUpdateItemPrice}
+                      className="px-5 py-2.5 bg-teal-800 hover:bg-teal-900 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
                     >
-                      Update Price
+                      {isUpdatingPrice ? (
+                        <span>Saving...</span>
+                      ) : priceUpdateSuccess ? (
+                        <>
+                          <Check size={14} />
+                          <span>Updated!</span>
+                        </>
+                      ) : (
+                        <span>Update Price</span>
+                      )}
                     </button>
                   </div>
                 </div>
