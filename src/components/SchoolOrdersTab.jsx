@@ -447,10 +447,12 @@ export default function SchoolOrdersTab() {
             const isCompleted = req.status === 'completed' || req.status === 'fulfilled' || req.remainingPaymentStatus === 'paid';
             const isReceived = req.status === 'received' || req.status === 'delivered' || isCompleted;
 
-            const advRequired = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || req.prepaymentAmount || 0) > 0 || Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || req.prepaymentPercentage || 0) > 0 || req.advancePaymentStatus === 'pending';
-            const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
+            const advAmount = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || req.prepaymentAmount || req.buyerAdvanceAmount || 0);
+            const advPct = Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || req.prepaymentPercentage || req.buyerAdvancePercentage || 0);
+            const advRequired = (advAmount > 0 || advPct > 0) && (req.advancePaymentStatus === 'pending' || req.advancePaymentStatus === 'demanded');
+            const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially' || !advRequired;
             const isPrepaymentPending = advRequired && !isPrepaymentPaid;
-            const isConfirmedFulfilment = isAssignedToMe && (isTargetBudgetAccepted || isPrepaymentPaid || isPacked || isOutForDelivery || isReceived || isCompleted || ['quote_accepted', 'confirmed'].includes(req.status));
+            const isConfirmedFulfilment = isAssignedToMe && (isTargetBudgetAccepted || isPrepaymentPaid || isPacked || isOutForDelivery || isReceived || isCompleted || ['assigned', 'quote_accepted', 'accepted', 'confirmed', 'in_production', 'processing'].includes(req.status));
 
             const isOutbidOrRejected = isMyQuoteRejected || Boolean(
               (isAcceptedStatus || req.acceptedQuoteId || assignedSellerId) && !isAssignedToMe && Boolean(assignedSellerId || req.acceptedQuoteId) && isPrepaymentPaid
@@ -1008,13 +1010,13 @@ export default function SchoolOrdersTab() {
                   return null;
                 })()}
 
-                {(isPrepaymentPending && isAssignedToMe && !isOutbidOrRejected) ? (
+                {(isPrepaymentPending && isAssignedToMe && !isOutbidOrRejected && (advAmount > 0 || advPct > 0)) ? (
                   <div className="bg-amber-50 border-2 border-amber-300 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
                     <div className="flex items-center gap-2">
                       <AlertCircle size={15} className="text-amber-700 shrink-0" />
                       <div>
                         <span className="font-extrabold text-amber-950 block">
-                          ⏳ Awaiting Buyer's Online Prepayment: ₹{Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()} ({req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || 0}%)
+                          ⏳ Awaiting Buyer's Online Prepayment: ₹{Number(advAmount).toLocaleString()} ({advPct}%)
                         </span>
                         <span className="text-amber-800 text-[11px]">
                           The buyer has been prompted to pay online. Order fulfillment & packing controls will unlock once payment is verified.
@@ -1097,18 +1099,19 @@ export default function SchoolOrdersTab() {
                       <>
                         {/* 1. If Accepted -> Advance to Packed (Gated behind prepayment) */}
                         {(!isPacked && !isOutForDelivery && !isReceived && !isCompleted) && (
-                          isPrepaymentPending ? (
+                          (isPrepaymentPending && (advAmount > 0 || advPct > 0)) ? (
                             <button
                               type="button"
                               disabled
-                              title={`Online prepayment of ₹${Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()} must be completed by buyer before packing`}
+                              title={`Online prepayment of ₹${Number(advAmount).toLocaleString()} must be completed by buyer before packing`}
                               className="flex items-center gap-1.5 px-4 py-2 bg-gray-200 text-gray-500 text-xs font-bold rounded-xl cursor-not-allowed opacity-80"
                             >
                               <Lock size={14} />
-                              <span>Prepayment Pending (₹{Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()})</span>
+                              <span>Prepayment Pending (₹{Number(advAmount).toLocaleString()})</span>
                             </button>
                           ) : (
                             <button
+                              type="button"
                               onClick={() => updateSchoolOrderStatus(req.id || req._id, { status: 'packed' })}
                               className="flex items-center gap-1.5 px-4 py-2 bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer font-display"
                             >

@@ -1326,8 +1326,9 @@ export default function BulkOrderPreviewModal({
                                 >
                                   <option value="quote_accepted">Quote Accepted / In Preparation</option>
                                   <option value="in_production">In Production / Processing</option>
-                                  <option value="out for delivery">Out for Delivery</option>
-                                  <option value="delivered">Delivered</option>
+                                  <option value="packed">📦 Packed & Ready for Dispatch</option>
+                                  <option value="out for delivery">🚚 Out for Delivery</option>
+                                  <option value="delivered">✅ Delivered & Completed</option>
                                 </select>
                               </div>
 
