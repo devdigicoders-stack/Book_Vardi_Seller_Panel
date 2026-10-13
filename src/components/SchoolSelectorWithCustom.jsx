@@ -12,7 +12,7 @@ import {
   X,
   AlertCircle
 } from 'lucide-react';
-import { fetchSchoolsApi } from '../utils/api';
+import { fetchSchoolsApi, SERVER_URL } from '../utils/api';
 
 export const ALL_SCHOOLS_OPTION = {
   schoolId: 'SCH-ALL',
@@ -192,7 +192,6 @@ export default function SchoolSelectorWithCustom({
 
     // Try posting to backend
     try {
-      const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000/api';
       fetch(`${SERVER_URL}/schools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

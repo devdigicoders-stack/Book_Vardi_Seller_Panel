@@ -55,14 +55,7 @@ import {
 import { useSellerData } from '../context/SellerDataContext';
 import SellerRegistrationModal from '../components/SellerRegistrationModal';
 import { SkeletonText, SkeletonAvatar, SkeletonMiniProfile } from '../components/SkeletonLoader';
-
-const getMediaUrl = (path) => {
-  if (!path || typeof path !== 'string') return '';
-  if (path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-  return `http://localhost:5000${path.startsWith('/') ? '' : '/'}${path}`;
-};
+import { getMediaUrl } from '../utils/mediaUrl';
 
 export default function SellerDashboardPage({ onNavigate }) {
   const navigate = useNavigate();

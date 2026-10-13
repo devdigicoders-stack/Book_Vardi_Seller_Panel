@@ -30,13 +30,8 @@ import {
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import LocationPickerModal from './LocationPickerModal';
-
-const getMediaUrl = (url) => {
-  if (!url) return '';
-  if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) return url;
-  if (url.startsWith('/')) return `http://localhost:5000${url}`;
-  return `http://localhost:5000/${url}`;
-};
+import { getMediaUrl } from '../utils/mediaUrl';
+import { API_BASE_URL } from '../utils/api';
 
 export const ONBOARDING_STEPS = [
   { id: 1, title: 'Basic Profile', section: 'Basic Profile', desc: 'Name, mobile, email, photo', icon: UserCheck, verify: 'Email + Mobile OTP' },
@@ -511,7 +506,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
       try {
         const token = localStorage.getItem('bv_seller_jwt_token');
-        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+        const res = await fetch(`${API_BASE_URL}/upload-base64`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -553,7 +548,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
       try {
         const token = localStorage.getItem('bv_seller_jwt_token');
-        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+        const res = await fetch(`${API_BASE_URL}/upload-base64`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -595,7 +590,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
       try {
         const token = localStorage.getItem('bv_seller_jwt_token');
-        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+        const res = await fetch(`${API_BASE_URL}/upload-base64`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -636,7 +631,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
       try {
         const token = localStorage.getItem('bv_seller_jwt_token');
-        const res = await fetch('http://localhost:5000/api/seller/upload-base64', {
+        const res = await fetch(`${API_BASE_URL}/upload-base64`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
