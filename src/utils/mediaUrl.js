@@ -164,30 +164,28 @@ export const parseSizeVariants = (product) => {
     }
   }
 
-  // Prepend Base Product if product has variants and base price > 0, and base variant is not already present
-  if (parsed.length > 0 && Number(product?.price || 0) > 0) {
-    const hasBaseVariant = parsed.some(v => v.isBase || String(v.size || '').toLowerCase().includes('base'));
-    if (!hasBaseVariant) {
-      const baseMrp = Number(product.mrp || product.originalPrice || product.regularPrice || product.price || 0);
-      const baseOption = {
-        id: `base_option_${product._id || product.id || '0'}`,
-        size: 'Base Product',
-        measureScale: product.unit || 'unit',
-        measureValue: 'Base Product',
-        price: Number(product.price || 0),
-        mrp: baseMrp > Number(product.price || 0) ? baseMrp : Number(product.price || 0),
-        originalPrice: baseMrp > Number(product.price || 0) ? baseMrp : Number(product.price || 0),
-        stock: Number(product.stockQuantity ?? product.stock ?? 0),
-        stockQuantity: Number(product.stockQuantity ?? product.stock ?? 0),
-        sku: product.sku || `SKU-BASE-${String(product._id || product.id || '').slice(-6).toUpperCase()}`,
-        image: product.image || product.imageUrl || (Array.isArray(product.images) ? product.images[0] : '') || '',
-        images: Array.isArray(product.images) && product.images.length > 0 ? product.images : (product.image ? [product.image] : []),
-        isBase: true
-      };
-      parsed = [baseOption, ...parsed];
+  // Filter out any artificial / legacy "Base Product" options if other variants exist
+  if (parsed.length > 1) {
+    const withoutBase = parsed.filter(v => 
+      !v.isBase && 
+      String(v.size || '').trim().toLowerCase() !== 'base product' && 
+      String(v.measureValue || '').trim().toLowerCase() !== 'base product' && 
+      !String(v.id || '').startsWith('base_option_')
+    );
+    if (withoutBase.length > 0) {
+      parsed = withoutBase;
+    }
+  } else if (parsed.length === 1) {
+    const single = parsed[0];
+    if (single.isBase || 
+        String(single.size || '').trim().toLowerCase() === 'base product' || 
+        String(single.measureValue || '').trim().toLowerCase() === 'base product' || 
+        String(single.id || '').startsWith('base_option_')) {
+      parsed = [];
     }
   }
 
+  // Return parsed variants cleanly without prepending an artificial "Base Product" option
   return parsed;
 };
 

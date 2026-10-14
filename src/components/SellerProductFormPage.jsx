@@ -393,8 +393,12 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         }
       });
 
-      // Load sizeVariants safely via parseSizeVariants
-      const parsedVariants = parseSizeVariants(product);
+      // Load sizeVariants safely via parseSizeVariants (filtering out any legacy/artificial base product)
+      const parsedVariants = parseSizeVariants(product).filter(v => 
+        !v.isBase && 
+        String(v.size || '').trim().toLowerCase() !== 'base product' && 
+        String(v.measureValue || '').trim().toLowerCase() !== 'base product'
+      );
       if (parsedVariants.length > 0) {
         setSizeVariants(parsedVariants.map(v => ({
           size: v.size || v.measureValue || '',
@@ -425,11 +429,11 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         setSizeVariants([]);
       }
 
-      // Automatically populate customApparelSizes for any non-standard sizes
+      // Automatically populate customApparelSizes for any non-standard sizes (excluding artificial 'base product')
       const allLoadedSizeNames = (parsedVariants.length > 0
         ? parsedVariants.map(v => v.size || v.measureValue)
         : (Array.isArray(product.sizes) ? product.sizes : [])
-      ).filter(Boolean);
+      ).filter(s => s && String(s).trim().toLowerCase() !== 'base product');
 
       const nonStandardSizes = allLoadedSizeNames.filter(s =>
         !APPAREL_SIZES.some(std => std.toLowerCase() === String(s).toLowerCase().trim())
@@ -810,9 +814,14 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
       setSubmitting(true);
       try {
-        const validPrices = sizeVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+        const cleanVariants = sizeVariants.filter(v => 
+          !v.isBase && 
+          String(v.size || '').trim().toLowerCase() !== 'base product' && 
+          String(v.measureValue || '').trim().toLowerCase() !== 'base product'
+        );
+        const validPrices = cleanVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
         const minVariantPrice = validPrices.length > 0 ? Math.min(...validPrices) : Number(formData.price);
-        const totalVariantStock = sizeVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+        const totalVariantStock = cleanVariants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
 
         const gstNum = Number(formData.gst);
         const finalGst = !isNaN(gstNum) ? gstNum : 5;
@@ -859,13 +868,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           gstPercentage: finalGst,
           isGstInclusive: parseBool(formData.isGstInclusive, true),
           tags: parsedTags,
-          status: (sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0)) > 0 ? 'available' : 'out-of-stock',
+          status: (cleanVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0)) > 0 ? 'available' : 'out-of-stock',
           approvalStatus: 'Pending',
-          price: sizeVariants.length > 0 ? minVariantPrice : Number(formData.price),
+          price: cleanVariants.length > 0 ? minVariantPrice : Number(formData.price),
           originalPrice: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
           mrp: Number(formData.originalPrice) || Math.round(minVariantPrice * 1.25),
-          stockQuantity: sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
-          stock: sizeVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
+          stockQuantity: cleanVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
+          stock: cleanVariants.length > 0 ? totalVariantStock : Number(formData.stockQuantity || 0),
           image: finalImages[0] || primaryImage || '',
           images: finalImages,
           paymentMethodAllowed: paymentAllowedStr,
@@ -879,8 +888,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           isRefundable: parseBool(formData.isRefundable ?? formData.isExchangeable ?? formData.isReturnable, true),
           returnWindowDays: Number(formData.returnWindowDays) || 7,
           sizeChart: formData.enableSizeChart ? formData.sizeChart : { rows: [] },
-          sizes: sizeVariants.map(v => v.size || v.measureValue),
-          sizeVariants: sizeVariants.map(v => {
+          sizes: cleanVariants.map(v => v.size || v.measureValue),
+          sizeVariants: cleanVariants.map(v => {
             const isPlaceholder = (img) => !img || (typeof img === 'string' && (img.includes('unsplash.com') || img.includes('placeholder') || img.includes('via.placeholder')));
             const hasCustomImg = v.image && !isPlaceholder(v.image) && v.image !== primaryImage;
             const effectiveImg = hasCustomImg ? v.image : (v.image && !isPlaceholder(v.image) ? v.image : primaryImage);
@@ -905,7 +914,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
               sku: v.sku || `${formData.sku || 'SKU'}-${v.size || v.measureValue}`
             };
           }),
-          variants: sizeVariants.map(v => {
+          variants: cleanVariants.map(v => {
             const isPlaceholder = (img) => !img || (typeof img === 'string' && (img.includes('unsplash.com') || img.includes('placeholder') || img.includes('via.placeholder')));
             const hasCustomImg = v.image && !isPlaceholder(v.image) && v.image !== primaryImage;
             const effectiveImg = hasCustomImg ? v.image : (v.image && !isPlaceholder(v.image) ? v.image : primaryImage);

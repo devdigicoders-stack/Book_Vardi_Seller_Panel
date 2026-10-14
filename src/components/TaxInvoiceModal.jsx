@@ -250,21 +250,20 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     'canceled'
   ].includes(normStatus) || (isBulkOrder && normStatus.length > 0) || (!isPendingUnconfirmed && normStatus.length > 0);
 
-  const hasPendingProduct = !isBulkOrder && (isPendingUnconfirmed || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
-    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-    return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
-  })));
-
   const hasConfirmedItem = Array.isArray(order.items) && order.items.some(it => {
     const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-    return itStatus && !['pending', 'placed', 'unconfirmed'].includes(itStatus);
+    return itStatus && !['pending', 'placed', 'unconfirmed', 'draft'].includes(itStatus);
   });
 
   const isPaid = String(order.paymentStatus || '').toLowerCase() === 'paid' ||
     String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
     Number(order.advancePaidAmount || 0) > 0;
 
-  const confirmed = isBulkOrder ? (isConfirmedAndOnward || normStatus.length > 0) : (!hasPendingProduct && (isConfirmedAndOnward || hasConfirmedItem));
+  const isOrderStrictlyPending = isPendingUnconfirmed && !isPaid && !isConfirmedAndOnward;
+
+  const confirmed = isBulkOrder
+    ? (isConfirmedAndOnward || normStatus.length > 0)
+    : (isConfirmedAndOnward || isPaid || hasConfirmedItem || !isOrderStrictlyPending);
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
@@ -707,16 +706,88 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     return 5;
   };
 
-  const marketplaceCommissionRate = getSellerCommissionRate();
+  const explicitRule = order.settlementRule ||
+                       order.settlement?.ruleCode ||
+                       (Array.isArray(order.items) && order.items.find(it => it.settlementRule)?.settlementRule);
+
+  const rawPayment = String(order.paymentMethod || '').toUpperCase();
+  const isCod = rawPayment.includes('COD') ||
+                rawPayment.includes('CASH') ||
+                rawPayment.includes('DELIVERY');
+
+  const rawMode = String(order.deliveryMode || order.deliveryType || '').toLowerCase();
+  const hasRealThirdPartyCourier = Boolean(
+    (order.courierName && order.courierName !== 'N/A' && order.courierName !== 'Delhivery' && order.trackingNumber) ||
+    (order.thirdPartyDetails?.courierName && order.thirdPartyDetails?.trackingNumber)
+  );
+  const isExplicitThirdParty = rawMode.includes('third') && hasRealThirdPartyCourier;
+  const isThirdParty = isExplicitThirdParty;
+  const isSelf = !isThirdParty;
+  // Active Rule Detection across 4 core scenarios
+  const isRule4CodCourier = explicitRule === 'COD_THIRD_PARTY_DELIVERY' || (isCod && isThirdParty);
+  const isRule3CodSelf = explicitRule === 'COD_SELF_DELIVERY' || (isCod && !isThirdParty);
+  const isRule2OnlineCourier = explicitRule === 'ONLINE_THIRD_PARTY_DELIVERY' || (!isCod && isThirdParty);
+  const isRule1OnlineSelf = explicitRule === 'ONLINE_SELF_DELIVERY' || (!isCod && !isThirdParty);
+
+  // Portal Commission Rate: Default 10%
+  const marketplaceCommissionRate = (isRule3CodSelf || isRule4CodCourier || isRule2OnlineCourier || isRule1OnlineSelf)
+    ? 10
+    : (order.commissionRate ?? getSellerCommissionRate() ?? 10);
+
   const marketplaceCommission = Math.round((grandTotal * (marketplaceCommissionRate / 100)) * 100) / 100;
-  const sellerPayout = Math.round((grandTotal - marketplaceCommission) * 100) / 100;
+  const gstOnCommission = Math.round((marketplaceCommission * 0.18) * 100) / 100;
+  const tdsAmount = Math.round((grandTotal * 0.001) * 100) / 100;
+
+  // Statutory Tax:
+  // Rule 3 (COD Self): GST TCS is 0% when portal does not collect customer payment
+  // Rule 1, 2, 4: GST TCS is 0.5% (Sec 52) of 'Base Amount' (Taxable Value without GST).
+  // सबसे जरूरी कंडीशन: अगर कोई आइटम टैक्स-फ्री है (जैसे किताबें, 0% GST), तो TCS = 0!
+  const taxableBaseForTcs = itemBreakdowns.reduce((acc, it) => {
+    return Number(it.rate || 0) > 0 ? acc + Number(it.taxableVal || 0) : acc;
+  }, 0);
+  const hasTaxableSupplies = taxableBaseForTcs > 0;
+
+  const cgstTcsRate = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? 0.25 : 0);
+  const sgstTcsRate = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? 0.25 : 0);
+  const igstTcsRate = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (!isIntraState ? 0.5 : 0);
+
+  const cgstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? Math.round(((taxableBaseForTcs * 0.25) / 100) * 100) / 100 : 0);
+  const sgstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? Math.round(((taxableBaseForTcs * 0.25) / 100) * 100) / 100 : 0);
+  const igstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (!isIntraState ? Math.round(((taxableBaseForTcs * 0.5) / 100) * 100) / 100 : 0);
+  const gstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : Math.round((cgstTcsAmount + sgstTcsAmount + igstTcsAmount) * 100) / 100;
+
+  // Delivery Charges + 18% GST (Rule 2 & Rule 4: Third-Party Delivery)
+  // "₹400 से अधिक के ऑर्डर पर: यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है।"
+  // "डिलीवरी का खर्च और उस पर GST तभी काटें, जब यह खर्च सेलर के जिम्मे हो।"
+  const isAbove400 = grandTotal > 400;
+  const isDeliveryExemptedForSeller = isAbove400;
+  let deliveryChargeAmount = 0;
+  let gstOnDeliveryAmount = 0;
+  let totalDeliveryDeduction = 0;
+
+  if (isThirdParty && !isDeliveryExemptedForSeller) {
+    deliveryChargeAmount = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? 40);
+    gstOnDeliveryAmount = Math.round(((deliveryChargeAmount * 18) / 100) * 100) / 100;
+    totalDeliveryDeduction = Math.round((deliveryChargeAmount + gstOnDeliveryAmount) * 100) / 100;
+  }
+
+  const statutoryDeductions = Math.round((marketplaceCommission + gstOnCommission + tdsAmount + gstTcsAmount) * 100) / 100;
+  const totalDeductions = Math.round((statutoryDeductions + totalDeliveryDeduction) * 100) / 100;
+
+  // Final Settlement:
+  // Rule 3 (COD Self): Customer paid cash to seller directly. Portal pays ₹0.
+  // Settlement is Negative (-totalDeductions) to be deposited/adjusted.
+  // Rule 1, 2, 4 (Courier / Online): Portal holds the funds (courier remits cash to portal in Rule 4).
+  // Settlement is Positive (Gross - totalDeductions) payable to seller.
+  const sellerSettlement = isRule3CodSelf
+    ? -totalDeductions
+    : Math.max(0, Math.round((grandTotal - totalDeductions) * 100) / 100);
+
+  const sellerPayout = sellerSettlement;
 
   // Logistics tracking resolution: strictly visible when product is Out for Delivery & partner decided
   const logisticsStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
   const isOut = logisticsStatus === 'out for delivery' || logisticsStatus === 'delivered';
-  const rawMode = String(order.deliveryMode || order.deliveryType || '').toLowerCase();
-  const isThirdParty = rawMode.includes('third') || Boolean(order.courierName || order.thirdPartyDetails?.courierName);
-  const isSelf = !isThirdParty && (rawMode.includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPersonName));
   const hasPartner = isSelf || isThirdParty || Boolean(order.courierName || order.selfDeliveryDetails?.deliveryPersonName);
   const hasTracking = isOut && hasPartner && Boolean(order.trackingNumber || order.selfDeliveryDetails?.deliveryPartnerToken || order.thirdPartyDetails?.trackingNumber);
 
@@ -893,21 +964,87 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
           {/* Financial Settlement Summary */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div className="bg-amber-50/80 p-3.5 rounded-xl border border-amber-200 space-y-1.5 text-[11px]">
-              <h4 className="font-extrabold text-[10px] text-amber-950 uppercase tracking-wider flex items-center gap-1">
-                <DollarSign size={13} /> Seller Settlement & Payout Split
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-[10px] text-amber-950 uppercase tracking-wider flex items-center gap-1">
+                  <DollarSign size={13} /> Seller Settlement & Payout Split
+                </h4>
+                {isRule3CodSelf ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-xs flex items-center gap-1">
+                    Rule 3: COD + Self Delivery (Cash)
+                  </span>
+                ) : isRule4CodCourier ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300 shadow-xs flex items-center gap-1">
+                    Rule 4: COD + 3rd-Party Delivery
+                  </span>
+                ) : isRule2OnlineCourier ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                    Rule 2: Online + 3rd-Party Delivery
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                    Rule 1: Online + Self Delivery
+                  </span>
+                )}
+              </div>
+
               <div className="flex justify-between text-gray-700">
-                <span>Gross Order Total:</span>
+                <span>{isRule3CodSelf ? 'Cash Collected by Seller:' : (isRule4CodCourier ? 'Cash via Courier Remittance:' : 'Gross Order Total:')}</span>
                 <span className="font-mono font-bold">₹{grandTotal.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-amber-900 font-bold">
-                <span>Platform Commission ({marketplaceCommissionRate}%):</span>
-                <span className="font-mono">₹{marketplaceCommission.toFixed(2)}</span>
+              <div className="flex justify-between text-amber-900 font-medium">
+                <span>Commission ({marketplaceCommissionRate}%):</span>
+                <span className="font-mono">-₹{marketplaceCommission.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-emerald-800 font-black border-t border-amber-300 pt-1">
-                <span>Net Seller Earnings:</span>
-                <span className="font-mono">₹{sellerPayout.toFixed(2)}</span>
+              <div className="flex justify-between text-indigo-900 font-medium">
+                <span>GST on Commission (18%):</span>
+                <span className="font-mono">-₹{gstOnCommission.toFixed(2)}</span>
               </div>
+              <div className="flex justify-between text-purple-900 font-medium">
+                <span>TDS 0.1% (Sec 194-O):</span>
+                <span className="font-mono">-₹{tdsAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sky-900 font-medium">
+                <span>
+                  GST TCS (Sec 52):
+                  {isRule3CodSelf ? (
+                    <span className="text-[9px] text-gray-500 font-normal ml-1">0% (Exempt on COD Self)</span>
+                  ) : !hasTaxableSupplies ? (
+                    <span className="text-[9px] text-emerald-700 font-bold ml-1">₹0.00 (0% GST / Books Tax-Free)</span>
+                  ) : isIntraState ? (
+                    <span className="text-[9px] text-sky-700 font-normal ml-1">0.5% on Base ₹{taxableBaseForTcs.toFixed(2)} (0.25% CGST + 0.25% SGST)</span>
+                  ) : (
+                    <span className="text-[9px] text-indigo-700 font-normal ml-1">0.5% on Base ₹{taxableBaseForTcs.toFixed(2)} (IGST)</span>
+                  )}
+                </span>
+                <span className="font-mono">{gstTcsAmount > 0 ? `-₹${gstTcsAmount.toFixed(2)}` : '₹0.00'}</span>
+              </div>
+
+              {/* Delivery charge deduction for Rule 2 & Rule 4 */}
+              {isThirdParty && (
+                <div className="flex justify-between text-rose-900 font-medium">
+                  <span>Delivery Charges (Policy):</span>
+                  {totalDeliveryDeduction > 0 ? (
+                    <span className="font-mono text-rose-700">-₹{totalDeliveryDeduction.toFixed(2)} (₹{deliveryChargeAmount.toFixed(2)} + ₹{gstOnDeliveryAmount.toFixed(2)} GST 18%)</span>
+                  ) : (
+                    <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs &gt;₹400)</span>
+                  )}
+                </div>
+              )}
+
+              {isRule3CodSelf ? (
+                <div className="flex justify-between text-rose-700 font-black border-t border-rose-200 pt-1">
+                  <div>
+                    <span>Final Settlement (Owed to Portal):</span>
+                    <span className="text-[9px] text-rose-600 block font-normal">Adjusted from subsequent payouts</span>
+                  </div>
+                  <span className="font-mono text-xs font-extrabold">-₹{Math.abs(sellerSettlement).toFixed(2)}</span>
+                </div>
+              ) : (
+                <div className="flex justify-between text-emerald-800 font-black border-t border-amber-300 pt-1">
+                  <span>Net Payable to Seller:</span>
+                  <span className="font-mono">₹{sellerSettlement.toFixed(2)}</span>
+                </div>
+              )}
             </div>
 
             <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200 space-y-2 text-[11px]">

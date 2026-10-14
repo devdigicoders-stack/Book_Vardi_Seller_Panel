@@ -161,32 +161,163 @@ export default function FinanceTab() {
     return orders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
   }, [orders]);
 
-  // Dynamic platform commission & seller net margin
+  // Dynamic platform commission (Default: 10% as per Rule 1)
   const commissionRate = useMemo(() => {
     const raw = sellerUser?.commissionPercentage ?? sellerUser?.commissionRate ?? finance?.wallet?.commissionPercentage ?? finance?.wallet?.commissionRate ?? finance?.commissionPercentage ?? finance?.commissionRate;
     if (raw !== undefined && raw !== null && !isNaN(Number(raw))) {
       return Number(raw);
     }
-    return 5;
+    return 10;
   }, [sellerUser, finance]);
 
-  const sellerPayoutPercentage = 100 - commissionRate;
+  // Rule 1 & Rule 2: Dynamic Seller Settlement Aggregation
+  const settlementSummary = useMemo(() => {
+    let grossSales = 0;
+    let totalPortalCommission = 0;
+    let totalGstOnCommission = 0;
+    let totalTds = 0;
+    let totalGstTcs = 0;
+    let totalDeliveryDeductions = 0;
+    let totalDeductions = 0;
+    let totalFinalSettlement = 0;
 
-  const netMargin = useMemo(() => {
-    if (!orders || orders.length === 0) return Math.round(totalGross * (sellerPayoutPercentage / 100));
-    return Math.round(orders.reduce((sum, o) => {
-      const ordTotal = Number(o.total || 0);
-      const ordRate = Number(o.commissionRate ?? o.items?.[0]?.commissionRate ?? commissionRate);
-      const sellerCut = Math.round(ordTotal * ((100 - ordRate) / 100) * 100) / 100;
-      return sum + sellerCut;
-    }, 0));
-  }, [orders, totalGross, sellerPayoutPercentage, commissionRate]);
+    orders.forEach(o => {
+      const gross = Number(o.total || o.totalAmount || 0);
+      const commRate = Number(o.commissionRate ?? o.settlement?.commissionRate ?? commissionRate ?? 10);
+      
+      const commAmount = o.settlement?.commissionAmount !== undefined
+        ? Number(o.settlement.commissionAmount)
+        : Math.round(((gross * commRate) / 100) * 100) / 100;
+
+      const gstComm = o.settlement?.gstOnCommissionAmount !== undefined
+        ? Number(o.settlement.gstOnCommissionAmount)
+        : Math.round(((commAmount * 18) / 100) * 100) / 100;
+
+      const tds = o.settlement?.tdsAmount !== undefined
+        ? Number(o.settlement.tdsAmount)
+        : Math.round(((gross * 0.1) / 100) * 100) / 100;
+
+      // Rule 2: Delivery Charges + 18% GST (Third-Party Delivery)
+      const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
+      const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
+      const isThirdParty = o.isThirdParty === true || 
+                           rawDeliveryMode.includes('third') || 
+                           rawDeliveryMode.includes('courier') || 
+                           (hasCourier && !rawDeliveryMode.includes('self'));
+
+      const rawPayment = String(o.paymentMethod || o.paymentMode || o.paymentType || '').toUpperCase();
+      const isCod = rawPayment.includes('COD') || rawPayment.includes('CASH') || rawPayment.includes('DELIVERY');
+      const isRule3 = isCod && !isThirdParty;
+
+      // Rule 3: 0% GST TCS when portal does not collect customer payment
+      const gstTcs = isRule3
+        ? 0
+        : (o.settlement?.gstTcsAmount !== undefined
+            ? Number(o.settlement.gstTcsAmount)
+            : Math.round(((gross * 0.5) / 100) * 100) / 100);
+
+      const ordTotalVal = Number(o.totalAmount || o.total || gross);
+      const isAbove400 = ordTotalVal > 400;
+
+      let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
+      if (!deliveryChargeBorneBy) {
+        if (isAbove400) {
+          deliveryChargeBorneBy = 'admin';
+        } else if (o.isDeliveryBorneBySeller || o.deliveryBorneBy === 'seller') {
+          deliveryChargeBorneBy = 'seller';
+        } else if (Number(o.shippingAmount || o.shippingFee || 0) > 0) {
+          deliveryChargeBorneBy = 'customer';
+        } else {
+          deliveryChargeBorneBy = isThirdParty ? 'seller' : 'admin';
+        }
+      }
+
+      let delivDeduction = 0;
+      if (isRule3) {
+        delivDeduction = 0; // Self-delivery by seller
+      } else if (o.settlement?.totalDeliveryDeduction !== undefined) {
+        delivDeduction = Number(o.settlement.totalDeliveryDeduction);
+      } else if (o.totalDeliveryDeduction !== undefined) {
+        delivDeduction = Number(o.totalDeliveryDeduction);
+      } else if (isThirdParty && deliveryChargeBorneBy === 'seller' && !isAbove400) {
+        const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? 40));
+        delivDeduction = Math.round((rawDeliveryFee * 1.18) * 100) / 100;
+      }
+
+      const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
+
+      // Rule 3: Cash collected by seller. Seller owes portal (-deductions).
+      // Rule 1 & 2: Portal collected cash online and pays seller (gross - deductions).
+      let finalNet;
+      if (o.settlement?.netSettlementAmount !== undefined) {
+        finalNet = Number(o.settlement.netSettlementAmount);
+      } else if (isRule3) {
+        finalNet = Math.round(-deductions * 100) / 100;
+      } else {
+        finalNet = Math.max(0, Math.round((gross - deductions) * 100) / 100);
+      }
+
+      grossSales += gross;
+      totalPortalCommission += commAmount;
+      totalGstOnCommission += gstComm;
+      totalTds += tds;
+      totalGstTcs += gstTcs;
+      totalDeliveryDeductions += delivDeduction;
+      totalDeductions += deductions;
+      totalFinalSettlement += finalNet;
+    });
+
+    return {
+      grossSales: Math.round(grossSales * 100) / 100,
+      portalCommission: Math.round(totalPortalCommission * 100) / 100,
+      gstOnCommission: Math.round(totalGstOnCommission * 100) / 100,
+      tds: Math.round(totalTds * 100) / 100,
+      gstTcs: Math.round(totalGstTcs * 100) / 100,
+      deliveryDeductions: Math.round(totalDeliveryDeductions * 100) / 100,
+      totalDeductions: Math.round(totalDeductions * 100) / 100,
+      finalSettlement: Math.round(totalFinalSettlement * 100) / 100
+    };
+  }, [orders, commissionRate]);
+
+  const netMargin = settlementSummary.finalSettlement;
 
   const pendingEscrow = useMemo(() => {
     return orders
       .filter(o => o.status === 'Pending' || o.status === 'Processing' || o.status === 'Shipped')
-      .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-  }, [orders]);
+      .reduce((sum, o) => {
+        const gross = Number(o.total || o.totalAmount || 0);
+        const commRate = Number(o.commissionRate ?? commissionRate ?? 10);
+        const commAmount = o.settlement?.commissionAmount !== undefined ? Number(o.settlement.commissionAmount) : Math.round(((gross * commRate) / 100) * 100) / 100;
+        const gstComm = o.settlement?.gstOnCommissionAmount !== undefined ? Number(o.settlement.gstOnCommissionAmount) : Math.round(((commAmount * 18) / 100) * 100) / 100;
+        const tds = o.settlement?.tdsAmount !== undefined ? Number(o.settlement.tdsAmount) : Math.round(((gross * 0.1) / 100) * 100) / 100;
+        const gstTcs = o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100;
+
+        const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
+        const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
+        const isThirdParty = o.isThirdParty === true || rawDeliveryMode.includes('third') || rawDeliveryMode.includes('courier') || (hasCourier && !rawDeliveryMode.includes('self'));
+        const ordTotalVal = Number(o.totalAmount || o.total || gross);
+        const isAbove400 = ordTotalVal > 400;
+
+        let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
+        if (!deliveryChargeBorneBy) {
+          if (isAbove400) deliveryChargeBorneBy = 'admin';
+          else if (o.isDeliveryBorneBySeller || o.deliveryBorneBy === 'seller') deliveryChargeBorneBy = 'seller';
+          else if (Number(o.shippingAmount || o.shippingFee || 0) > 0) deliveryChargeBorneBy = 'customer';
+          else deliveryChargeBorneBy = isThirdParty ? 'seller' : 'admin';
+        }
+
+        let delivDeduction = 0;
+        if (o.settlement?.totalDeliveryDeduction !== undefined) delivDeduction = Number(o.settlement.totalDeliveryDeduction);
+        else if (o.totalDeliveryDeduction !== undefined) delivDeduction = Number(o.totalDeliveryDeduction);
+        else if (isThirdParty && deliveryChargeBorneBy === 'seller' && !isAbove400) {
+          const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? 40));
+          delivDeduction = Math.round((rawDeliveryFee * 1.18) * 100) / 100;
+        }
+
+        const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
+        return sum + Math.max(0, Math.round((gross - deductions) * 100) / 100);
+      }, 0);
+  }, [orders, commissionRate]);
 
   const availableBalance = useMemo(() => {
     return Math.max(0, netMargin - pendingEscrow);
@@ -196,14 +327,78 @@ export default function FinanceTab() {
   const dynamicTransactions = useMemo(() => {
     const list = [];
 
-    // Order credits
+    // Order credits & COD settlement adjustments
     orders.forEach(o => {
+      const gross = Number(o.total || o.totalAmount || 0);
+      const commRate = Number(o.commissionRate ?? commissionRate ?? 10);
+      const commAmount = o.settlement?.commissionAmount !== undefined ? Number(o.settlement.commissionAmount) : Math.round(((gross * commRate) / 100) * 100) / 100;
+      const gstComm = o.settlement?.gstOnCommissionAmount !== undefined ? Number(o.settlement.gstOnCommissionAmount) : Math.round(((commAmount * 18) / 100) * 100) / 100;
+      const tds = o.settlement?.tdsAmount !== undefined ? Number(o.settlement.tdsAmount) : Math.round(((gross * 0.1) / 100) * 100) / 100;
+
+      const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
+      const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
+      const isThirdParty = o.isThirdParty === true || rawDeliveryMode.includes('third') || rawDeliveryMode.includes('courier') || (hasCourier && !rawDeliveryMode.includes('self'));
+
+      const rawPayment = String(o.paymentMethod || o.paymentMode || o.paymentType || '').toUpperCase();
+      const isCod = rawPayment.includes('COD') || rawPayment.includes('CASH') || rawPayment.includes('DELIVERY');
+      const isRule3 = isCod && !isThirdParty;
+
+      // Rule 3: 0% GST TCS when portal does not collect customer cash
+      const gstTcs = isRule3
+        ? 0
+        : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
+
+      const ordTotalVal = Number(o.totalAmount || o.total || gross);
+      const isAbove400 = ordTotalVal > 400;
+
+      let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
+      if (!deliveryChargeBorneBy) {
+        if (isAbove400) deliveryChargeBorneBy = 'admin';
+        else if (o.isDeliveryBorneBySeller || o.deliveryBorneBy === 'seller') deliveryChargeBorneBy = 'seller';
+        else if (Number(o.shippingAmount || o.shippingFee || 0) > 0) deliveryChargeBorneBy = 'customer';
+        else deliveryChargeBorneBy = isThirdParty ? 'seller' : 'admin';
+      }
+
+      let delivDeduction = 0;
+      if (isRule3) {
+        delivDeduction = 0;
+      } else if (o.settlement?.totalDeliveryDeduction !== undefined) {
+        delivDeduction = Number(o.settlement.totalDeliveryDeduction);
+      } else if (o.totalDeliveryDeduction !== undefined) {
+        delivDeduction = Number(o.totalDeliveryDeduction);
+      } else if (isThirdParty && deliveryChargeBorneBy === 'seller' && !isAbove400) {
+        const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? 40));
+        delivDeduction = Math.round((rawDeliveryFee * 1.18) * 100) / 100;
+      }
+
+      const totalDed = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
+      const isRule4 = isCod && isThirdParty;
+      let finalNet;
+      if (o.settlement?.netSettlementAmount !== undefined) {
+        finalNet = Number(o.settlement.netSettlementAmount);
+      } else if (isRule3) {
+        finalNet = Math.round(-totalDed * 100) / 100;
+      } else {
+        finalNet = Math.max(0, Math.round((gross - totalDed) * 100) / 100);
+      }
+
       list.push({
         id: `TXN-ORD-${o.id}`,
         date: o.date || 'Recent Order',
-        description: `Customer Sale #${o.id} (${o.customerName || 'Buyer'})`,
-        type: 'Credit',
-        amount: Number(o.total || 0),
+        description: isRule3 
+          ? `COD Sale #${o.id} (Cash collected by seller - Portal fee)`
+          : isRule4
+          ? `COD Sale #${o.id} (Courier remits cash to portal - Payout credit)`
+          : `Customer Sale #${o.id} (${o.customerName || 'Buyer'})`,
+        type: isRule3 ? 'Payable (COD)' : (isRule4 ? 'Credit (COD Courier)' : 'Credit'),
+        grossAmount: gross,
+        amount: finalNet,
+        isRule3,
+        isRule4,
+        deliveryDeduction: delivDeduction,
+        deductions: totalDed,
+        isThirdParty,
+        isAbove400,
         status: o.status === 'Delivered' ? 'Completed' : 'Pending'
       });
     });
@@ -214,7 +409,7 @@ export default function FinanceTab() {
     }
 
     return list;
-  }, [orders, finance]);
+  }, [orders, finance, commissionRate]);
 
   // Filter transactions by live search query
   const filteredTransactions = useMemo(() => {
@@ -252,7 +447,7 @@ export default function FinanceTab() {
             <CreditCard className="text-teal-700" size={24} /> Finance & Bank Settlements
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Track gross sales, net seller margins ({sellerPayoutPercentage}%), platform commission ({commissionRate}%), and automated bank deposits
+            Book Vardi — Rule 1 (Self Delivery) & Rule 2 (Third-Party Courier Delivery) Transparent Payout Settlements
           </p>
         </div>
 
@@ -275,12 +470,95 @@ export default function FinanceTab() {
         </div>
       </div>
 
+      {/* Book Vardi Official Settlement Rules (Rule 1, Rule 2 & Rule 3) Explainer Card */}
+      <div className="bg-gradient-to-r from-teal-900 via-teal-950 to-emerald-950 text-white p-5 rounded-2xl shadow-sm border border-teal-800 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2 font-bold text-sm text-teal-100">
+            <ShieldCheck size={18} className="text-teal-300" />
+            <span>Book Vardi — सेलर सेटलमेंट के नियम</span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] bg-teal-800/90 text-teal-200 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-teal-700">
+              1. Online Self
+            </span>
+            <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-amber-400/40">
+              2. Online Courier
+            </span>
+            <span className="text-[10px] bg-rose-500/20 text-rose-300 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-rose-400/40">
+              3. COD Self
+            </span>
+            <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-purple-400/40">
+              4. COD Courier
+            </span>
+          </div>
+        </div>
+        
+        {/* 6 Rule Pillars Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1 text-xs">
+          <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/10">
+            <div className="text-[9.5px] text-teal-200 font-bold uppercase tracking-wider">Gross Sale</div>
+            <div className="text-sm font-extrabold text-white mt-0.5 font-mono">₹{settlementSummary.grossSales.toLocaleString('en-IN')}</div>
+            <div className="text-[9.5px] text-teal-200 mt-0.5 leading-tight">कुल बिक्री राशि</div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/10">
+            <div className="text-[9.5px] text-amber-200 font-bold uppercase tracking-wider">Portal Comm (10%)</div>
+            <div className="text-sm font-extrabold text-amber-300 mt-0.5 font-mono">−₹{settlementSummary.portalCommission.toLocaleString('en-IN')}</div>
+            <div className="text-[9.5px] text-amber-200 mt-0.5 leading-tight">पोर्टल का कमीशन</div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/10">
+            <div className="text-[9.5px] text-indigo-200 font-bold uppercase tracking-wider">GST on Comm (18%)</div>
+            <div className="text-sm font-extrabold text-indigo-300 mt-0.5 font-mono">−₹{settlementSummary.gstOnCommission.toLocaleString('en-IN')}</div>
+            <div className="text-[9.5px] text-indigo-200 mt-0.5 leading-tight">कमीशन पर 18% GST</div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/10">
+            <div className="text-[9.5px] text-sky-200 font-bold uppercase tracking-wider">TDS (0.1%) & TCS</div>
+            <div className="text-sm font-extrabold text-sky-300 mt-0.5 font-mono">−₹{(settlementSummary.tds + settlementSummary.gstTcs).toFixed(2)}</div>
+            <div className="text-[9.5px] text-sky-200 mt-0.5 leading-tight">TDS 0.1% | 0% TCS (Rule 3)</div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/10">
+            <div className="text-[9.5px] text-rose-200 font-bold uppercase tracking-wider">Deliv. Ded. (Rule 2)</div>
+            <div className="text-sm font-extrabold text-rose-300 mt-0.5 font-mono">−₹{(settlementSummary.deliveryDeductions || 0).toLocaleString('en-IN')}</div>
+            <div className="text-[9.5px] text-rose-200 mt-0.5 leading-tight">कूरियर + 18% GST</div>
+          </div>
+
+          <div className="bg-emerald-500/20 backdrop-blur-xs p-2.5 rounded-xl border border-emerald-400/30 col-span-2 sm:col-span-1">
+            <div className="text-[9.5px] text-emerald-300 font-bold uppercase tracking-wider">Final Settlement</div>
+            <div className="text-sm font-black text-emerald-200 mt-0.5 font-mono">₹{settlementSummary.finalSettlement.toLocaleString('en-IN')}</div>
+            <div className="text-[9.5px] text-emerald-300 mt-0.5 leading-tight">शुद्ध देय राशि</div>
+          </div>
+        </div>
+
+        {/* Bilingual Settlement Guidelines */}
+        <div className="pt-2 border-t border-white/15 text-[11px] space-y-1.5 text-teal-100/90">
+          <div className="flex items-start gap-1.5">
+            <span className="font-bold text-amber-300 shrink-0">₹400 से अधिक के ऑर्डर पर:</span>
+            <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (₹0 डिलीवरी कटौती)।</span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <span className="font-bold text-sky-300 shrink-0">GST TCS (Sec 52):</span>
+            <span>पात्र बिक्री पर कुल 0.5% — एक ही राज्य (Intra-State) में 0.25% CGST + 0.25% SGST, या अंतरराज्यीय (Inter-State) बिक्री पर 0.5% IGST। (Rule 3 COD पर 0% TCS)।</span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <span className="font-bold text-rose-300 shrink-0">COD + सेलर डिलीवरी (Rule 3):</span>
+            <span>ग्राहक पूरा पैसा सीधे सेलर को देगा। 10% कमीशन + 18% GST + 0.1% TDS (0% TCS) पोर्टल में देय (-) होगा और सेलर का सेटलमेंट माइनस (-) में दिखेगा।</span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <span className="font-bold text-purple-300 shrink-0">COD + कूरियर डिलीवरी (Rule 4):</span>
+            <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल 10% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹400+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
+          </div>
+        </div>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Gross Sales Revenue</div>
-          <div className="text-2xl font-extrabold text-gray-900 mt-1">
-            ₹{totalGross.toLocaleString('en-IN')}
+          <div className="text-2xl font-extrabold text-gray-900 mt-1 font-mono">
+            ₹{settlementSummary.grossSales.toLocaleString('en-IN')}
           </div>
           <div className="text-[10px] text-emerald-600 font-medium mt-1">
             {orders.length > 0 ? `${orders.length} total orders in database` : '0 sales recorded'}
@@ -288,24 +566,24 @@ export default function FinanceTab() {
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Net Seller Margin ({sellerPayoutPercentage}% Payout)</div>
-          <div className="text-2xl font-extrabold text-teal-800 mt-1">
-            ₹{netMargin.toLocaleString('en-IN')}
+          <div className="text-[11px] font-semibold text-gray-500">Total Deductions (Comm + GST + Tax + Delivery)</div>
+          <div className="text-2xl font-extrabold text-rose-700 mt-1 font-mono">
+            ₹{settlementSummary.totalDeductions.toLocaleString('en-IN')}
           </div>
-          <div className="text-[10px] text-teal-700 mt-1">After {commissionRate}% platform fee & GST</div>
+          <div className="text-[10px] text-rose-600 mt-1">10% Cut + 18% GST + 0.1% TDS + 0.5% TCS {settlementSummary.deliveryDeductions > 0 ? `+ ₹${settlementSummary.deliveryDeductions} Deliv.` : ''}</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Pending Escrow Payout</div>
-          <div className="text-2xl font-extrabold text-amber-700 mt-1">
-            ₹{pendingEscrow.toLocaleString('en-IN')}
+          <div className="text-[11px] font-semibold text-gray-500">Final Seller Settlement</div>
+          <div className="text-2xl font-extrabold text-teal-800 mt-1 font-mono">
+            ₹{settlementSummary.finalSettlement.toLocaleString('en-IN')}
           </div>
-          <div className="text-[10px] text-gray-400 mt-1">Releases upon order delivery</div>
+          <div className="text-[10px] text-teal-700 mt-1">Net payable margin to seller account</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Available Settlement Balance</div>
-          <div className="text-2xl font-extrabold text-emerald-700 mt-1">
+          <div className="text-2xl font-extrabold text-emerald-700 mt-1 font-mono">
             ₹{availableBalance.toLocaleString('en-IN')}
           </div>
           <div className="text-[10px] text-emerald-600 font-medium mt-1">Ready for 1-click bank transfer</div>
@@ -454,19 +732,44 @@ export default function FinanceTab() {
                   <tr key={txn.id} className="hover:bg-gray-50/70 transition-colors">
                     <td className="py-3.5 px-4 font-mono font-bold text-gray-800">{txn.id}</td>
                     <td className="py-3.5 px-3 text-gray-500">{txn.date}</td>
-                    <td className="py-3.5 px-3 font-medium text-gray-800">{txn.description}</td>
+                    <td className="py-3.5 px-3">
+                      <div className="font-medium text-gray-800">{txn.description}</div>
+                      {txn.type === 'Credit' && (
+                        <div className="text-[10px] text-gray-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                          <span className={txn.isThirdParty ? 'text-amber-800 font-semibold' : 'text-teal-800 font-semibold'}>
+                            {txn.isThirdParty ? 'Rule 2 (Courier)' : 'Rule 1 (Self)'}
+                          </span>
+                          {txn.isThirdParty && txn.isAbove400 && (
+                            <span className="text-teal-800 font-semibold bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200">
+                              &gt;₹400 Free Deliv.
+                            </span>
+                          )}
+                          {txn.deliveryDeduction > 0 && (
+                            <span className="text-rose-700 font-medium bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                              Deliv Ded: -₹{txn.deliveryDeduction}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="py-3.5 px-3">
                       <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                         txn.type === 'Credit' ? 'bg-emerald-100 text-emerald-800' :
+                        txn.type === 'Payable (COD)' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
                         txn.type === 'Payout' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
                       }`}>
                         {txn.type}
                       </span>
                     </td>
                     <td className={`py-3.5 px-3 font-extrabold text-sm ${
-                      txn.amount > 0 ? 'text-emerald-700' : 'text-gray-900'
+                      txn.amount > 0 ? 'text-emerald-700' : (txn.amount < 0 ? 'text-rose-700' : 'text-gray-900')
                     }`}>
-                      {txn.amount > 0 ? `+₹${txn.amount.toLocaleString('en-IN')}` : `₹${txn.amount.toLocaleString('en-IN')}`}
+                      <div>{txn.amount > 0 ? `+₹${txn.amount.toLocaleString('en-IN')}` : (txn.amount < 0 ? `-₹${Math.abs(txn.amount).toLocaleString('en-IN')}` : `₹${txn.amount.toLocaleString('en-IN')}`)}</div>
+                      {txn.grossAmount !== undefined && (
+                        <div className="text-[10px] text-gray-400 font-normal">
+                          {txn.isRule3 ? `Cash collected by seller (Portal fee: -₹${txn.deductions})` : `Gross ₹${txn.grossAmount} (Ded: -₹${txn.deductions})`}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">

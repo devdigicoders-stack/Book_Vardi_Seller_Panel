@@ -206,8 +206,11 @@ export default function OrdersTab() {
       const isSelf = activeOrderModal.deliveryMode === 'self_delivery' ||
         activeOrderModal.deliveryType === 'self_delivery' ||
         activeOrderModal.deliveryType === 'self' ||
-        Boolean(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken);
-      setDeliveryModeInput(isSelf ? 'self_delivery' : (activeOrderModal.deliveryMode || activeOrderModal.deliveryType || 'third_party'));
+        Boolean(activeOrderModal.selfDeliveryDetails?.deliveryPersonName || activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken);
+      const isThird = activeOrderModal.deliveryMode === 'third_party' ||
+        activeOrderModal.deliveryType === 'third_party' ||
+        Boolean(activeOrderModal.courierName && activeOrderModal.courierName !== 'N/A' && activeOrderModal.courierName !== '');
+      setDeliveryModeInput(isSelf ? 'self_delivery' : (isThird ? 'third_party' : 'third_party'));
       setModalDriverName(activeOrderModal.selfDeliveryDetails?.deliveryPersonName || '');
       setModalSelfDeliveryToken(
         activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken ||
@@ -856,15 +859,19 @@ export default function OrdersTab() {
                         <div className="text-[11px] text-gray-500 mt-0.5">{o.date}</div>
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           <span className="text-[10px] text-gray-500">{o.paymentMethod}</span>
-                          {(o.deliveryMode === 'self_delivery' || o.deliveryType === 'self_delivery' || o.selfDeliveryDetails?.deliveryPartnerToken) ? (
+                          {(o.deliveryMode === 'self_delivery' || o.deliveryType === 'self_delivery' || Boolean(o.selfDeliveryDetails?.deliveryPersonName || o.selfDeliveryDetails?.deliveryPartnerToken)) ? (
                             <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800">
                               🛵 Self-Delivery
                             </span>
-                          ) : (o.courierName && o.courierName !== 'N/A') ? (
+                          ) : (o.courierName && o.courierName !== 'N/A' && o.courierName !== '') ? (
                             <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
                               🚚 {o.courierName}
                             </span>
-                          ) : null}
+                          ) : (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                              ⏳ Delivery Pending Choice
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -1633,7 +1640,7 @@ export default function OrdersTab() {
                           isFinalStatus ? 'cursor-not-allowed opacity-75' : ''
                         } ${
                           deliveryModeInput === 'third_party'
-                            ? 'bg-white text-teal-900 shadow-xs'
+                            ? 'bg-white text-teal-900 shadow-xs ring-1 ring-teal-300'
                             : 'text-teal-800 hover:text-teal-950'
                         }`}
                       >
@@ -1647,12 +1654,20 @@ export default function OrdersTab() {
                           isFinalStatus ? 'cursor-not-allowed opacity-75' : ''
                         } ${
                           deliveryModeInput === 'self_delivery'
-                            ? 'bg-white text-teal-900 shadow-xs'
+                            ? 'bg-white text-teal-900 shadow-xs ring-1 ring-teal-300'
                             : 'text-teal-800 hover:text-teal-950'
                         }`}
                       >
                         🛵 Direct Self-Delivery (Store Fleet / Rider)
                       </button>
+                    </div>
+
+                    <div className="text-[11px] px-2.5 py-1.5 rounded-lg bg-teal-50 border border-teal-200/80 text-teal-900">
+                      {deliveryModeInput === 'third_party' ? (
+                        <span>📦 <strong>Courier Network Mode:</strong> Customer tracks shipment via Carrier AWB & live link. (No store doorstep OTP required).</span>
+                      ) : (
+                        <span>🔑 <strong>Direct Store Fleet Mode:</strong> Generates a secure 4-digit Doorstep Handover OTP for customer verification with your rider.</span>
+                      )}
                     </div>
 
                     {/* Mode A: 3rd Party Courier Fields */}
@@ -1986,6 +2001,11 @@ export default function OrdersTab() {
                                 return isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
                               })()} {item.size ? `• Size: ${item.size}` : ''} {item.color ? `• Color: ${item.color}` : ''}
                             </div>
+                            {Number(item.offerDiscount || item.discount || 0) > 0 && (
+                              <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
+                                <span>🏷️ Coupon {item.couponCode ? `(${item.couponCode})` : ''}: -₹{Number(item.offerDiscount || item.discount).toFixed(2)}</span>
+                              </div>
+                            )}
                             {!isMyItem && (
                               <div className="text-[10px] text-teal-800 font-bold flex items-center gap-1 mt-0.5">
                                 <Store size={11} className="text-teal-600" />
@@ -2048,7 +2068,16 @@ export default function OrdersTab() {
                               </span>
                             )}
                           </div>
-                          <div className="font-bold text-gray-900 text-xs min-w-[50px] text-right">₹{(item.price * item.quantity)}</div>
+                          <div className="font-bold text-gray-900 text-xs min-w-[50px] text-right">
+                            {Number(item.offerDiscount || item.discount || 0) > 0 ? (
+                              <div>
+                                <span className="line-through text-gray-400 text-[10px] mr-1">₹{(Number(item.price || 0) * Number(item.quantity || 1))}</span>
+                                <span className="text-emerald-700">₹{Math.max(0, (Number(item.price || 0) * Number(item.quantity || 1)) - Number(item.offerDiscount || item.discount || 0)).toFixed(2)}</span>
+                              </div>
+                            ) : (
+                              `₹${(Number(item.price || 0) * Number(item.quantity || 1))}`
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -2069,7 +2098,8 @@ export default function OrdersTab() {
                 (activeOrderModal.items || []).forEach(item => {
                   const qty = Number(item.quantity || 1);
                   const unitPrice = Number(item.price || 0);
-                  const grossPrice = unitPrice * qty;
+                  const itemDiscount = Number(item.offerDiscount || item.discount || 0);
+                  const grossPrice = Math.max(0, (unitPrice * qty) - itemDiscount);
                   const gstRate = Number(item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.gst ?? 5);
                   if (gstRate > 0) {
                     const taxable = grossPrice / (1 + gstRate / 100);
@@ -2131,7 +2161,7 @@ export default function OrdersTab() {
                     )}
                     {couponVal > 0 ? (
                       <div className="flex justify-between text-teal-800 font-bold">
-                        <span>Offer / Coupon Applied:</span>
+                        <span>Offer / Coupon Applied{activeOrderModal.couponCode ? ` (${activeOrderModal.couponCode})` : ''}:</span>
                         <span className="font-mono">-₹{couponVal.toFixed(2)}</span>
                       </div>
                     ) : (
