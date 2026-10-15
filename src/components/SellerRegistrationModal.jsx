@@ -30,8 +30,7 @@ import {
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import LocationPickerModal from './LocationPickerModal';
-import { getMediaUrl } from '../utils/mediaUrl';
-import { API_BASE_URL } from '../utils/api';
+import { API_BASE_URL, sendPhoneOtpApi, verifyPhoneOtpApi } from '../utils/api';
 
 export const ONBOARDING_STEPS = [
   { id: 1, title: 'Basic Profile', section: 'Basic Profile', desc: 'Name, mobile, email, photo', icon: UserCheck, verify: 'Email + Mobile OTP' },
@@ -175,6 +174,8 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
   const [otpSent, setOtpSent] = useState(false);
   const [mobileOtp, setMobileOtp] = useState('');
+  const [isSendingMobileOtp, setIsSendingMobileOtp] = useState(false);
+  const [isVerifyingMobileOtp, setIsVerifyingMobileOtp] = useState(false);
   const [showOtpPopup, setShowOtpPopup] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
@@ -369,28 +370,56 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     }, 700);
   };
 
-  const handleSendMobileOtp = () => {
-    const phone = (formData.sellerPhone || '').trim();
-    if (!phone || phone.length < 8) {
-      if (showToast) showToast('⚠️ Please enter a valid mobile number first.');
+  const handleSendMobileOtp = async () => {
+    const rawPhone = (formData.sellerPhone || '').replace(/\D/g, '');
+    const phone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+    if (!phone || phone.length !== 10) {
+      if (showToast) showToast('⚠️ Please enter a valid 10-digit mobile number first.');
       return;
     }
-    setOtpSent(true);
-    setMobileOtp('123456');
-    if (showToast) showToast(`📲 [Testing Mode] OTP code 123456 sent to ${phone}`);
+    setIsSendingMobileOtp(true);
+    try {
+      const res = await sendPhoneOtpApi(phone, true);
+      if (res && res.success !== false) {
+        setOtpSent(true);
+        setMobileOtp('');
+        if (showToast) showToast(`📲 4-digit verification OTP dispatched via SMS to +91 ${phone}!`);
+      } else {
+        if (showToast) showToast(`⚠️ ${res?.message || 'Failed to dispatch SMS OTP. Please try again.'}`);
+      }
+    } catch (err) {
+      if (showToast) showToast(`⚠️ ${err.message || 'Error sending OTP.'}`);
+    } finally {
+      setIsSendingMobileOtp(false);
+    }
   };
 
-  const handleVerifyMobileOtp = () => {
-    if (!mobileOtp || mobileOtp.trim().length < 4) {
-      if (showToast) showToast('⚠️ Please enter the 6-digit OTP code (use 123456 for testing).');
+  const handleVerifyMobileOtp = async () => {
+    const rawPhone = (formData.sellerPhone || '').replace(/\D/g, '');
+    const phone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+    const cleanOtp = (mobileOtp || '').trim();
+    if (!cleanOtp || cleanOtp.length < 4) {
+      if (showToast) showToast('⚠️ Please enter the 4-digit OTP received via SMS.');
       return;
     }
-    setFormData(prev => ({
-      ...prev,
-      phoneOtpVerified: true,
-      emailOtpVerified: true
-    }));
-    if (showToast) showToast('✅ Mobile number verified successfully via OTP!');
+    setIsVerifyingMobileOtp(true);
+    try {
+      const res = await verifyPhoneOtpApi(phone, cleanOtp, true);
+      if (res && (res.success || res.verified || res.token)) {
+        setFormData(prev => ({
+          ...prev,
+          phoneOtpVerified: true,
+          emailOtpVerified: true
+        }));
+        if (showToast) showToast('✅ Mobile number verified successfully via real SMS OTP!');
+      } else {
+        if (showToast) showToast(`❌ ${res?.message || 'Invalid or expired OTP. Please check your SMS and try again.'}`);
+      }
+    } catch (err) {
+      if (showToast) showToast(`❌ ${err.message || 'OTP verification failed. Please try again.'}`);
+    } finally {
+      setIsVerifyingMobileOtp(false);
+    }
   };
 
   const processProfilePhotoFile = (file) => {
@@ -669,7 +698,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       }
       if (!formData.phoneOtpVerified) {
         setShowOtpPopup(true);
-        if (showToast) showToast('⚠️ Please click "Send Phone OTP" and verify your mobile number (Testing code: 123456).');
+        if (showToast) showToast('⚠️ Please click "Send Phone OTP" and verify your mobile number with the SMS code.');
         return;
       }
     }
@@ -943,10 +972,11 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     />
                     <button
                       type="button"
+                      disabled={isSendingMobileOtp}
                       onClick={handleSendMobileOtp}
-                      className="px-4 py-2.5 bg-teal-50 text-teal-800 rounded-xl font-bold hover:bg-teal-100 text-xs transition-colors cursor-pointer border border-teal-200 shrink-0"
+                      className="px-4 py-2.5 bg-teal-50 text-teal-800 rounded-xl font-bold hover:bg-teal-100 text-xs transition-colors cursor-pointer border border-teal-200 shrink-0 disabled:opacity-50"
                     >
-                      {otpSent ? 'Resend OTP' : 'Send Phone OTP'}
+                      {isSendingMobileOtp ? 'Sending...' : (otpSent ? 'Resend OTP' : 'Send Phone OTP')}
                     </button>
                   </div>
                 </div>
@@ -956,10 +986,10 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <div>
                         <label className="font-bold text-gray-800 text-xs block">
-                          Enter 6-Digit Mobile OTP <span className="text-amber-700 font-normal">(Testing Code: 123456)</span>
+                          Enter Mobile Verification OTP
                         </label>
                         <p className="text-[11px] text-gray-500">
-                          A test verification code has been generated for {formData.sellerPhone}.
+                          A real 4-digit verification code has been dispatched via SMS to {formData.sellerPhone}.
                         </p>
                       </div>
 
@@ -970,14 +1000,15 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                           value={mobileOtp}
                           onChange={(e) => setMobileOtp(e.target.value)}
                           className="w-32 px-3 py-2 rounded-xl border border-gray-300 text-xs font-mono tracking-widest text-center focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
-                          placeholder="123456"
+                          placeholder="• • • •"
                         />
                         <button
                           type="button"
+                          disabled={isVerifyingMobileOtp}
                           onClick={handleVerifyMobileOtp}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer disabled:opacity-50"
                         >
-                          Verify OTP
+                          {isVerifyingMobileOtp ? 'Verifying...' : 'Verify OTP'}
                         </button>
                       </div>
                     </div>
@@ -2365,7 +2396,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
             <div>
               <h3 className="font-display font-extrabold text-base text-gray-900">Phone OTP Verification Required</h3>
               <p className="text-xs text-gray-600 mt-2 leading-relaxed">
-                You cannot move to other onboarding steps without verifying your mobile phone number. Please click <strong>"Send Phone OTP"</strong> in Step 1 and enter testing code <strong>123456</strong>.
+                You cannot move to other onboarding steps without verifying your mobile phone number. Please click <strong>"Send Phone OTP"</strong> in Step 1 and enter the OTP received on your mobile.
               </p>
             </div>
             <button

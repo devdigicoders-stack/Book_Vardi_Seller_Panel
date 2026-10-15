@@ -44,18 +44,18 @@ const loggedFetch = async (url, options = {}) => {
 // ==========================================
 // 1. Seller Auth & Onboarding APIs
 // ==========================================
-export const sendPhoneOtpApi = async (phone) => {
+export const sendPhoneOtpApi = async (phone, isRegistration = false) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/auth/send-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone })
+      body: JSON.stringify({ phone, isRegistration })
     });
     const data = await res.json();
     if (!res.ok || data.success === false) {
       return {
         success: false,
-        message: data.message || `No seller account found with mobile number +91 ${String(phone).replace(/\D/g, '').slice(-10)}. Please register as a new seller first.`
+        message: data.message || `No seller account found with mobile number +91 ${String(phone).replace(/\D/g, '').slice(-10)}.`
       };
     }
     return data;
@@ -64,20 +64,23 @@ export const sendPhoneOtpApi = async (phone) => {
   }
 };
 
-export const verifyPhoneOtpApi = async (phone, otp) => {
+export const verifyPhoneOtpApi = async (phone, otp, isRegistration = false) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, otp })
+      body: JSON.stringify({ phone, otp, isRegistration })
     });
     const data = await res.json();
+    if (!res.ok || data.success === false) {
+      return { success: false, message: data.message || 'Invalid or expired OTP. Please enter the correct OTP received on your mobile.' };
+    }
     if (data.token) {
       localStorage.setItem('bv_seller_jwt_token', data.token);
     }
     return data;
   } catch (error) {
-    return { success: false, message: error.message };
+    return { success: false, message: error.message || 'Network error verifying OTP.' };
   }
 };
 

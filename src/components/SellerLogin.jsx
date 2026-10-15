@@ -68,19 +68,13 @@ export default function SellerLogin() {
     try {
       const result = await loginSellerByPhone(phone, mobileOtp.trim());
       if (!result || !result.success) {
-        setTopCenterError(result?.message || 'Invalid OTP code. Please enter testing code 123456.');
+        setTopCenterError(result?.message || 'Invalid or expired OTP code. Please enter the correct OTP sent to your phone.');
       }
     } catch (err) {
       setTopCenterError(err.message || 'OTP verification failed.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickLogin = (customPhone) => {
-    setPhone(customPhone);
-    setOtpSent(true);
-    setMobileOtp('123456');
   };
 
   return (
@@ -188,8 +182,8 @@ export default function SellerLogin() {
               <div className="bg-teal-50 p-4 rounded-2xl border border-teal-100 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-teal-950 text-xs">Enter Mobile OTP</span>
-                  <span className="text-[10px] text-amber-700 font-extrabold bg-amber-100 px-2 py-0.5 rounded-md">
-                    Testing Code: 123456
+                  <span className="text-[10px] text-teal-700 font-bold bg-teal-100/80 px-2 py-0.5 rounded-md">
+                    SMS Sent via DLT
                   </span>
                 </div>
                 <p className="text-[11px] text-teal-700">
@@ -203,7 +197,7 @@ export default function SellerLogin() {
                   value={mobileOtp}
                   onChange={(e) => setMobileOtp(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-teal-200 text-center font-mono tracking-widest text-sm focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white disabled:opacity-60"
-                  placeholder="123456"
+                  placeholder="Enter 4-digit OTP"
                 />
               </div>
 

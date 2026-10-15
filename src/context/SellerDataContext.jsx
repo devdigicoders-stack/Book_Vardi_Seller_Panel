@@ -1094,101 +1094,57 @@ export const SellerDataProvider = ({ children }) => {
   }, [isApproved]);
 
   // Auth Methods
-  const loginSellerByPhone = async (phoneInput, otpInput = '123456') => {
+  const loginSellerByPhone = async (phoneInput, otpInput) => {
     const cleanPhone = (phoneInput || '').replace(/\D/g, '');
     if (!cleanPhone || cleanPhone.length < 8) {
       return { success: false, message: 'Please enter a valid mobile phone number.' };
     }
+    if (!otpInput || String(otpInput).trim().length < 4) {
+      return { success: false, message: 'Please enter the 4-digit OTP received on your mobile.' };
+    }
 
     try {
-      const apiRes = await verifyPhoneOtpApi(cleanPhone, otpInput);
-      if (apiRes && apiRes.token) {
-        let resStatus = apiRes.sellerStatus || apiRes.status || apiRes.approvalStatus || apiRes.seller?.status || apiRes.seller?.approvalStatus || 'pending';
-
-        setIsAuthenticated(true);
-        setSellerStatus(resStatus);
-        localStorage.setItem('bv_seller_status', resStatus);
-
-        const sellerData = apiRes.seller || {};
-        const resolvedName = sellerData.name || sellerData.sellerName || sellerData.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
-        const resolvedEmail = sellerData.email || sellerData.sellerEmail || `seller_${cleanPhone}@bookvardi.in`;
-        const resolvedStoreName = sellerData.storeName || sellerData.tradeName || sellerData.legalBusinessName || `${resolvedName}'s Vardi Store`;
-
-        const u = {
-          ...sellerUser,
-          ...sellerData,
-          name: resolvedName,
-          storeName: resolvedStoreName,
-          phone: `+91 ${cleanPhone}`,
-          email: resolvedEmail,
-          status: resStatus,
-          approvalStatus: resStatus,
-          pan: sellerData.pan || sellerData.ownerPan || sellerUser.pan || ''
+      const apiRes = await verifyPhoneOtpApi(cleanPhone, String(otpInput).trim(), false);
+      if (!apiRes || apiRes.success === false || !apiRes.token) {
+        return {
+          success: false,
+          message: apiRes?.message || 'Invalid or expired OTP. Please enter the correct OTP received on your mobile.'
         };
-        setSellerUser(u);
-        localStorage.setItem('seller_user_profile', JSON.stringify(u));
-        localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
-
-        return { success: true, token: apiRes.token, seller: u, status: resStatus };
       }
+
+      let resStatus = apiRes.sellerStatus || apiRes.status || apiRes.approvalStatus || apiRes.seller?.status || apiRes.seller?.approvalStatus || 'pending';
+
+      setIsAuthenticated(true);
+      setSellerStatus(resStatus);
+      localStorage.setItem('bv_seller_status', resStatus);
+
+      const sellerData = apiRes.seller || {};
+      const resolvedName = sellerData.name || sellerData.sellerName || sellerData.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`;
+      const resolvedEmail = sellerData.email || sellerData.sellerEmail || `seller_${cleanPhone}@bookvardi.in`;
+      const resolvedStoreName = sellerData.storeName || sellerData.tradeName || sellerData.legalBusinessName || `${resolvedName}'s Vardi Store`;
+
+      const u = {
+        ...sellerUser,
+        ...sellerData,
+        name: resolvedName,
+        storeName: resolvedStoreName,
+        phone: `+91 ${cleanPhone}`,
+        email: resolvedEmail,
+        status: resStatus,
+        approvalStatus: resStatus,
+        pan: sellerData.pan || sellerData.ownerPan || sellerUser.pan || ''
+      };
+      setSellerUser(u);
+      localStorage.setItem('seller_user_profile', JSON.stringify(u));
+      localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
+
+      return { success: true, token: apiRes.token, seller: u, status: resStatus };
     } catch (e) {
-      console.debug('Phone OTP API call failed, falling back to local auth:', e.message);
+      return {
+        success: false,
+        message: e.message || 'OTP verification failed. Please try again.'
+      };
     }
-
-    let savedApp = null;
-    try {
-      const saved = localStorage.getItem('bv_seller_reg_data');
-      if (saved) savedApp = JSON.parse(saved);
-    } catch {}
-
-    const savedPhoneClean = (savedApp?.sellerPhone || savedApp?.phone || '').replace(/\D/g, '');
-    const isPhoneMatch = savedApp && savedPhoneClean && savedPhoneClean.slice(-8) === cleanPhone.slice(-8);
-
-    if (savedApp && !isPhoneMatch) {
-      try {
-        localStorage.removeItem('bv_seller_reg_data');
-        localStorage.removeItem('book_vardi_seller_profile');
-      } catch {}
-    }
-
-    const matchedName = isPhoneMatch ? (savedApp?.sellerName || savedApp?.ownerFullName || `Merchant ${cleanPhone.slice(-4)}`) : `Merchant ${cleanPhone.slice(-4)}`;
-    const matchedEmail = isPhoneMatch ? (savedApp?.sellerEmail || `seller_${cleanPhone}@bookvardi.in`) : `seller_${cleanPhone}@bookvardi.in`;
-    const matchedStoreName = isPhoneMatch ? (savedApp?.tradeName || savedApp?.storeName || savedApp?.legalBusinessName || `${matchedName}'s Vardi Store`) : `${matchedName}'s Vardi Store`;
-    const status = isPhoneMatch ? (savedApp?.status || savedApp?.submissionStatus || 'pending') : (localStorage.getItem('bv_seller_status') || 'pending');
-
-    const updatedUser = {
-      ...sellerUser,
-      name: matchedName,
-      email: matchedEmail,
-      phone: `+91 ${cleanPhone}`,
-      role: 'Seller',
-      status: status,
-      approvalStatus: status,
-      designation: isPhoneMatch ? (savedApp?.ownerDesignation || sellerUser.designation || '') : '',
-      pan: isPhoneMatch ? (savedApp?.ownerPan || savedApp?.businessPan || sellerUser.pan || '') : '',
-      avatar: isPhoneMatch ? (savedApp?.profilePhoto || sellerUser.avatar) : '',
-      lastLogin: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    };
-
-    const updatedSettings = {
-      ...settings,
-      storeName: matchedStoreName,
-      email: matchedEmail,
-      phone: `+91 ${cleanPhone}`,
-      gstin: isPhoneMatch ? (savedApp?.gstin || settings.gstin) : '',
-      pan: isPhoneMatch ? (savedApp?.ownerPan || savedApp?.businessPan || settings.pan) : ''
-    };
-
-    setSellerUser(updatedUser);
-    setSettings(updatedSettings);
-    setSellerStatus(status);
-    setIsAuthenticated(true);
-    localStorage.setItem('seller_user_profile', JSON.stringify(updatedUser));
-    localStorage.setItem('seller_settings', JSON.stringify(updatedSettings));
-    localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
-    localStorage.setItem('bv_seller_status', status);
-
-    return { success: true, seller: updatedUser, status };
   };
 
   const submitSellerApplication = async (appData) => {

@@ -94,6 +94,42 @@ export default function DeliveryPartnerPage({ onNavigate }) {
   const [isGpsBroadcasting, setIsGpsBroadcasting] = useState(false);
   const [gpsStatus, setGpsStatus] = useState('');
 
+  // Active OTP Timers (Countdown & Cooldown)
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [expirySeconds, setExpirySeconds] = useState(0);
+
+  // Active 1-second countdown timer interval
+  useEffect(() => {
+    if (resendCooldown <= 0 && expirySeconds <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+      setExpirySeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown, expirySeconds]);
+
+  // Sync timers from order timestamps
+  useEffect(() => {
+    if (!order) return;
+    const sentAt = order.selfDeliveryDetails?.otpLastSentAt;
+    const expiresAt = order.selfDeliveryDetails?.otpExpiresAt;
+    if (sentAt) {
+      const now = Date.now();
+      const sentMs = new Date(sentAt).getTime();
+      const elapsedSec = Math.floor((now - sentMs) / 1000);
+      const remainingCooldown = Math.max(0, 60 - elapsedSec);
+      setResendCooldown(remainingCooldown);
+
+      if (expiresAt) {
+        const remainingExp = Math.max(0, Math.floor((new Date(expiresAt).getTime() - now) / 1000));
+        setExpirySeconds(remainingExp);
+      } else {
+        const remainingExp = Math.max(0, 600 - elapsedSec); // 10 min window
+        setExpirySeconds(remainingExp);
+      }
+    }
+  }, [order]);
+
   // Resolve token from URL hash or query string
   useEffect(() => {
     try {
@@ -358,6 +394,13 @@ export default function DeliveryPartnerPage({ onNavigate }) {
 
   const totalAmountNum = Number(order?.totalAmount ?? order?.total ?? 0);
   const formattedTotalAmount = totalAmountNum % 1 !== 0 ? totalAmountNum.toFixed(2) : totalAmountNum.toLocaleString('en-IN');
+  const customerPhone = String(order?.customer?.phone || order?.shippingAddress?.phone || order?.phone || '').trim();
+
+  const formatTimeRemaining = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   const handleResendOtp = async () => {
     if (!token || resending || verifying || !order) return;
@@ -367,18 +410,47 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     }
     setResending(true);
     setResendMsg('');
+    setOtpError('');
     try {
       const res = await resendDeliveryOtpApi(token, { isCashCollected: isCashVerifiedByExecutive, isPaymentVerified });
       if (res && res.success) {
-        setResendMsg(res.message || `📲 OTP resent to customer (${order?.customer?.phone || ''})`);
+        setResendMsg(res.message || `📲 Fresh OTP sent to customer (${order?.customer?.phone || ''})`);
+        setResendCooldown(res.cooldownSeconds || 60);
+        setExpirySeconds(600); // 10 minutes active validity
+        setOrder((prev) => prev ? {
+          ...prev,
+          selfDeliveryDetails: {
+            ...prev.selfDeliveryDetails,
+            otpLastSentAt: res.otpLastSentAt || new Date().toISOString(),
+            otpExpiresAt: res.otpExpiresAt || new Date(Date.now() + 600000).toISOString()
+          }
+        } : prev);
+        setOtpDigits(['', '', '', '']);
+        setTimeout(() => {
+          const el = document.getElementById('otp-input-0');
+          if (el) el.focus();
+        }, 100);
       } else {
-        setResendMsg(res?.message || '📲 OTP could not be resent right now.');
+        setOtpError(res?.message || '📲 OTP could not be resent right now.');
       }
     } catch {
-      setResendMsg('📲 OTP dispatch failed. Please try again in a moment.');
+      setOtpError('📲 OTP dispatch failed. Please check network and try again.');
     } finally {
       setResending(false);
-      setTimeout(() => setResendMsg(''), 4000);
+      setTimeout(() => setResendMsg(''), 6000);
+    }
+  };
+
+  const handleOpenOtpModal = () => {
+    if (!isPaymentVerified) {
+      alert('Please collect & verify payment before proceeding to OTP verification.');
+      return;
+    }
+    setIsOtpModalOpen(true);
+    setOtpError('');
+    const sentAt = order?.selfDeliveryDetails?.otpLastSentAt;
+    if (!sentAt && resendCooldown <= 0 && !resending) {
+      handleResendOtp();
     }
   };
 
@@ -407,6 +479,11 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     const fullOtp = otpDigits.join('');
     if (fullOtp.length < 4) {
       setOtpError('Please enter full 4-digit OTP code.');
+      return;
+    }
+
+    if (expirySeconds === 0 && order?.selfDeliveryDetails?.otpLastSentAt) {
+      setOtpError('Delivery OTP has expired. Please click "Resend OTP" to get a fresh PIN.');
       return;
     }
 
@@ -1149,9 +1226,9 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 {/* Resend OTP Button */}
                 <button
                   onClick={handleResendOtp}
-                  disabled={!isPaymentVerified || resending || !order || verifying}
+                  disabled={!isPaymentVerified || resending || !order || verifying || resendCooldown > 0}
                   className={`w-full py-3 font-extrabold text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all ${
-                    isPaymentVerified
+                    isPaymentVerified && resendCooldown === 0
                       ? 'bg-white border border-teal-300 text-teal-900 hover:bg-teal-50 cursor-pointer'
                       : 'bg-gray-100 border border-gray-300 text-gray-400 cursor-not-allowed opacity-75'
                   }`}
@@ -1160,6 +1237,8 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                   <span>
                     {resending
                       ? 'Resending OTP...'
+                      : resendCooldown > 0
+                      ? `⏳ Resend OTP in ${resendCooldown}s`
                       : isPaymentVerified
                       ? (isReturnOrder
                         ? "📲 Resend Return Pickup OTP to Customer"
@@ -1172,13 +1251,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
 
                 {/* Main Action Button */}
                 <button
-                  onClick={() => {
-                    if (!isPaymentVerified) {
-                      alert('Please collect & verify payment before proceeding to OTP verification.');
-                      return;
-                    }
-                    setIsOtpModalOpen(true);
-                  }}
+                  onClick={handleOpenOtpModal}
                   disabled={!isPaymentVerified || loading || refreshing || verifying || !order}
                   className={`w-full py-4 font-black text-sm rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all tracking-wide ${
                     isPaymentVerified
@@ -1206,9 +1279,10 @@ export default function DeliveryPartnerPage({ onNavigate }) {
       {/* Complete Delivery / Return / Exchange OTP Verification Modal */}
       {isOtpModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
             <div className="text-center space-y-1">
-              <div className="w-12 h-12 bg-teal-50 text-teal-800 rounded-2xl mx-auto flex items-center justify-center mb-2 border border-teal-100">
+              <div className="w-12 h-12 bg-teal-50 text-teal-800 rounded-2xl mx-auto flex items-center justify-center mb-2 border border-teal-100 shadow-xs">
                 <Key size={24} />
               </div>
               <h3 className="text-lg font-black text-gray-900">
@@ -1225,10 +1299,40 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                   ? 'Ask customer for 4-digit Return PIN sent to their phone upon pickup'
                   : isExchangeOrder
                   ? 'Ask customer for 4-digit Exchange PIN sent to their phone upon handover'
-                  : 'Ask customer for 4-digit PIN sent to their phone'}
+                  : 'Ask customer for 4-digit PIN sent via SMS to their phone'}
               </p>
+              {customerPhone && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-[11px] font-bold mt-1">
+                  <Phone size={12} className="text-teal-700" />
+                  <span>Sent to: +91 {customerPhone.slice(-10)}</span>
+                </div>
+              )}
             </div>
 
+            {/* Live Expiry Countdown Timer */}
+            <div className={`p-2.5 rounded-xl border flex items-center justify-between text-xs font-bold transition-colors ${
+              expirySeconds > 60
+                ? 'bg-teal-50 border-teal-200 text-teal-900'
+                : expirySeconds > 0
+                ? 'bg-amber-50 border-amber-200 text-amber-900 animate-pulse'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}>
+              <div className="flex items-center gap-1.5">
+                <Clock size={15} className={expirySeconds > 0 ? (expirySeconds <= 60 ? 'text-amber-600' : 'text-teal-700') : 'text-rose-600'} />
+                <span>
+                  {expirySeconds > 0 ? 'OTP Expiry Time:' : 'OTP Status:'}
+                </span>
+              </div>
+              <div className="font-mono text-sm tracking-wider font-extrabold">
+                {expirySeconds > 0 ? (
+                  formatTimeRemaining(expirySeconds)
+                ) : (
+                  <span className="text-rose-600 text-xs">EXPIRED</span>
+                )}
+              </div>
+            </div>
+
+            {/* OTP Digits Input Form */}
             <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">
               <div className="flex justify-center gap-3">
                 {otpDigits.map((digit, idx) => (
@@ -1236,34 +1340,72 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     key={idx}
                     id={`otp-input-${idx}`}
                     type="text"
+                    inputMode="numeric"
                     maxLength={1}
                     value={digit}
                     onChange={(e) => handleDigitChange(idx, e.target.value)}
                     onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                    className="w-12 h-14 text-center text-2xl font-black rounded-xl border-2 border-gray-300 focus:border-teal-700 focus:outline-none bg-gray-50 focus:bg-white transition-colors"
+                    className={`w-12 h-14 text-center text-2xl font-black rounded-xl border-2 transition-colors ${
+                      otpError
+                        ? 'border-rose-400 bg-rose-50/50'
+                        : 'border-gray-300 focus:border-teal-700 bg-gray-50 focus:bg-white'
+                    } focus:outline-none`}
                   />
                 ))}
               </div>
 
+              {/* Feedback Messages */}
               {otpError && (
-                <div className="text-center text-xs font-bold text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200">
-                  {otpError}
+                <div className="flex items-start gap-1.5 text-center text-xs font-bold text-rose-700 bg-rose-50 p-2.5 rounded-xl border border-rose-200">
+                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                  <span className="flex-1">{otpError}</span>
                 </div>
               )}
 
-              <div className="flex gap-2">
+              {resendMsg && (
+                <div className="flex items-start gap-1.5 text-center text-xs font-bold text-emerald-800 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                  <CheckCircle size={15} className="shrink-0 mt-0.5 text-emerald-600" />
+                  <span className="flex-1">{resendMsg}</span>
+                </div>
+              )}
+
+              {/* In-Modal Resend OTP Button */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={resending || verifying || resendCooldown > 0}
+                  className={`w-full py-2.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all ${
+                    resendCooldown > 0
+                      ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                      : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 cursor-pointer'
+                  }`}
+                >
+                  <Send size={13} className={resending ? 'animate-spin' : ''} />
+                  <span>
+                    {resending
+                      ? 'Resending fresh OTP SMS...'
+                      : resendCooldown > 0
+                      ? `Resend OTP in ${resendCooldown}s`
+                      : "Didn't receive OTP? Resend Code"}
+                  </span>
+                </button>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsOtpModalOpen(false)}
                   disabled={verifying}
-                  className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-extrabold text-xs rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-extrabold text-xs rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={verifying}
-                  className="flex-1 py-3 bg-teal-800 hover:bg-teal-900 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={verifying || otpDigits.join('').length < 4}
+                  className="flex-1 py-3 bg-teal-800 hover:bg-teal-900 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {verifying ? <RefreshCw size={14} className="animate-spin" /> : <ShieldCheck size={16} />}
                   {verifying ? 'Verifying...' : 'Verify OTP'}
