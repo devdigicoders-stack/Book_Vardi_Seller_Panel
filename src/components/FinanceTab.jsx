@@ -11,9 +11,51 @@ import {
   Save,
   X,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  HelpCircle,
+  Lock,
+  Unlock,
+  Info
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+
+// Helper to evaluate settlement maturity for an order (Return window: 7 days + 1 day buffer = 8 days)
+const evaluateOrderMaturity = (order) => {
+  const isDelivered = String(order.status || order.overallStatus || '').toLowerCase() === 'delivered';
+  if (!isDelivered) {
+    return { isDelivered: false, isMatured: false, daysRemaining: null, maturityDate: null };
+  }
+
+  if (order.isSettlementMatured === true || order.settlementStatus === 'matured' || order.settlementStatus === 'paid_out') {
+    return { 
+      isDelivered: true, 
+      isMatured: true, 
+      daysRemaining: 0, 
+      maturityDate: order.settlementDueDate ? new Date(order.settlementDueDate) : null 
+    };
+  }
+
+  const returnDays = Number(order.returnWindowDays || 7);
+  const bufferDays = 1;
+  const totalWindowDays = returnDays + bufferDays; // 8 days total
+
+  let deliveredDate = null;
+  if (order.deliveredAt) deliveredDate = new Date(order.deliveredAt);
+  else if (order.updatedAt) deliveredDate = new Date(order.updatedAt);
+  else if (order.date) deliveredDate = new Date(order.date);
+  else deliveredDate = new Date();
+
+  let maturityDate = order.settlementDueDate 
+    ? new Date(order.settlementDueDate) 
+    : new Date(deliveredDate.getTime() + totalWindowDays * 24 * 60 * 60 * 1000);
+
+  const now = Date.now();
+  const diffMs = maturityDate.getTime() - now;
+  const daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  const isMatured = diffMs <= 0;
+
+  return { isDelivered: true, isMatured, daysRemaining, maturityDate, totalWindowDays };
+};
 
 export default function FinanceTab() {
   const { 
@@ -282,8 +324,16 @@ export default function FinanceTab() {
   const netMargin = settlementSummary.finalSettlement;
 
   const pendingEscrow = useMemo(() => {
+    // If backend provided pendingSettlementBalance directly and it's valid
+    if (finance?.wallet?.pendingSettlementBalance !== undefined && Number(finance.wallet.pendingSettlementBalance) >= 0) {
+      return Number(finance.wallet.pendingSettlementBalance);
+    }
     return orders
-      .filter(o => o.status === 'Pending' || o.status === 'Processing' || o.status === 'Shipped')
+      .filter(o => {
+        const maturity = evaluateOrderMaturity(o);
+        // Include non-delivered orders (Pending, Processing, Shipped) or delivered orders still in return window
+        return !maturity.isDelivered || !maturity.isMatured;
+      })
       .reduce((sum, o) => {
         const gross = Number(o.total || o.totalAmount || 0);
         const commRate = Number(o.commissionRate ?? commissionRate ?? 10);
@@ -317,11 +367,14 @@ export default function FinanceTab() {
         const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
         return sum + Math.max(0, Math.round((gross - deductions) * 100) / 100);
       }, 0);
-  }, [orders, commissionRate]);
+  }, [orders, commissionRate, finance]);
 
   const availableBalance = useMemo(() => {
+    if (finance?.wallet?.walletBalance !== undefined && !isNaN(Number(finance.wallet.walletBalance))) {
+      return Math.max(0, Number(finance.wallet.walletBalance));
+    }
     return Math.max(0, netMargin - pendingEscrow);
-  }, [netMargin, pendingEscrow]);
+  }, [finance, netMargin, pendingEscrow]);
 
   // Dynamic ledger transactions combining order credits and payout requests
   const dynamicTransactions = useMemo(() => {
@@ -382,6 +435,19 @@ export default function FinanceTab() {
         finalNet = Math.max(0, Math.round((gross - totalDed) * 100) / 100);
       }
 
+      const maturity = evaluateOrderMaturity(o);
+      let statusLabel = 'Pending Dispatch';
+      let statusType = 'pending';
+      if (maturity.isDelivered) {
+        if (maturity.isMatured) {
+          statusLabel = 'Settled & Available';
+          statusType = 'settled';
+        } else {
+          statusLabel = `In Return Window (${maturity.daysRemaining}d left)`;
+          statusType = 'escrow';
+        }
+      }
+
       list.push({
         id: `TXN-ORD-${o.id}`,
         date: o.date || 'Recent Order',
@@ -399,7 +465,10 @@ export default function FinanceTab() {
         deductions: totalDed,
         isThirdParty,
         isAbove400,
-        status: o.status === 'Delivered' ? 'Completed' : 'Pending'
+        status: statusLabel,
+        statusType,
+        daysRemaining: maturity.daysRemaining,
+        maturityDate: maturity.maturityDate
       });
     });
 
@@ -554,10 +623,10 @@ export default function FinanceTab() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div className="bg-white p-4.5 rounded-2xl border border-gray-100 shadow-xs">
           <div className="text-[11px] font-semibold text-gray-500">Gross Sales Revenue</div>
-          <div className="text-2xl font-extrabold text-gray-900 mt-1 font-mono">
+          <div className="text-xl sm:text-2xl font-extrabold text-gray-900 mt-1 font-mono">
             ₹{settlementSummary.grossSales.toLocaleString('en-IN')}
           </div>
           <div className="text-[10px] text-emerald-600 font-medium mt-1">
@@ -565,28 +634,62 @@ export default function FinanceTab() {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Total Deductions (Comm + GST + Tax + Delivery)</div>
-          <div className="text-2xl font-extrabold text-rose-700 mt-1 font-mono">
+        <div className="bg-white p-4.5 rounded-2xl border border-gray-100 shadow-xs">
+          <div className="text-[11px] font-semibold text-gray-500">Total Deductions</div>
+          <div className="text-xl sm:text-2xl font-extrabold text-rose-700 mt-1 font-mono">
             ₹{settlementSummary.totalDeductions.toLocaleString('en-IN')}
           </div>
-          <div className="text-[10px] text-rose-600 mt-1">10% Cut + 18% GST + 0.1% TDS + 0.5% TCS {settlementSummary.deliveryDeductions > 0 ? `+ ₹${settlementSummary.deliveryDeductions} Deliv.` : ''}</div>
+          <div className="text-[10px] text-rose-600 mt-1">Comm + GST + Tax {settlementSummary.deliveryDeductions > 0 ? `+ Deliv` : ''}</div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Final Seller Settlement</div>
-          <div className="text-2xl font-extrabold text-teal-800 mt-1 font-mono">
+        <div className="bg-white p-4.5 rounded-2xl border border-gray-100 shadow-xs">
+          <div className="text-[11px] font-semibold text-gray-500">Final Net Earnings</div>
+          <div className="text-xl sm:text-2xl font-extrabold text-teal-800 mt-1 font-mono">
             ₹{settlementSummary.finalSettlement.toLocaleString('en-IN')}
           </div>
-          <div className="text-[10px] text-teal-700 mt-1">Net payable margin to seller account</div>
+          <div className="text-[10px] text-teal-700 mt-1">Total earned revenue</div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="text-[11px] font-semibold text-gray-500">Available Settlement Balance</div>
-          <div className="text-2xl font-extrabold text-emerald-700 mt-1 font-mono">
-            ₹{availableBalance.toLocaleString('en-IN')}
+        <div className="bg-amber-50/70 p-4.5 rounded-2xl border border-amber-200/90 shadow-xs">
+          <div className="text-[11px] font-bold text-amber-900 flex items-center justify-between">
+            <span>In Return Window</span>
+            <Lock size={14} className="text-amber-700" />
           </div>
-          <div className="text-[10px] text-emerald-600 font-medium mt-1">Ready for 1-click bank transfer</div>
+          <div className="text-xl sm:text-2xl font-extrabold text-amber-900 mt-1 font-mono">
+            ₹{Math.round(pendingEscrow).toLocaleString('en-IN')}
+          </div>
+          <div className="text-[10px] text-amber-800 font-medium mt-1">
+            Held during 7d return + 1d grace
+          </div>
+        </div>
+
+        <div className="bg-emerald-50/70 p-4.5 rounded-2xl border border-emerald-200/90 shadow-xs">
+          <div className="text-[11px] font-bold text-emerald-900 flex items-center justify-between">
+            <span>Available Balance</span>
+            <Unlock size={14} className="text-emerald-700" />
+          </div>
+          <div className="text-xl sm:text-2xl font-extrabold text-emerald-700 mt-1 font-mono">
+            ₹{Math.round(availableBalance).toLocaleString('en-IN')}
+          </div>
+          <div className="text-[10px] text-emerald-700 font-bold mt-1">Ready for 1-click bank transfer</div>
+        </div>
+      </div>
+
+      {/* Return Window & Settlement Protection Info Banner */}
+      <div className="bg-linear-to-r from-amber-500/10 via-teal-500/10 to-blue-500/10 border border-amber-200 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
+        <div className="p-2 bg-amber-500/20 text-amber-800 rounded-xl shrink-0 mt-0.5">
+          <ShieldCheck size={20} />
+        </div>
+        <div className="space-y-1 text-xs">
+          <div className="font-extrabold text-gray-900 flex items-center gap-2 flex-wrap">
+            <span>सुरक्षित सेलर सेटलमेंट नीति (Return &amp; Exchange Window Policy)</span>
+            <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold border border-amber-300">
+              7 Days Return + 1 Day Grace Buffer
+            </span>
+          </div>
+          <p className="text-gray-600 leading-relaxed text-[11px]">
+            Book Vardi ई-कॉमर्स नीति के अनुसार, डिलीवरी के बाद ग्राहक को <strong>7 दिन का रिटर्न/एक्सचेंज विंडो</strong> मिलता है। सेलर सुरक्षा और सुगम रिफंड प्रक्रिया हेतु, डिलीवरी के बाद <strong>7 दिन + 1 दिन निरीक्षण ग्रेस पीरियड (कुल 8 दिन)</strong> तक ऑर्डर राशि <strong>'In Return Window (Escrow)'</strong> में सुरक्षित रखी जाती है। अवधि समाप्त होते ही राशि अपने आप <strong>'Available Settlement Balance'</strong> में ट्रांसफर हो जाती है जिसे आप तुरंत अपने बैंक खाते में मंगा सकते हैं।
+          </p>
         </div>
       </div>
 
@@ -772,9 +875,19 @@ export default function FinanceTab() {
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        <CheckCircle2 size={11} /> {txn.status}
-                      </span>
+                      {txn.statusType === 'settled' || txn.status === 'Completed' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                          <CheckCircle2 size={11} /> Settled &amp; Available
+                        </span>
+                      ) : txn.statusType === 'escrow' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200" title={txn.maturityDate ? `Unlocks on ${new Date(txn.maturityDate).toLocaleDateString('en-GB')}` : 'In Return Window'}>
+                          <Lock size={11} className="text-amber-600" /> {txn.status}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+                          <Clock size={11} className="text-blue-500" /> {txn.status || 'Pending'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))

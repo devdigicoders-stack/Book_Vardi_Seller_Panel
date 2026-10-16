@@ -72,6 +72,15 @@ const parseBool = (val, defaultVal = true) => {
   return Boolean(val);
 };
 
+export const stripCustomerPhoneFromAddress = (addr) => {
+  if (!addr) return '';
+  let str = String(addr);
+  str = str.replace(/,?\s*\((?:Phone|Mobile|Ph|Mob|Tel|Contact)?\s*:?\s*[\+0-9\s-]{8,}\)/gi, '');
+  str = str.replace(/,?\s*(?:Phone|Mobile|Ph|Mob|Tel|Contact)\s*:?\s*[\+0-9\s-]{8,}/gi, '');
+  str = str.replace(/,?\s*\+?91[\s-]?[6-9]\d{9}\b/gi, '');
+  return str.replace(/,\s*,+/g, ',').replace(/\s*,\s*$/, '').trim();
+};
+
 // Helper to resolve active seller profile from active user session keys first
 // Helper to resolve active seller profile from active user session keys first
 export const readActiveSellerProfile = () => {
@@ -638,14 +647,13 @@ export const SellerDataProvider = ({ children }) => {
         shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
           ? [
               o.shippingAddress.name || o.shippingAddress.fullName,
-              o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address,
+              stripCustomerPhoneFromAddress(o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address),
               o.shippingAddress.colony || o.shippingAddress.landmark,
               o.shippingAddress.city,
               o.shippingAddress.state,
-              o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null,
-              o.shippingAddress.phone ? `(Phone: ${o.shippingAddress.phone})` : null
+              o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null
             ].filter(Boolean).join(', ')
-          : (o.shippingAddress || 'Store / Counter Pickup')
+          : stripCustomerPhoneFromAddress(o.shippingAddress || 'Store / Counter Pickup')
       };
     });
   };
@@ -672,6 +680,9 @@ export const SellerDataProvider = ({ children }) => {
         if (schoolRes.status === 'fulfilled' && Array.isArray(schoolRes.value)) {
           const schoolList = schoolRes.value;
           setSchoolOrders(schoolList);
+          try {
+            localStorage.setItem('bv_sync_school_orders', JSON.stringify(schoolList));
+          } catch {}
         }
       }).catch((err) => {
         console.error('Failed to sync seller orders from DB:', err);
@@ -695,6 +706,22 @@ export const SellerDataProvider = ({ children }) => {
           try {
             const data = JSON.parse(event.data);
             if (data && (data.type === 'ORDER_CREATED' || data.type === 'ORDER_UPDATED' || data.type === 'SCHOOL_ORDER_UPDATED')) {
+              if (data.type === 'SCHOOL_ORDER_UPDATED' && (data.orderId || data.referenceId || data.id)) {
+                const targetId = String(data.orderId || data.referenceId || data.id);
+                const nextStatus = String(data.status || 'delivered').toLowerCase();
+                setSchoolOrders(prev => prev.map(o => {
+                  if (String(o.referenceId) === targetId || String(o.id || o._id) === targetId) {
+                    return {
+                      ...o,
+                      status: nextStatus,
+                      deliveryStatus: nextStatus,
+                      overallStatus: 'Delivered',
+                      remainingPaymentStatus: nextStatus === 'delivered' ? 'paid' : o.remainingPaymentStatus
+                    };
+                  }
+                  return o;
+                }));
+              }
               isOrderSyncingRef.current = false;
               handleOrderSync(false);
             }
@@ -731,7 +758,7 @@ export const SellerDataProvider = ({ children }) => {
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     const storageHandler = (e) => {
-      if (e.key === 'bv_order_sync_timestamp') {
+      if (e.key === 'bv_order_sync_timestamp' || e.key === 'bv_school_sync_timestamp' || e.key === 'bv_sync_school_orders' || e.key === 'admin_school_orders') {
         handleOrderSync(false);
       }
     };
@@ -893,14 +920,13 @@ export const SellerDataProvider = ({ children }) => {
             shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
               ? [
                   o.shippingAddress.name || o.shippingAddress.fullName,
-                  o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address,
+                  stripCustomerPhoneFromAddress(o.shippingAddress.addressLine || o.shippingAddress.street || o.shippingAddress.address),
                   o.shippingAddress.colony || o.shippingAddress.landmark,
                   o.shippingAddress.city,
                   o.shippingAddress.state,
-                  o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null,
-                  o.shippingAddress.phone ? `(Phone: ${o.shippingAddress.phone})` : null
+                  o.shippingAddress.pincode ? `- ${o.shippingAddress.pincode}` : null
                 ].filter(Boolean).join(', ')
-              : (o.shippingAddress || 'Store / Counter Pickup')
+              : stripCustomerPhoneFromAddress(o.shippingAddress || 'Store / Counter Pickup')
           }));
           setOrders(normalizedOrders);
         }
@@ -1046,8 +1072,25 @@ export const SellerDataProvider = ({ children }) => {
 
   // Real-time synchronization of school orders across browser tabs/panels
   useEffect(() => {
-    const handleSyncSchoolOrders = () => {
+    const handleSyncSchoolOrders = (evt) => {
       try {
+        if (evt?.detail?.orderId && evt?.detail?.status) {
+          const oId = String(evt.detail.orderId);
+          const nextStatus = String(evt.detail.status).toLowerCase();
+          setSchoolOrders(prev => prev.map(o => {
+            if (String(o.referenceId) === oId || String(o.id || o._id) === oId) {
+              return {
+                ...o,
+                status: nextStatus,
+                deliveryStatus: nextStatus,
+                overallStatus: 'Delivered',
+                remainingPaymentStatus: nextStatus === 'delivered' ? 'paid' : o.remainingPaymentStatus
+              };
+            }
+            return o;
+          }));
+        }
+
         const raw = localStorage.getItem('bv_sync_school_orders') || localStorage.getItem('admin_school_orders') || localStorage.getItem('bv_customer_bulk_orders');
         if (raw) {
           const list = JSON.parse(raw);
@@ -1062,8 +1105,15 @@ export const SellerDataProvider = ({ children }) => {
                   const current = merged[idx];
                   const hasRicherQuotations = Array.isArray(current.quotations) && current.quotations.some(q => (q.currentVersion || 1) >= (item.quotations?.[0]?.currentVersion || 1));
                   merged[idx] = {
-                    ...item,
                     ...current,
+                    ...item,
+                    status: item.status || current.status,
+                    deliveryStatus: item.deliveryStatus || current.deliveryStatus || item.status || current.status,
+                    remainingPaymentStatus: item.remainingPaymentStatus || current.remainingPaymentStatus,
+                    deliveryDetails: {
+                      ...(current.deliveryDetails || {}),
+                      ...(item.deliveryDetails || {})
+                    },
                     quotations: hasRicherQuotations ? current.quotations : (item.quotations || current.quotations || []),
                     latestBuyerCounter: current.latestBuyerCounter || item.latestBuyerCounter,
                     negotiationStage: current.negotiationStage || item.negotiationStage,

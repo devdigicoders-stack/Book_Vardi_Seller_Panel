@@ -31,7 +31,7 @@ import {
   Loader2,
   Lock
 } from 'lucide-react';
-import { useSellerData } from '../context/SellerDataContext';
+import { useSellerData, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 import TaxInvoiceModal, { parseStateInfo } from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
 import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
@@ -571,6 +571,11 @@ export default function OrdersTab() {
       setActiveOrderModal(prev => prev ? {
         ...prev,
         status: modalStatusInput,
+        overallStatus: modalStatusInput,
+        items: Array.isArray(prev.items) ? prev.items.map(it => ({
+          ...it,
+          status: (!it.status || ['pending', 'placed', 'unconfirmed'].includes(String(it.status).toLowerCase().trim())) ? modalStatusInput : it.status
+        })) : prev.items,
         deliveryMode: deliveryModeInput,
         deliveryType: deliveryModeInput,
         courierName: deliveryModeInput === 'third_party' ? modalCourierInput : '',
@@ -1029,13 +1034,9 @@ export default function OrdersTab() {
 
               <div className="flex items-center gap-2">
                 {(() => {
-                  const modalStatus = String(activeOrderModal.status || '').toLowerCase().trim();
-                  const isPending = modalStatus === 'pending' || modalStatus === 'placed' || modalStatus === 'unconfirmed';
-                  const hasPendingItem = Array.isArray(activeOrderModal.items) && activeOrderModal.items.some(it => {
-                    const itStatus = String(it.status || '').toLowerCase().trim();
-                    return !itStatus || itStatus === 'pending' || itStatus === 'placed' || itStatus === 'unconfirmed';
-                  });
-                  const isLocked = isPending || hasPendingItem;
+                  const modalStatus = String(activeOrderModal.status || activeOrderModal.overallStatus || '').toLowerCase().trim();
+                  const isConfirmedOrder = modalStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(modalStatus);
+                  const isLocked = !isConfirmedOrder;
 
                   return (
                     <button
@@ -1045,7 +1046,7 @@ export default function OrdersTab() {
                           ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
                           : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
                       }`}
-                      title={isLocked ? "Invoice locked while order/product status is pending confirmation" : "View & Print GST Tax Invoice & Packing Slip"}
+                      title={isLocked ? "Invoice locked while order status is pending confirmation" : "View & Print GST Tax Invoice & Packing Slip"}
                     >
                       {isLocked ? <Lock size={14} /> : <FileText size={14} />}
                       <span>{isLocked ? 'Invoice Locked (Pending)' : 'Tax Invoice & Label'}</span>
@@ -1053,36 +1054,46 @@ export default function OrdersTab() {
                   );
                 })()}
 
-                {(activeOrderModal.paymentStatus?.toLowerCase() === 'refunded' ||
-                  activeOrderModal.status?.toLowerCase().includes('refund') ||
-                  activeOrderModal.returnRequest?.status?.toLowerCase().includes('refund') ||
-                  activeOrderModal.status === 'product_received') && (
-                  <a
-                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200"
-                    title="Download GST Credit Note under Section 34 of CGST Act"
-                  >
-                    <FileText size={14} />
-                    <span>GST Credit Note</span>
-                  </a>
-                )}
+                {/* Statutory Invoicing: Exchange gets Exchange Tax Invoice ONLY; Returns/Refunds get Credit Note */}
+                {(() => {
+                  const retType = String(activeOrderModal.returnRequest?.type || activeOrderModal.returnRequest?.requestType || '').toLowerCase();
+                  const isOrderExchange = retType === 'exchange' || String(activeOrderModal.status).toLowerCase().includes('exchange');
+                  const isReturnOrRefund = !isOrderExchange && (
+                    activeOrderModal.paymentStatus?.toLowerCase() === 'refunded' ||
+                    activeOrderModal.status?.toLowerCase().includes('refund') ||
+                    activeOrderModal.returnRequest?.status?.toLowerCase().includes('refund') ||
+                    (activeOrderModal.status === 'product_received' && retType === 'return')
+                  );
 
-                {(activeOrderModal.returnRequest?.type === 'exchange' ||
-                  activeOrderModal.returnRequest?.requestType === 'exchange' ||
-                  String(activeOrderModal.status).toLowerCase().includes('exchange')) && (
-                  <a
-                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200"
-                    title="Download GST Replacement / Exchange Tax Invoice"
-                  >
-                    <FileText size={14} />
-                    <span>Exchange Invoice</span>
-                  </a>
-                )}
+                  return (
+                    <>
+                      {isReturnOrRefund && (
+                        <a
+                          href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200"
+                          title="Download GST Credit Note under Section 34 of CGST Act"
+                        >
+                          <FileText size={14} />
+                          <span>GST Credit Note</span>
+                        </a>
+                      )}
+                      {isOrderExchange && (
+                        <a
+                          href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200"
+                          title="Download GST Replacement / Exchange Tax Invoice"
+                        >
+                          <FileText size={14} />
+                          <span>Exchange Tax Invoice</span>
+                        </a>
+                      )}
+                    </>
+                  );
+                })()}
 
                 <button
                   onClick={() => setActiveOrderModal(null)}
@@ -1280,15 +1291,17 @@ export default function OrdersTab() {
                               <>
                                 <button
                                   type="button"
+                                  disabled={isUpdatingReturnStatus}
                                   onClick={() => handleReturnExchangeAction(activeOrderModal.id, isExchange ? 'exchange_approved' : 'return_approved')}
-                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                                 >
-                                  ✓ Approve {isExchange ? 'Exchange' : 'Return'}
+                                  {isUpdatingReturnStatus ? '⏳ Processing...' : `✓ Approve ${isExchange ? 'Exchange' : 'Return'}`}
                                 </button>
                                 <button
                                   type="button"
+                                  disabled={isUpdatingReturnStatus}
                                   onClick={() => setReturnActionState(prev => ({ ...prev, showRejectInput: !prev.showRejectInput }))}
-                                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                                 >
                                   ✕ Reject Request
                                 </button>
@@ -1298,8 +1311,9 @@ export default function OrdersTab() {
                             {isApproved && (
                               <button
                                 type="button"
+                                disabled={isUpdatingReturnStatus}
                                 onClick={() => setReturnActionState(prev => ({ ...prev, showPickupInput: !prev.showPickupInput }))}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                               >
                                 📦 Schedule Pickup
                               </button>
@@ -1320,8 +1334,9 @@ export default function OrdersTab() {
                             {isProductReceived && isReturn && (
                               <button
                                 type="button"
+                                disabled={isUpdatingReturnStatus}
                                 onClick={() => setReturnActionState(prev => ({ ...prev, showRefundInput: !prev.showRefundInput }))}
-                                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                               >
                                 💳 Process Refund
                               </button>
@@ -1330,8 +1345,9 @@ export default function OrdersTab() {
                             {isProductReceived && isExchange && (
                               <button
                                 type="button"
+                                disabled={isUpdatingReturnStatus}
                                 onClick={() => setReturnActionState(prev => ({ ...prev, showDispatchInput: !prev.showDispatchInput }))}
-                                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                               >
                                 🚀 Dispatch Replacement Unit
                               </button>
@@ -1340,10 +1356,11 @@ export default function OrdersTab() {
                             {isExchangeDispatched && (
                               <button
                                 type="button"
+                                disabled={isUpdatingReturnStatus}
                                 onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'exchanged')}
-                                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                               >
-                                ✓ Complete Exchange
+                                {isUpdatingReturnStatus ? '⏳ Completing...' : '✓ Complete Exchange'}
                               </button>
                             )}
 
@@ -1585,17 +1602,18 @@ export default function OrdersTab() {
                     <MapPin size={12} className="text-teal-700 shrink-0" /> Delivery Address:
                   </div>
                   <div className="text-gray-800 leading-relaxed font-medium bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                    {typeof activeOrderModal.shippingAddress === 'object' && activeOrderModal.shippingAddress !== null
-                      ? [
-                          activeOrderModal.shippingAddress.name || activeOrderModal.shippingAddress.fullName,
-                          activeOrderModal.shippingAddress.addressLine || activeOrderModal.shippingAddress.street || activeOrderModal.shippingAddress.address,
-                          activeOrderModal.shippingAddress.colony || activeOrderModal.shippingAddress.landmark,
-                          activeOrderModal.shippingAddress.city,
-                          activeOrderModal.shippingAddress.state,
-                          activeOrderModal.shippingAddress.pincode ? `- ${activeOrderModal.shippingAddress.pincode}` : null,
-                          activeOrderModal.shippingAddress.phone ? `(Phone: ${activeOrderModal.shippingAddress.phone})` : null
-                        ].filter(Boolean).join(', ')
-                      : (activeOrderModal.shippingAddress || 'Store / Counter Pickup')}
+                    {stripCustomerPhoneFromAddress(
+                      typeof activeOrderModal.shippingAddress === 'object' && activeOrderModal.shippingAddress !== null
+                        ? [
+                            activeOrderModal.shippingAddress.name || activeOrderModal.shippingAddress.fullName,
+                            activeOrderModal.shippingAddress.addressLine || activeOrderModal.shippingAddress.street || activeOrderModal.shippingAddress.address,
+                            activeOrderModal.shippingAddress.colony || activeOrderModal.shippingAddress.landmark,
+                            activeOrderModal.shippingAddress.city,
+                            activeOrderModal.shippingAddress.state,
+                            activeOrderModal.shippingAddress.pincode ? `- ${activeOrderModal.shippingAddress.pincode}` : null
+                          ].filter(Boolean).join(', ')
+                        : (activeOrderModal.shippingAddress || 'Store / Counter Pickup')
+                    )}
                   </div>
                 </div>
               </div>

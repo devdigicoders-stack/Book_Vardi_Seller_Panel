@@ -12,7 +12,7 @@ import {
   Truck,
   ExternalLink
 } from 'lucide-react';
-import { useSellerData, readActiveSellerSettings, readActiveSellerProfile } from '../context/SellerDataContext';
+import { useSellerData, readActiveSellerSettings, readActiveSellerProfile, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
 
@@ -265,11 +265,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     ? (isConfirmedAndOnward || normStatus.length > 0)
     : (isConfirmedAndOnward || isPaid || hasConfirmedItem || !isOrderStrictlyPending);
 
-  const shippingAddr = typeof order.shippingAddress === 'object'
+  const shippingAddr = typeof order.shippingAddress === 'object' && order.shippingAddress !== null
     ? order.shippingAddress
     : { street: order.address || order.shippingAddress || order.deliveryLocation || order.location || 'Institutional Delivery Address' };
 
-  const formattedAddressStr = typeof order.shippingAddress === 'string'
+  const rawAddressStr = typeof order.shippingAddress === 'string'
     ? order.shippingAddress
     : [
         shippingAddr.street || shippingAddr.addressLine || shippingAddr.address,
@@ -277,6 +277,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
         shippingAddr.state,
         shippingAddr.pincode ? `- ${shippingAddr.pincode}` : ''
       ].filter(Boolean).join(', ') || order.deliveryLocation || order.location || 'Lucknow, Uttar Pradesh';
+
+  const formattedAddressStr = stripCustomerPhoneFromAddress(rawAddressStr);
 
   const items = Array.isArray(order.items) && order.items.length > 0
     ? order.items
@@ -300,6 +302,19 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
             }
           ]
     );
+
+  const rawSubtotal = Number(order.subtotal || 0);
+  const shippingCost = Number(order.shippingCost ?? order.shippingFee ?? 0);
+  const discount = Number(order.discount ?? order.discountAmount ?? order.couponDiscount ?? 0);
+  const pointsDiscount = Number(order.pointsDiscount || 0);
+  const totalDiscounts = discount + pointsDiscount;
+
+  const itemsSum = items.reduce((acc, it) => acc + (Number(it.originalPrice ?? it.price ?? it.finalPrice ?? 0) * Number(it.quantity || 1)), 0);
+  const isItemPriceAlreadyDiscounted = rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
+
+  const subtotal = rawSubtotal > 0 ? rawSubtotal : itemsSum;
+  const grandTotal = Number(order.total || order.totalAmount || Math.max(0, subtotal + shippingCost - totalDiscounts));
+  const discountRatio = subtotal > 0 ? Math.min(1, totalDiscounts / subtotal) : 0;
 
   let totalTaxableValue = 0;
   let totalTaxAmount = 0;
@@ -325,21 +340,33 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     const rawQty = Number(item.quantity || 1);
     const displayQty = isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
     const qty = rawQty;
-    const unitPrice = Number(item.price || 0);
-    const grossPrice = unitPrice * qty;
+
+    let unitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+    if (isItemPriceAlreadyDiscounted && totalDiscounts > 0 && subtotal > 0) {
+      const proportion = (unitPrice * qty) / itemsSum;
+      const allocDiscount = totalDiscounts * proportion;
+      unitPrice = qty > 0 ? Math.round(((unitPrice * qty + allocDiscount) / qty) * 100) / 100 : unitPrice;
+    }
+
+    const grossPrice = Math.round((unitPrice * qty) * 100) / 100;
     const rate = getProductGstRate(item);
     const isInclusive = item.isGstInclusive !== false && order.isGstInclusive !== false;
 
-    let taxableVal = grossPrice;
+    const itemDiscount = item.offerDiscount !== undefined && item.offerDiscount !== null && !isNaN(Number(item.offerDiscount)) && Number(item.offerDiscount) > 0
+      ? Number(item.offerDiscount)
+      : (discountRatio > 0 ? Math.round(grossPrice * discountRatio * 100) / 100 : 0);
+    const netItemPayable = Math.max(0, Math.round((grossPrice - itemDiscount) * 100) / 100);
+
+    let taxableVal = netItemPayable;
     let taxAmt = 0;
 
     if (rate > 0) {
       if (isInclusive) {
-        taxableVal = Math.round((grossPrice / (1 + rate / 100)) * 100) / 100;
-        taxAmt = Math.round((grossPrice - taxableVal) * 100) / 100;
+        taxableVal = Math.round((netItemPayable / (1 + rate / 100)) * 100) / 100;
+        taxAmt = Math.round((netItemPayable - taxableVal) * 100) / 100;
       } else {
-        taxableVal = grossPrice;
-        taxAmt = Math.round(((grossPrice * rate) / 100) * 100) / 100;
+        taxableVal = netItemPayable;
+        taxAmt = Math.round(((netItemPayable * rate) / 100) * 100) / 100;
       }
     }
 
@@ -352,16 +379,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       rawQty,
       unitPrice,
       grossPrice,
+      itemDiscount,
+      netItemPayable,
       rate,
       taxableVal,
       taxAmt
     };
   });
-
-  const subtotal = order.subtotal || items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
-  const shippingCost = Number(order.shippingCost ?? order.shippingFee ?? 0);
-  const discount = Number(order.discount ?? order.discountAmount ?? 0);
-  const grandTotal = Number(order.total || order.totalAmount || (subtotal + shippingCost - discount));
 
   // Include shipping GST into total taxable value & total tax amount for unified grand total breakdown
   if (shippingCost > 0) {
@@ -372,7 +396,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     totalTaxAmount += shippingTax;
   }
 
-  const taxAmount = Math.round(totalTaxAmount * 100) / 100;
+  totalTaxableValue = Math.round(totalTaxableValue * 100) / 100;
+  totalTaxAmount = Math.round(totalTaxAmount * 100) / 100;
+  if (Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) > 0 && Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) <= 0.05) {
+    totalTaxableValue = Math.round((grandTotal - totalTaxAmount) * 100) / 100;
+  }
+
+  const taxAmount = totalTaxAmount;
+  const taxableValue = totalTaxableValue;
 
   const isPlaceholderName = (name) => {
     if (!name || typeof name !== 'string') return true;
@@ -850,17 +881,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
         {/* Strict Verification Banner */}
         {!confirmed ? (
           <div className="p-8 text-center space-y-4">
-            <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center mx-auto">
+            <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center mx-auto shadow-inner">
               <Lock size={28} />
             </div>
             <div>
-              <h4 className="font-display font-extrabold text-lg text-gray-900">Certificate Generation Locked</h4>
-              <p className="text-xs text-gray-500 max-w-md mx-auto mt-1">
-                Official Tax Invoice and Order Certificate are strictly generated only after order confirmation or payment settlement.
+              <h4 className="font-display font-extrabold text-lg text-gray-900">Tax Invoice Generation Locked</h4>
+              <p className="text-xs text-gray-600 max-w-md mx-auto mt-1 leading-relaxed">
+                Official Tax Invoice will be generated automatically once the order status is confirmed.
               </p>
             </div>
-            <div className="inline-block bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold px-4 py-2 rounded-xl">
-              Current Order Status: <span className="uppercase font-black text-amber-950">{order.status || 'Pending Verification'}</span>
+            <div className="inline-flex flex-col items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold px-5 py-2.5 rounded-xl shadow-2xs">
+              <div>
+                Current Order Status: <span className="uppercase font-black text-amber-950">{order.overallStatus || order.status || 'Pending Confirmation'}</span>
+              </div>
+              <p className="text-[10px] text-amber-700/90 font-medium">
+                (Payment status does not block invoice generation. Once the order is confirmed, the invoice is generated automatically.)
+              </p>
             </div>
           </div>
         ) : (
@@ -910,8 +946,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Billed To (Customer / Institution)</span>
-                  <p className="font-extrabold text-gray-900 text-sm">{order.schoolName || (typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || order.contactPerson || 'School Representative'))}</p>
-                  <p className="text-gray-600 mt-0.5">{order.deliveryLocation || order.location || formattedAddressStr}</p>
+                  <p className="font-extrabold text-gray-900 text-sm">{stripCustomerPhoneFromAddress(order.schoolName || (typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || order.contactPerson || 'School Representative')))}</p>
+                  <p className="text-gray-600 mt-0.5">{stripCustomerPhoneFromAddress(order.deliveryLocation || order.location || formattedAddressStr)}</p>
                   <p className="text-gray-500 mt-1">Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId || order._id}</strong> | Payment: <strong>{order.paymentMethod || 'Institutional Procurement / Advance ESCROW'}</strong></p>
                 </div>
               </div>

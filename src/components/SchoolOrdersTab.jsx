@@ -442,25 +442,37 @@ export default function SchoolOrdersTab() {
             );
             const isTargetBudgetAccepted = isAssignedToMe && (req.acceptanceMode === 'target_budget' || req.acceptedAtTargetBudget || isMyTargetBudgetQuote);
 
-            const isPacked = req.status === 'packed';
-            const isOutForDelivery = req.status === 'out for delivery' || req.status === 'out_for_delivery';
-            const isCompleted = req.status === 'completed' || req.status === 'fulfilled' || req.remainingPaymentStatus === 'paid';
-            const isReceived = req.status === 'received' || req.status === 'delivered' || isCompleted;
+            const normReqStatus = String(req.deliveryStatus || req.status || '').toLowerCase().replace(/_/g, ' ');
+            const isCompleted = normReqStatus === 'completed' || normReqStatus === 'fulfilled' || req.remainingPaymentStatus === 'paid' || Boolean(req.deliveryDetails?.deliveredAt);
+            const isReceived = normReqStatus === 'received' || normReqStatus === 'delivered' || isCompleted;
+            const isOutForDelivery = !isReceived && (normReqStatus === 'out for delivery' || Boolean(req.deliveryDetails?.dispatchedAt));
+            const isPacked = !isReceived && !isOutForDelivery && normReqStatus === 'packed';
 
             const advAmount = Number(req.sellerAdvanceAmount || myQuote?.prepaymentAmount || req.prepaymentAmount || req.buyerAdvanceAmount || 0);
             const advPct = Number(req.sellerAdvancePercentage || myQuote?.prepaymentPercentage || req.prepaymentPercentage || req.buyerAdvancePercentage || 0);
             const advRequired = (advAmount > 0 || advPct > 0) && (req.advancePaymentStatus === 'pending' || req.advancePaymentStatus === 'demanded');
-            const isPrepaymentPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially' || !advRequired;
+            const isPrepaymentActuallyPaid = req.advancePaymentStatus === 'paid' || req.advancePaymentStatus === 'paid_partially';
+            const isPrepaymentPaid = isPrepaymentActuallyPaid || !advRequired;
             const isPrepaymentPending = advRequired && !isPrepaymentPaid;
             const isConfirmedFulfilment = isAssignedToMe && (isTargetBudgetAccepted || isPrepaymentPaid || isPacked || isOutForDelivery || isReceived || isCompleted || ['assigned', 'quote_accepted', 'accepted', 'confirmed', 'in_production', 'processing'].includes(req.status));
 
+            const hasOtherSellerAssigned = Boolean(assignedSellerId && !isAssignedToMeCandidate);
+            const hasOtherQuoteWon = Boolean(req.acceptedQuoteId && !isWinningSeller);
+            const isAwardedToOther = hasOtherSellerAssigned || hasOtherQuoteWon;
+
             const isOutbidOrRejected = isMyQuoteRejected || Boolean(
-              (isAcceptedStatus || req.acceptedQuoteId || assignedSellerId) && !isAssignedToMe && Boolean(assignedSellerId || req.acceptedQuoteId) && isPrepaymentPaid
+              myQuote && isAwardedToOther && (isAcceptedStatus || isPrepaymentActuallyPaid)
             );
 
-            // An order is locked to another seller if prepayment is confirmed, or if it was awarded to another vendor with prepayment confirmed, or if it was a private direct order assigned to someone else
-            const isLockedToOther = !isAssignedToMe && (isPrepaymentPaid || isOutbidOrRejected || (req.assignmentMode === 'direct' && !isBroadcast && Boolean(assignedSellerId)));
-            const isAcceptedOther = !isAssignedToMe && Boolean(assignedSellerId) && isPrepaymentPaid;
+            // An order is locked to another seller ONLY IF:
+            // 1. It is a private direct assignment to someone else (not broadcast to all vendors)
+            // 2. OR it was awarded to another vendor with prepayment confirmed, accepted status, or fulfillment
+            const isPrivateDirectOther = !isAssignedToMe && req.assignmentMode === 'direct' && !isBroadcast && hasOtherSellerAssigned;
+            const isLockedToOther = !isAssignedToMe && (
+              isPrivateDirectOther ||
+              (isAwardedToOther && (isAcceptedStatus || isPrepaymentActuallyPaid || isOutbidOrRejected))
+            );
+            const isAcceptedOther = !isAssignedToMe && isAwardedToOther && (isAcceptedStatus || isPrepaymentActuallyPaid);
 
             const budgetVal = req.acceptedPrice || req.overallBudget || req.targetBudgetPerKit || req.estimatedBudget || myQuote?.quoteAmount || 0;
 
@@ -558,7 +570,7 @@ export default function SchoolOrdersTab() {
                         ? 'bg-amber-100 text-amber-950 border-amber-300 font-extrabold'
                         : isAssignedToMe
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        : (!isAssignedToMe && assignedSellerId && !isPrepaymentPaid)
+                        : (!isAssignedToMe && isAwardedToOther && !isPrepaymentActuallyPaid && !isAcceptedStatus)
                         ? 'bg-amber-100 text-amber-900 border-amber-300'
                         : hasSellerQuote
                         ? 'bg-purple-50 text-purple-800 border-purple-200'
@@ -575,7 +587,7 @@ export default function SchoolOrdersTab() {
                        (isAssignedToMe && isPrepaymentPaid) ? '🎉 Order Accepted & Prepayment Confirmed!' :
                        (isAssignedToMe && req.status === 'assigned' && !hasSellerQuote) ? '✨ Directly Assigned to Your Store • Awaiting Your Pitch / Acceptance' :
                        (myQuote && isMyTargetBudgetQuote) ? `🎯 Accepted Order at Target Budget (${myQuote.quoteAmount > 0 ? `₹${Number(myQuote.quoteAmount).toLocaleString()}` : 'Agreed'}) • Awaiting Buyer Advance` :
-                       (!isAssignedToMe && assignedSellerId && !isPrepaymentPaid) ? '⚡ Pending Prepayment Confirmation (Open for Pitches & Acceptance)' :
+                       (!isAssignedToMe && isAwardedToOther && !isPrepaymentActuallyPaid && !isAcceptedStatus) ? '⚡ Pending Prepayment Confirmation (Open for Pitches & Acceptance)' :
                        hasSellerQuote ? 'Your Pitch Submitted' : 'RFQ Open for Quotations'}
                     </span>
                   </div>
@@ -590,16 +602,16 @@ export default function SchoolOrdersTab() {
                         <span>Order Processing Stepper (Store Self-Delivery Only)</span>
                       </div>
                       <span className="text-[10px] font-extrabold text-teal-900 bg-white px-2.5 py-0.5 rounded-full border border-teal-200 shadow-2xs uppercase tracking-wider">
-                        Status: {req.status?.replace(/_/g, ' ')}
+                        Status: {isReceived ? 'Delivered' : isOutForDelivery ? 'Out for Delivery' : isPacked ? 'Packed' : (req.status || 'Accepted').replace(/_/g, ' ')}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2 pt-1">
                       {[
                         { step: 1, key: 'accepted', label: '1. Accepted', done: true },
-                        { step: 2, key: 'packed', label: '2. Packed', done: ['packed', 'out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status) },
-                        { step: 3, key: 'out for delivery', label: '3. Out for Delivery', done: ['out for delivery', 'out_for_delivery', 'received', 'delivered'].includes(req.status) },
-                        { step: 4, key: 'received', label: '4. Received', done: ['received', 'delivered'].includes(req.status) }
+                        { step: 2, key: 'packed', label: '2. Packed', done: isPacked || isOutForDelivery || isReceived },
+                        { step: 3, key: 'out for delivery', label: '3. Out for Delivery', done: isOutForDelivery || isReceived },
+                        { step: 4, key: 'received', label: '4. Received', done: isReceived }
                       ].map((st) => (
                         <div key={st.step} className="flex flex-col items-center text-center">
                           <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-2xs ${

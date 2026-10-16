@@ -969,23 +969,41 @@ export default function BulkOrderPreviewModal({
           </div>
 
           <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-extrabold border ${
-              isTargetBudgetAccepted
-                ? 'bg-blue-500/20 text-blue-200 border-blue-400/40'
-                : isMyTargetBudgetQuote
-                ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
-                : order.status === 'quote_accepted'
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
-                : order.status === 'published' || order.status === 'assigned'
-                ? 'bg-blue-500/20 text-blue-300 border-blue-400/40'
-                : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
-            }`}>
-              {isTargetBudgetAccepted ? `🎯 Accepted at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
-               isMyTargetBudgetQuote ? `🎯 Accepted Order at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
-               order.status === 'quote_accepted' ? 'Quote Accepted & Finalized' :
-               order.status === 'published' ? 'Marketplace RFQ Published' :
-               order.status === 'assigned' ? 'Assigned to Vendor' : 'Pending Distribution'}
-            </span>
+            {(() => {
+              const modalStatusNorm = String(order.deliveryStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
+              const isDeliveredModal = ['delivered', 'received', 'completed', 'fulfilled'].includes(modalStatusNorm) || order.remainingPaymentStatus === 'paid' || Boolean(order.deliveryDetails?.deliveredAt);
+              const isOutModal = !isDeliveredModal && (modalStatusNorm === 'out for delivery' || Boolean(order.deliveryDetails?.dispatchedAt));
+              const isPackedModal = !isDeliveredModal && !isOutModal && modalStatusNorm === 'packed';
+
+              return (
+                <span className={`px-3 py-1 rounded-full text-xs font-extrabold border ${
+                  isDeliveredModal
+                    ? 'bg-emerald-500/25 text-emerald-200 border-emerald-400/50'
+                    : isOutModal
+                    ? 'bg-amber-500/25 text-amber-200 border-amber-400/50'
+                    : isPackedModal
+                    ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/50'
+                    : isTargetBudgetAccepted
+                    ? 'bg-blue-500/20 text-blue-200 border-blue-400/40'
+                    : isMyTargetBudgetQuote
+                    ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
+                    : order.status === 'quote_accepted'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                    : order.status === 'published' || order.status === 'assigned'
+                    ? 'bg-blue-500/20 text-blue-300 border-blue-400/40'
+                    : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                }`}>
+                  {isDeliveredModal ? '✅ Consignment Delivered & Received' :
+                   isOutModal ? '🚚 Out for Delivery (Store Fleet)' :
+                   isPackedModal ? '📦 Consignment Packed & Ready' :
+                   isTargetBudgetAccepted ? `🎯 Accepted at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
+                   isMyTargetBudgetQuote ? `🎯 Accepted Order at Target Budget (${targetBudgetVal > 0 ? `₹${Number(targetBudgetVal).toLocaleString()}` : 'Agreed'})` :
+                   order.status === 'quote_accepted' ? 'Quote Accepted & Finalized' :
+                   order.status === 'published' ? 'Marketplace RFQ Published' :
+                   order.status === 'assigned' ? 'Assigned to Vendor' : 'Pending Distribution'}
+                </span>
+              );
+            })()}
 
             <button
               onClick={onClose}
@@ -1179,24 +1197,30 @@ export default function BulkOrderPreviewModal({
                   (order.acceptedQuoteId && existingSellerQuote && (String(existingSellerQuote._id || existingSellerQuote.id) !== String(order.acceptedQuoteId)))
                 );
 
+                const isPrepaymentActuallyPaid = order.advancePaymentStatus === 'paid' || order.advancePaymentStatus === 'paid_partially';
+                const hasOtherSellerAssigned = Boolean(assignedId && !sellerCandidateIds.includes(String(assignedId)) && String(assignedId) !== String(currentSellerId));
+                const hasOtherQuoteWon = Boolean(order.acceptedQuoteId && !isMyQuoteWon);
+                const isAwardedToOther = hasOtherSellerAssigned || hasOtherQuoteWon;
+
                 const isAcceptedOtherSeller = Boolean(
-                  !isAcceptedToMe && (
+                  !isAcceptedToMe && isAwardedToOther && (
                     isQuoteRejected ||
-                    isRequisitionLockedToOther ||
-                    (assignedId && !sellerCandidateIds.includes(String(assignedId)) && String(assignedId) !== String(currentSellerId)) ||
-                    (order.acceptedQuoteId && !isMyQuoteWon) ||
-                    ['quote_accepted', 'accepted', 'confirmed', 'packed', 'out for delivery', 'delivered', 'completed'].includes(order.status)
+                    ['quote_accepted', 'accepted', 'confirmed', 'packed', 'out for delivery', 'delivered', 'completed'].includes(order.status) ||
+                    isPrepaymentActuallyPaid
                   )
                 );
 
-                if ((isAcceptedOtherSeller || isQuoteRejected) && userRole === 'seller') {
+                if ((isAcceptedOtherSeller || isQuoteRejected) && userRole === 'seller' && (existingSellerQuote || isAwardedToOther)) {
+                  const hasMyPitch = Boolean(existingSellerQuote);
                   return (
                     <div className="bg-rose-50 border-2 border-rose-300 text-rose-950 p-5 rounded-2xl shadow-xs space-y-2">
                       <div className="font-extrabold text-sm uppercase tracking-wider text-rose-900 flex items-center gap-2">
-                        <AlertCircle size={18} className="text-rose-700" /> Requisition Awarded to Another Vendor • Quotation Rejected
+                        <AlertCircle size={18} className="text-rose-700" /> {hasMyPitch ? 'Requisition Awarded to Another Vendor • Quotation Rejected' : 'Requisition Awarded to Another Vendor • Bidding Closed'}
                       </div>
                       <p className="text-xs text-rose-900 font-medium leading-relaxed">
-                        The buyer has reviewed all vendor proposals, selected another vendor's quotation, and confirmed this requisition. Your quotation has been closed as not selected. All competitive vendor proposals remain strictly confidential. Thank you for participating!
+                        {hasMyPitch
+                          ? "The buyer has reviewed all vendor proposals, selected another vendor's quotation, and confirmed this requisition. Your quotation has been closed as not selected. All competitive vendor proposals remain strictly confidential. Thank you for participating!"
+                          : "This bulk procurement requisition has been finalized and awarded to another vendor. Open marketplace bidding is currently closed for this order."}
                       </p>
                     </div>
                   );
