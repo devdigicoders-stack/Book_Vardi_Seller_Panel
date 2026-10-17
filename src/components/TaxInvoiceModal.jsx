@@ -810,6 +810,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const isExplicitThirdParty = rawMode.includes('third') && hasRealThirdPartyCourier;
   const isThirdParty = isExplicitThirdParty;
   const isSelf = !isThirdParty;
+  // Active Status & Reversal Detection
+  const orderOverallStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+  const returnStatus = String(order.returnRequest?.status || '').toLowerCase().trim();
+  const isOrderCancelled = orderOverallStatus.includes('cancel') || Boolean(order.cancelledAt);
+  const isOrderRefunded = orderOverallStatus.includes('refund') || returnStatus.includes('refund') || order.settlementStatus === 'refunded';
+  const isSettlementReversed = isOrderCancelled || isOrderRefunded;
+
   // Active Rule Detection across 4 core scenarios
   const isRule4CodCourier = explicitRule === 'COD_THIRD_PARTY_DELIVERY' || (isCod && isThirdParty);
   const isRule3CodSelf = explicitRule === 'COD_SELF_DELIVERY' || (isCod && !isThirdParty);
@@ -821,27 +828,28 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     ? 10
     : (order.commissionRate ?? getSellerCommissionRate() ?? 10);
 
-  const marketplaceCommission = Math.round((grandTotal * (marketplaceCommissionRate / 100)) * 100) / 100;
-  const gstOnCommission = Math.round((marketplaceCommission * 0.18) * 100) / 100;
-  const tdsAmount = Math.round((grandTotal * 0.001) * 100) / 100;
+  const marketplaceCommission = isSettlementReversed ? 0 : Math.round((grandTotal * (marketplaceCommissionRate / 100)) * 100) / 100;
+  const gstOnCommission = isSettlementReversed ? 0 : Math.round((marketplaceCommission * 0.18) * 100) / 100;
+  const tdsAmount = isSettlementReversed ? 0 : Math.round((grandTotal * 0.001) * 100) / 100;
 
   // Statutory Tax:
   // Rule 3 (COD Self): GST TCS is 0% when portal does not collect customer payment
   // Rule 1, 2, 4: GST TCS is 0.5% (Sec 52) of 'Base Amount' (Taxable Value without GST).
   // सबसे जरूरी कंडीशन: अगर कोई आइटम टैक्स-फ्री है (जैसे किताबें, 0% GST), तो TCS = 0!
+  // अगर ऑर्डर कैंसिल या रिफंड है, तो TCS = 0 और TDS = 0 (GST Sec 34 Credit Note)
   const taxableBaseForTcs = itemBreakdowns.reduce((acc, it) => {
     return Number(it.rate || 0) > 0 ? acc + Number(it.taxableVal || 0) : acc;
   }, 0);
   const hasTaxableSupplies = taxableBaseForTcs > 0;
 
-  const cgstTcsRate = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? 0.25 : 0);
-  const sgstTcsRate = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? 0.25 : 0);
-  const igstTcsRate = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (!isIntraState ? 0.5 : 0);
+  const cgstTcsRate = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? 0.25 : 0);
+  const sgstTcsRate = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? 0.25 : 0);
+  const igstTcsRate = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : (!isIntraState ? 0.5 : 0);
 
-  const cgstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? Math.round(((taxableBaseForTcs * 0.25) / 100) * 100) / 100 : 0);
-  const sgstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? Math.round(((taxableBaseForTcs * 0.25) / 100) * 100) / 100 : 0);
-  const igstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : (!isIntraState ? Math.round(((taxableBaseForTcs * 0.5) / 100) * 100) / 100 : 0);
-  const gstTcsAmount = (isRule3CodSelf || !hasTaxableSupplies) ? 0 : Math.round((cgstTcsAmount + sgstTcsAmount + igstTcsAmount) * 100) / 100;
+  const cgstTcsAmount = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? Math.round(((taxableBaseForTcs * 0.25) / 100) * 100) / 100 : 0);
+  const sgstTcsAmount = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : (isIntraState ? Math.round(((taxableBaseForTcs * 0.25) / 100) * 100) / 100 : 0);
+  const igstTcsAmount = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : (!isIntraState ? Math.round(((taxableBaseForTcs * 0.5) / 100) * 100) / 100 : 0);
+  const gstTcsAmount = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : Math.round((cgstTcsAmount + sgstTcsAmount + igstTcsAmount) * 100) / 100;
 
   // Delivery Charges + 18% GST (Rule 2 & Rule 4: Third-Party Delivery)
   // "₹400 से अधिक के ऑर्डर पर: यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है।"
@@ -852,23 +860,26 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   let gstOnDeliveryAmount = 0;
   let totalDeliveryDeduction = 0;
 
-  if (isThirdParty && !isDeliveryExemptedForSeller) {
+  if (!isSettlementReversed && isThirdParty && !isDeliveryExemptedForSeller) {
     deliveryChargeAmount = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? 40);
     gstOnDeliveryAmount = Math.round(((deliveryChargeAmount * shippingGstRate) / 100) * 100) / 100;
     totalDeliveryDeduction = Math.round((deliveryChargeAmount + gstOnDeliveryAmount) * 100) / 100;
   }
 
-  const statutoryDeductions = Math.round((marketplaceCommission + gstOnCommission + tdsAmount + gstTcsAmount) * 100) / 100;
-  const totalDeductions = Math.round((statutoryDeductions + totalDeliveryDeduction) * 100) / 100;
+  const statutoryDeductions = isSettlementReversed ? 0 : Math.round((marketplaceCommission + gstOnCommission + tdsAmount + gstTcsAmount) * 100) / 100;
+  const totalDeductions = isSettlementReversed ? 0 : Math.round((statutoryDeductions + totalDeliveryDeduction) * 100) / 100;
 
   // Final Settlement:
+  // If cancelled or refunded, net settlement to seller is strictly ₹0.00
   // Rule 3 (COD Self): Customer paid cash to seller directly. Portal pays ₹0.
   // Settlement is Negative (-totalDeductions) to be deposited/adjusted.
   // Rule 1, 2, 4 (Courier / Online): Portal holds the funds (courier remits cash to portal in Rule 4).
   // Settlement is Positive (Gross - totalDeductions) payable to seller.
-  const sellerSettlement = isRule3CodSelf
-    ? -totalDeductions
-    : Math.max(0, Math.round((grandTotal - totalDeductions) * 100) / 100);
+  const sellerSettlement = isSettlementReversed
+    ? 0
+    : (isRule3CodSelf
+      ? -totalDeductions
+      : Math.max(0, Math.round((grandTotal - totalDeductions) * 100) / 100));
 
   const sellerPayout = sellerSettlement;
 
@@ -1340,7 +1351,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 <h4 className="font-extrabold text-[10px] text-amber-950 uppercase tracking-wider flex items-center gap-1">
                   <DollarSign size={13} /> Seller Settlement &amp; Payout Split
                 </h4>
-                {isRule3CodSelf ? (
+                {isSettlementReversed ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-xs flex items-center gap-1">
+                    GST Sec 34: Settlement &amp; Taxes Reversed (₹0.00)
+                  </span>
+                ) : isRule3CodSelf ? (
                   <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-xs flex items-center gap-1">
                     Rule 3: COD + Self Delivery (Cash)
                   </span>
@@ -1360,25 +1375,27 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
               </div>
 
               <div className="flex justify-between text-gray-700">
-                <span>{isRule3CodSelf ? 'Cash Collected by Seller:' : (isRule4CodCourier ? 'Cash via Courier Remittance:' : 'Gross Order Total:')}</span>
-                <span className="font-mono font-bold">₹{grandTotal.toFixed(2)}</span>
+                <span>{isSettlementReversed ? 'Original Order Grand Total:' : (isRule3CodSelf ? 'Cash Collected by Seller:' : (isRule4CodCourier ? 'Cash via Courier Remittance:' : 'Gross Order Total:'))}</span>
+                <span className="font-mono font-bold">₹{grandTotal.toFixed(2)}{isSettlementReversed ? ' (Reversed)' : ''}</span>
               </div>
               <div className="flex justify-between text-amber-900 font-medium">
                 <span>Commission ({marketplaceCommissionRate}%):</span>
-                <span className="font-mono">-₹{marketplaceCommission.toFixed(2)}</span>
+                <span className="font-mono">{isSettlementReversed ? '₹0.00 (Waived)' : `-₹${marketplaceCommission.toFixed(2)}`}</span>
               </div>
               <div className="flex justify-between text-indigo-900 font-medium">
                 <span>GST on Commission (18%):</span>
-                <span className="font-mono">-₹{gstOnCommission.toFixed(2)}</span>
+                <span className="font-mono">{isSettlementReversed ? '₹0.00 (Waived)' : `-₹${gstOnCommission.toFixed(2)}`}</span>
               </div>
               <div className="flex justify-between text-purple-900 font-medium">
                 <span>TDS 0.1% (Sec 194-O):</span>
-                <span className="font-mono">-₹{tdsAmount.toFixed(2)}</span>
+                <span className="font-mono">{isSettlementReversed ? '₹0.00 (Reversed)' : `-₹${tdsAmount.toFixed(2)}`}</span>
               </div>
               <div className="flex justify-between text-sky-900 font-medium">
                 <span>
                   GST TCS (Sec 52):
-                  {isRule3CodSelf ? (
+                  {isSettlementReversed ? (
+                    <span className="text-[9px] text-rose-700 font-bold ml-1">₹0.00 (Sec 34 Reversal)</span>
+                  ) : isRule3CodSelf ? (
                     <span className="text-[9px] text-gray-500 font-normal ml-1">0% (Exempt on COD Self)</span>
                   ) : !hasTaxableSupplies ? (
                     <span className="text-[9px] text-emerald-700 font-bold ml-1">₹0.00 (0% GST / Books Tax-Free)</span>
@@ -1388,14 +1405,16 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                     <span className="text-[9px] text-indigo-700 font-normal ml-1">0.5% on Base ₹{taxableBaseForTcs.toFixed(2)} (IGST)</span>
                   )}
                 </span>
-                <span className="font-mono">{gstTcsAmount > 0 ? `-₹${gstTcsAmount.toFixed(2)}` : '₹0.00'}</span>
+                <span className="font-mono">{isSettlementReversed ? '₹0.00 (Reversed)' : (gstTcsAmount > 0 ? `-₹${gstTcsAmount.toFixed(2)}` : '₹0.00')}</span>
               </div>
 
               {/* Delivery charge deduction for Rule 2 & Rule 4 */}
               {isThirdParty && (
                 <div className="flex justify-between text-rose-900 font-medium">
                   <span>Delivery Charges (Policy):</span>
-                  {totalDeliveryDeduction > 0 ? (
+                  {isSettlementReversed ? (
+                    <span className="font-mono text-teal-700 font-bold">₹0.00 (Waived)</span>
+                  ) : totalDeliveryDeduction > 0 ? (
                     <span className="font-mono text-rose-700">-₹{totalDeliveryDeduction.toFixed(2)} (₹{deliveryChargeAmount.toFixed(2)} + ₹{gstOnDeliveryAmount.toFixed(2)} GST {shippingGstRate}%)</span>
                   ) : (
                     <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs &gt;₹400)</span>
@@ -1403,7 +1422,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 </div>
               )}
 
-              {isRule3CodSelf ? (
+              {isSettlementReversed ? (
+                <div className="flex justify-between text-rose-700 font-black border-t border-rose-300 pt-1">
+                  <div>
+                    <span>Pending Seller Settlement:</span>
+                    <span className="text-[9px] text-rose-600 block font-normal">Reversed under GST Section 34 Credit Note</span>
+                  </div>
+                  <span className="font-mono text-sm font-black text-rose-800">₹0.00 (Reversed)</span>
+                </div>
+              ) : isRule3CodSelf ? (
                 <div className="flex justify-between text-rose-700 font-black border-t border-rose-200 pt-1">
                   <div>
                     <span>Final Settlement (Owed to Portal):</span>
