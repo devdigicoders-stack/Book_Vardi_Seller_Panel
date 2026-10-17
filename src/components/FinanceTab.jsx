@@ -19,25 +19,108 @@ import {
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 
-// Helper to evaluate settlement maturity for an order (Return window: 7 days + 1 day buffer = 8 days)
+// Helper to evaluate settlement maturity for an order:
+// 1. Non-Return / Non-Exchange Orders: Matures strictly after (Return window + 1) days from delivery (e.g. 7d + 1d = 8d, or 0d + 1d = 1d)
+// 2. Exchanged Orders: Matures strictly 1 day after the exchange date (exchangeDate + 1 day)
+// 3. Returned / Refunded Orders: Settlement reversed, Credit note auto-recognized under Sec 34
 const evaluateOrderMaturity = (order) => {
-  const isDelivered = String(order.status || order.overallStatus || '').toLowerCase() === 'delivered';
-  if (!isDelivered) {
-    return { isDelivered: false, isMatured: false, daysRemaining: null, maturityDate: null };
+  const normStatus = String(order.status || order.overallStatus || '').toLowerCase().trim();
+  const returnReqStatus = String(order.returnRequest?.status || '').toLowerCase().trim();
+
+  const isDelivered = normStatus.includes('delivered');
+  const isExchanged = normStatus === 'exchanged' || returnReqStatus === 'exchanged';
+  const isRefunded = ['refunded', 'refund_completed', 'refund_processed'].includes(normStatus) || 
+                     ['refunded', 'refund_completed', 'refund_processed'].includes(returnReqStatus);
+
+  // 1. Return & Refund Completed: Settlement reversed, auto credit note
+  if (isRefunded) {
+    return {
+      isDelivered: true,
+      isMatured: false,
+      isRefunded: true,
+      status: 'refunded',
+      label: 'Refunded (Settlement Reversed)',
+      daysRemaining: null,
+      maturityDate: null,
+      creditNoteNumber: order.creditNoteNumber || `CN-${order.orderId || order.id || ''}`
+    };
   }
 
-  if (order.isSettlementMatured === true || order.settlementStatus === 'matured' || order.settlementStatus === 'paid_out') {
+  // 2. Exchanged Orders: Settlement unlocks strictly 1 day after exchange date!
+  if (isExchanged) {
+    const exchangeDateRaw = order.exchangedAt || order.returnRequest?.exchangedAt || order.updatedAt || order.date || order.createdAt;
+    const exchangeDate = exchangeDateRaw ? new Date(exchangeDateRaw) : new Date();
+    const maturityDate = order.settlementDueDate 
+      ? new Date(order.settlementDueDate) 
+      : new Date(exchangeDate.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    const diffMs = maturityDate.getTime() - now;
+    const isMatured = diffMs <= 0 || order.isSettlementMatured === true || order.settlementStatus === 'matured' || order.settlementStatus === 'credited';
+    const daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+    return {
+      isDelivered: true,
+      isExchanged: true,
+      isMatured,
+      status: isMatured ? 'matured' : 'in_exchange_buffer',
+      label: isMatured ? 'Settled & Available (Exchanged)' : `Exchange Buffer (${daysRemaining || 1}d left)`,
+      daysRemaining: isMatured ? 0 : (daysRemaining || 1),
+      maturityDate,
+      totalWindowDays: 1
+    };
+  }
+
+  // 3. Active return or exchange in progress (pending resolution): Frozen on hold
+  const hasActiveReturnRequest = Boolean(
+    order.returnRequest &&
+    !['no_request', 'rejected', 'return_rejected', 'exchange_rejected', 'exchanged', 'refunded', 'refund_completed'].includes(returnReqStatus)
+  );
+  if (hasActiveReturnRequest) {
+    return {
+      isDelivered: true,
+      isMatured: false,
+      isOnHold: true,
+      status: 'on_hold',
+      label: 'On Hold (Return/Exchange)',
+      daysRemaining: null,
+      maturityDate: null
+    };
+  }
+
+  // 4. Order In Transit / Not Delivered
+  if (!isDelivered) {
+    return { isDelivered: false, isMatured: false, daysRemaining: null, maturityDate: null, status: 'pending' };
+  }
+
+  // 5. Already matured / credited in DB
+  if (order.isSettlementMatured === true || order.settlementStatus === 'matured' || order.settlementStatus === 'credited' || order.settlementStatus === 'paid_out') {
     return { 
       isDelivered: true, 
       isMatured: true, 
+      status: 'matured',
+      label: 'Settled & Available',
       daysRemaining: 0, 
       maturityDate: order.settlementDueDate ? new Date(order.settlementDueDate) : null 
     };
   }
 
-  const returnDays = Number(order.returnWindowDays || 7);
-  const bufferDays = 1;
-  const totalWindowDays = returnDays + bufferDays; // 8 days total
+  // 6. Normal Non-Return / Non-Exchange Orders:
+  // Non-returnable & non-exchangeable orders mature in 0 + 1 = 1 day (agale din hi settlement).
+  // Returnable orders mature after returnWindowDays + 1 day buffer.
+  const isNonReturnable = (
+    order.isReturnable === false ||
+    String(order.returnPolicy || '').toLowerCase().includes('non_returnable') ||
+    String(order.returnPolicy || '').toLowerCase().includes('no_return')
+  );
+  const isNonExchangeable = (
+    order.isExchangeable === false ||
+    String(order.returnPolicy || '').toLowerCase().includes('non_exchangeable') ||
+    String(order.returnPolicy || '').toLowerCase().includes('no_exchange')
+  );
+
+  const returnDays = (isNonReturnable && isNonExchangeable) ? 0 : Number(order.returnWindowDays ?? 7);
+  const bufferDays = 1; // + 1 din baad settlement
+  const totalWindowDays = returnDays + bufferDays;
 
   let deliveredDate = null;
   if (order.deliveredAt) deliveredDate = new Date(order.deliveredAt);
@@ -51,10 +134,18 @@ const evaluateOrderMaturity = (order) => {
 
   const now = Date.now();
   const diffMs = maturityDate.getTime() - now;
-  const daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
   const isMatured = diffMs <= 0;
+  const daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 
-  return { isDelivered: true, isMatured, daysRemaining, maturityDate, totalWindowDays };
+  return {
+    isDelivered: true,
+    isMatured,
+    status: isMatured ? 'matured' : 'in_return_window',
+    label: isMatured ? 'Settled & Available' : `In Return Window (${daysRemaining}d left)`,
+    daysRemaining: isMatured ? 0 : daysRemaining,
+    maturityDate,
+    totalWindowDays
+  };
 };
 
 export default function FinanceTab() {
@@ -424,7 +515,8 @@ export default function FinanceTab() {
     return orders
       .filter(o => {
         const maturity = evaluateOrderMaturity(o);
-        // Include non-delivered orders (Pending, Processing, Shipped) or delivered orders still in return window
+        if (maturity.isRefunded) return false;
+        // Include non-delivered orders (Pending, Processing, Shipped) or delivered/exchanged orders still in window/buffer
         return !maturity.isDelivered || !maturity.isMatured;
       })
       .reduce((sum, o) => {
@@ -537,10 +629,19 @@ export default function FinanceTab() {
       const maturity = evaluateOrderMaturity(o);
       let statusLabel = 'Pending Dispatch';
       let statusType = 'pending';
-      if (maturity.isDelivered) {
+      if (maturity.isRefunded) {
+        statusLabel = 'Refunded (Settlement Reversed)';
+        statusType = 'refunded';
+      } else if (maturity.isDelivered) {
         if (maturity.isMatured) {
-          statusLabel = 'Settled & Available';
+          statusLabel = maturity.isExchanged ? 'Settled & Available (Exchanged)' : 'Settled & Available';
           statusType = 'settled';
+        } else if (maturity.isOnHold) {
+          statusLabel = 'On Hold (Return/Exchange)';
+          statusType = 'on_hold';
+        } else if (maturity.isExchanged) {
+          statusLabel = `In Exchange Buffer (${maturity.daysRemaining}d left)`;
+          statusType = 'escrow';
         } else {
           statusLabel = `In Return Window (${maturity.daysRemaining}d left)`;
           statusType = 'escrow';
@@ -1116,8 +1217,16 @@ export default function FinanceTab() {
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                           <CheckCircle2 size={11} /> Settled &amp; Available
                         </span>
+                      ) : txn.statusType === 'refunded' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200" title="Statutory Credit Note Auto-Issued (Sec 34)">
+                          <AlertCircle size={11} className="text-rose-600" /> {txn.status}
+                        </span>
+                      ) : txn.statusType === 'on_hold' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                          <Clock size={11} className="text-amber-600" /> {txn.status}
+                        </span>
                       ) : txn.statusType === 'escrow' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200" title={txn.maturityDate ? `Unlocks on ${new Date(txn.maturityDate).toLocaleDateString('en-GB')}` : 'In Return Window'}>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200" title={txn.maturityDate ? `Unlocks on ${new Date(txn.maturityDate).toLocaleDateString('en-GB')}` : 'In Return/Exchange Window'}>
                           <Lock size={11} className="text-amber-600" /> {txn.status}
                         </span>
                       ) : (
