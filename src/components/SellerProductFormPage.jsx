@@ -26,7 +26,7 @@ import {
   Search,
   Layers3
 } from 'lucide-react';
-import ImageUploadDropzone from './ImageUploadDropzone';
+import ImageUploadDropzone, { compressImageFile } from './ImageUploadDropzone';
 import { resolveImageUrl, parseSizeVariants, dedupeImages } from '../utils/mediaUrl';
 import { fetchSchoolsApi, fetchCategoriesApi } from '../utils/api';
 import { CATEGORY_STRUCTURE, normalizeCategory, getSubCategories } from '../constants/categories';
@@ -654,11 +654,11 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     setError('');
   };
 
-  const handleVariantImageFile = (index, file) => {
+  const handleVariantImageFile = async (index, file) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target.result;
+    try {
+      const dataUrl = await compressImageFile(file, 800, 0.8);
+      if (!dataUrl) return;
       setSizeVariants(prev => prev.map((item, i) => {
         if (i === index) {
           return {
@@ -669,8 +669,9 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         }
         return item;
       }));
-    };
-    reader.readAsDataURL(file);
+    } catch (e) {
+      console.warn('Variant image compression error:', e);
+    }
   };
 
   const handleResetVariantImage = (index) => {
@@ -1895,12 +1896,11 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                     id="custom-size-img-upload"
                                     accept="image/*"
                                     className="hidden"
-                                    onChange={(e) => {
+                                    onChange={async (e) => {
                                       const file = e.target.files && e.target.files[0];
                                       if (file) {
-                                        const reader = new FileReader();
-                                        reader.onload = (ev) => setCustomSizeImage(ev.target.result);
-                                        reader.readAsDataURL(file);
+                                        const compressed = await compressImageFile(file, 800, 0.8);
+                                        if (compressed) setCustomSizeImage(compressed);
                                         e.target.value = '';
                                       }
                                     }}

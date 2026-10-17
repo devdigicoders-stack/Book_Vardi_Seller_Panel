@@ -69,6 +69,7 @@ export default function FinanceTab() {
   } = useSellerData();
 
   const [payoutRequested, setPayoutRequested] = useState(false);
+  const [activeRuleTab, setActiveRuleTab] = useState('rule2');
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
 
@@ -282,8 +283,14 @@ export default function FinanceTab() {
       } else if (o.totalDeliveryDeduction !== undefined) {
         delivDeduction = Number(o.totalDeliveryDeduction);
       } else if (isThirdParty && deliveryChargeBorneBy === 'seller' && !isAbove400) {
+        const itemRates = (o.items || []).map(it => {
+          const cat = String(it.category || '').toLowerCase();
+          const isBook = cat.includes('book') || cat.includes('textbook') || String(it.name || '').toLowerCase().includes('book');
+          return Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? (isBook ? 0 : 5));
+        }).filter(r => !isNaN(r));
+        const ordProdGstRate = itemRates.length > 0 ? Math.max(...itemRates) : 5;
         const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? 40));
-        delivDeduction = Math.round((rawDeliveryFee * 1.18) * 100) / 100;
+        delivDeduction = Math.round((rawDeliveryFee * (1 + (ordProdGstRate / 100))) * 100) / 100;
       }
 
       const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
@@ -319,6 +326,92 @@ export default function FinanceTab() {
       totalDeductions: Math.round(totalDeductions * 100) / 100,
       finalSettlement: Math.round(totalFinalSettlement * 100) / 100
     };
+  }, [orders, commissionRate]);
+
+  // Aggregate Specific Metrics for Rules 1, 2, 3, 4
+  const ruleMetrics = useMemo(() => {
+    const rules = {
+      rule1: { gross: 0, comm: 0, gstComm: 0, tds: 0, tcs: 0, deliv: 0, ded: 0, net: 0, count: 0 },
+      rule2: { gross: 0, comm: 0, gstComm: 0, tds: 0, tcs: 0, deliv: 0, ded: 0, net: 0, count: 0 },
+      rule3: { gross: 0, comm: 0, gstComm: 0, tds: 0, tcs: 0, deliv: 0, ded: 0, net: 0, count: 0 },
+      rule4: { gross: 0, comm: 0, gstComm: 0, tds: 0, tcs: 0, deliv: 0, ded: 0, net: 0, count: 0 },
+    };
+
+    orders.forEach(o => {
+      const gross = Number(o.total || o.totalAmount || 0);
+      const commRate = Number(o.commissionRate ?? o.settlement?.commissionRate ?? commissionRate ?? 10);
+      const commAmount = o.settlement?.commissionAmount !== undefined
+        ? Number(o.settlement.commissionAmount)
+        : Math.round(((gross * commRate) / 100) * 100) / 100;
+      const gstComm = o.settlement?.gstOnCommissionAmount !== undefined
+        ? Number(o.settlement.gstOnCommissionAmount)
+        : Math.round(((commAmount * 18) / 100) * 100) / 100;
+      const tds = o.settlement?.tdsAmount !== undefined
+        ? Number(o.settlement.tdsAmount)
+        : Math.round(((gross * 0.1) / 100) * 100) / 100;
+
+      const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
+      const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
+      const isThirdParty = o.isThirdParty === true || 
+                           rawDeliveryMode.includes('third') || 
+                           rawDeliveryMode.includes('courier') || 
+                           (hasCourier && !rawDeliveryMode.includes('self'));
+      const rawPayment = String(o.paymentMethod || o.paymentMode || o.paymentType || '').toUpperCase();
+      const isCod = rawPayment.includes('COD') || rawPayment.includes('CASH') || rawPayment.includes('DELIVERY');
+      const isRule3 = isCod && !isThirdParty;
+      const isRule4 = isCod && isThirdParty;
+      const ruleKey = isRule3 ? 'rule3' : (isRule4 ? 'rule4' : (isThirdParty ? 'rule2' : 'rule1'));
+
+      const gstTcs = isRule3 ? 0 : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
+      const ordTotalVal = Number(o.totalAmount || o.total || gross);
+      const isAbove400 = ordTotalVal > 400;
+
+      let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
+      if (!deliveryChargeBorneBy) {
+        if (isAbove400) deliveryChargeBorneBy = 'admin';
+        else if (o.isDeliveryBorneBySeller || o.deliveryBorneBy === 'seller') deliveryChargeBorneBy = 'seller';
+        else if (Number(o.shippingAmount || o.shippingFee || 0) > 0) deliveryChargeBorneBy = 'customer';
+        else deliveryChargeBorneBy = isThirdParty ? 'seller' : 'admin';
+      }
+
+      let delivDeduction = 0;
+      if (!isRule3 && isThirdParty && deliveryChargeBorneBy === 'seller' && !isAbove400) {
+        const itemRates = (o.items || []).map(it => {
+          const cat = String(it.category || '').toLowerCase();
+          const isBook = cat.includes('book') || cat.includes('textbook') || String(it.name || '').toLowerCase().includes('book');
+          return Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? (isBook ? 0 : 5));
+        }).filter(r => !isNaN(r));
+        const ordProdGstRate = itemRates.length > 0 ? Math.max(...itemRates) : 5;
+        const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? 40));
+        delivDeduction = Math.round((rawDeliveryFee * (1 + (ordProdGstRate / 100))) * 100) / 100;
+      }
+
+      const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
+      const finalNet = isRule3 ? Math.round(-deductions * 100) / 100 : Math.max(0, Math.round((gross - deductions) * 100) / 100);
+
+      rules[ruleKey].gross += gross;
+      rules[ruleKey].comm += commAmount;
+      rules[ruleKey].gstComm += gstComm;
+      rules[ruleKey].tds += tds;
+      rules[ruleKey].tcs += gstTcs;
+      rules[ruleKey].deliv += delivDeduction;
+      rules[ruleKey].ded += deductions;
+      rules[ruleKey].net += finalNet;
+      rules[ruleKey].count += 1;
+    });
+
+    Object.keys(rules).forEach(k => {
+      rules[k].gross = Math.round(rules[k].gross * 100) / 100;
+      rules[k].comm = Math.round(rules[k].comm * 100) / 100;
+      rules[k].gstComm = Math.round(rules[k].gstComm * 100) / 100;
+      rules[k].tds = Math.round(rules[k].tds * 100) / 100;
+      rules[k].tcs = Math.round(rules[k].tcs * 100) / 100;
+      rules[k].deliv = Math.round(rules[k].deliv * 100) / 100;
+      rules[k].ded = Math.round(rules[k].ded * 100) / 100;
+      rules[k].net = Math.round(rules[k].net * 100) / 100;
+    });
+
+    return rules;
   }, [orders, commissionRate]);
 
   const netMargin = settlementSummary.finalSettlement;
@@ -360,8 +453,14 @@ export default function FinanceTab() {
         if (o.settlement?.totalDeliveryDeduction !== undefined) delivDeduction = Number(o.settlement.totalDeliveryDeduction);
         else if (o.totalDeliveryDeduction !== undefined) delivDeduction = Number(o.totalDeliveryDeduction);
         else if (isThirdParty && deliveryChargeBorneBy === 'seller' && !isAbove400) {
+          const itemRates = (o.items || []).map(it => {
+            const cat = String(it.category || '').toLowerCase();
+            const isBook = cat.includes('book') || cat.includes('textbook') || String(it.name || '').toLowerCase().includes('book');
+            return Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? (isBook ? 0 : 5));
+          }).filter(r => !isNaN(r));
+          const ordProdGstRate = itemRates.length > 0 ? Math.max(...itemRates) : 5;
           const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? 40));
-          delivDeduction = Math.round((rawDeliveryFee * 1.18) * 100) / 100;
+          delivDeduction = Math.round((rawDeliveryFee * (1 + (ordProdGstRate / 100))) * 100) / 100;
         }
 
         const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
@@ -547,18 +646,51 @@ export default function FinanceTab() {
             <span>Book Vardi — सेलर सेटलमेंट के नियम</span>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] bg-teal-800/90 text-teal-200 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-teal-700">
+            <button
+              type="button"
+              onClick={() => setActiveRuleTab('rule1')}
+              className={`text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                activeRuleTab === 'rule1' ? 'bg-teal-500 text-white border-teal-300 shadow-xs' : 'bg-teal-800/90 text-teal-200 border-teal-700 hover:bg-teal-700'
+              }`}
+            >
               1. Online Self
-            </span>
-            <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-amber-400/40">
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRuleTab('rule2')}
+              className={`text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                activeRuleTab === 'rule2' ? 'bg-amber-500 text-amber-950 border-amber-300 shadow-xs font-black ring-2 ring-amber-300' : 'bg-amber-500/20 text-amber-300 border-amber-400/40 hover:bg-amber-500/30'
+              }`}
+            >
               2. Online Courier
-            </span>
-            <span className="text-[10px] bg-rose-500/20 text-rose-300 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-rose-400/40">
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRuleTab('rule3')}
+              className={`text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                activeRuleTab === 'rule3' ? 'bg-rose-500 text-white border-rose-300 shadow-xs' : 'bg-rose-500/20 text-rose-300 border-rose-400/40 hover:bg-rose-500/30'
+              }`}
+            >
               3. COD Self
-            </span>
-            <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2.5 py-0.5 rounded-full font-mono font-semibold border border-purple-400/40">
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRuleTab('rule4')}
+              className={`text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                activeRuleTab === 'rule4' ? 'bg-purple-500 text-white border-purple-300 shadow-xs' : 'bg-purple-500/20 text-purple-300 border-purple-400/40 hover:bg-purple-500/30'
+              }`}
+            >
               4. COD Courier
-            </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRuleTab('all')}
+              className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                activeRuleTab === 'all' ? 'bg-white text-gray-900 border-white font-bold' : 'bg-white/10 text-white/80 border-white/20 hover:bg-white/20'
+              }`}
+            >
+              All Rules
+            </button>
           </div>
         </div>
         
@@ -601,25 +733,130 @@ export default function FinanceTab() {
           </div>
         </div>
 
-        {/* Bilingual Settlement Guidelines */}
-        <div className="pt-2 border-t border-white/15 text-[11px] space-y-1.5 text-teal-100/90">
-          <div className="flex items-start gap-1.5">
-            <span className="font-bold text-amber-300 shrink-0">₹400 से अधिक के ऑर्डर पर:</span>
-            <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (₹0 डिलीवरी कटौती)।</span>
+        {/* Client Rule Specification Detailed Card */}
+        {activeRuleTab === 'rule2' && (
+          <div className="bg-amber-50 text-gray-900 p-4 rounded-xl border border-amber-300 space-y-2 text-xs shadow-xs">
+            <div className="flex items-center justify-between border-b border-amber-200 pb-1.5 flex-wrap gap-2">
+              <div>
+                <span className="font-extrabold text-amber-950 text-xs sm:text-sm flex items-center gap-1.5">
+                  ⚡ 2. Online Payment + Third-Party Delivery (ऑनलाइन भुगतान + कूरियर से डिलीवरी)
+                </span>
+                <span className="text-[10px] text-amber-800 font-medium block">
+                  बुक वर्दी आधिकारिक सेलर सेटलमेंट नियम (Book Vardi Official Norms)
+                </span>
+              </div>
+              <span className="text-[10px] bg-amber-200 text-amber-950 font-black px-2.5 py-0.5 rounded-full border border-amber-400">
+                Rule 2 Active ({ruleMetrics.rule2.count} Orders)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+              <div className="flex items-start gap-1.5">
+                <span className="text-amber-800 font-bold">•</span>
+                <span><strong>Gross Sale:</strong> ग्राहक से प्राप्त कुल बिक्री राशि (Total Sales Value)।</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-amber-800 font-bold">•</span>
+                <span><strong>Portal Commission:</strong> 10% (या निर्धारित दर) — पोर्टल का कमीशन।</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-amber-800 font-bold">•</span>
+                <span><strong>GST on Commission:</strong> 18% — कमीशन पर 18% GST।</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-amber-800 font-bold">•</span>
+                <span><strong>TDS:</strong> 0.1% — आयकर Sec 194-O लागू TDS की कटौती।</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-amber-800 font-bold">•</span>
+                <span><strong>GST TCS:</strong> 0.5% (0.25% CGST + 0.25% SGST / 0.5% IGST) — जहाँ GST कानून अनुसार लागू हो (किताबों पर 0%)।</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-amber-800 font-bold">•</span>
+                <span><strong>Delivery Charges + 18% GST:</strong> डिलीवरी का खर्च और उस पर GST तभी काटें, जब यह खर्च सेलर के जिम्मे हो।</span>
+              </div>
+              <div className="flex items-start gap-1.5 md:col-span-2 bg-amber-100 p-2.5 rounded-lg border border-amber-300 text-amber-950 font-medium">
+                <span className="font-extrabold text-amber-900 shrink-0">✨ ₹400 से अधिक के ऑर्डर पर:</span>
+                <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (सेलर से ₹0 डिलीवरी कटौती)।</span>
+              </div>
+              <div className="flex items-start gap-1.5 md:col-span-2">
+                <span className="text-amber-800 font-bold">•</span>
+                <span><strong>Final Seller Settlement:</strong> सभी लागू कटौतियों के बाद बची शुद्ध राशि सेलर के बैंक खाते में दी जाएगी।</span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-amber-950">Rule 2 Formula:</span>
+                <span className="bg-white text-emerald-900 font-mono font-bold px-2 py-0.5 rounded border border-emerald-300 text-[11px]">
+                  Gross Sale (₹{ruleMetrics.rule2.gross.toLocaleString('en-IN')})
+                </span>
+                <span>−</span>
+                <span className="bg-white text-amber-950 font-mono font-bold px-2 py-0.5 rounded border border-amber-300 text-[11px]">
+                  Total Deductions (₹{ruleMetrics.rule2.ded.toLocaleString('en-IN')})
+                </span>
+                <span>=</span>
+                <span className="bg-teal-100 text-teal-950 font-mono font-extrabold px-2.5 py-0.5 rounded border border-teal-400 text-[11px]">
+                  Final Settlement (₹{ruleMetrics.rule2.net.toLocaleString('en-IN')})
+                </span>
+              </div>
+              <span className="text-[10px] text-amber-900 italic font-medium">
+                *Book Vardi Multi-Vendor Rule 2 Engine
+              </span>
+            </div>
           </div>
-          <div className="flex items-start gap-1.5">
-            <span className="font-bold text-sky-300 shrink-0">GST TCS (Sec 52):</span>
-            <span>पात्र बिक्री पर कुल 0.5% — एक ही राज्य (Intra-State) में 0.25% CGST + 0.25% SGST, या अंतरराज्यीय (Inter-State) बिक्री पर 0.5% IGST। (Rule 3 COD पर 0% TCS)।</span>
+        )}
+
+        {activeRuleTab === 'rule1' && (
+          <div className="bg-teal-50 text-gray-900 p-3.5 rounded-xl border border-teal-300 text-xs space-y-1.5">
+            <div className="flex items-center justify-between border-b border-teal-200 pb-1">
+              <h5 className="font-extrabold text-teal-950">1. Online Payment + Self Delivery (ऑनलाइन भुगतान + सेलर डिलीवरी)</h5>
+              <span className="text-[10px] bg-teal-200 text-teal-950 font-bold px-2 py-0.5 rounded-full">Rule 1 ({ruleMetrics.rule1.count} Orders)</span>
+            </div>
+            <p className="text-[11px]">• Gross − [10% Comm + 18% GST + 0.1% TDS + 0.5% TCS] = Net Settlement। (सेलर स्वयं डिलीवरी करता है, ₹0 कूरियर कटौती)।</p>
           </div>
-          <div className="flex items-start gap-1.5">
-            <span className="font-bold text-rose-300 shrink-0">COD + सेलर डिलीवरी (Rule 3):</span>
-            <span>ग्राहक पूरा पैसा सीधे सेलर को देगा। 10% कमीशन + 18% GST + 0.1% TDS (0% TCS) पोर्टल में देय (-) होगा और सेलर का सेटलमेंट माइनस (-) में दिखेगा।</span>
+        )}
+
+        {activeRuleTab === 'rule3' && (
+          <div className="bg-rose-50 text-gray-900 p-3.5 rounded-xl border border-rose-300 text-xs space-y-1.5">
+            <div className="flex items-center justify-between border-b border-rose-200 pb-1">
+              <h5 className="font-extrabold text-rose-950">3. COD + Self Delivery (कैश ऑन डिलीवरी + सेलर डिलीवरी)</h5>
+              <span className="text-[10px] bg-rose-200 text-rose-950 font-bold px-2 py-0.5 rounded-full">Rule 3 ({ruleMetrics.rule3.count} Orders)</span>
+            </div>
+            <p className="text-[11px]">• ग्राहक पूरा पैसा सेलर को कैश देता है। पोर्टल 10% Comm + 18% GST + 0.1% TDS (0% TCS) लेगा। सेटलमेंट माइनस (−Deductions) दिखेगा।</p>
           </div>
-          <div className="flex items-start gap-1.5">
-            <span className="font-bold text-purple-300 shrink-0">COD + कूरियर डिलीवरी (Rule 4):</span>
-            <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल 10% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹400+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
+        )}
+
+        {activeRuleTab === 'rule4' && (
+          <div className="bg-purple-50 text-gray-900 p-3.5 rounded-xl border border-purple-300 text-xs space-y-1.5">
+            <div className="flex items-center justify-between border-b border-purple-200 pb-1">
+              <h5 className="font-extrabold text-purple-950">4. COD + Third-Party Delivery (कैश ऑन डिलीवरी + कूरियर से डिलीवरी)</h5>
+              <span className="text-[10px] bg-purple-200 text-purple-950 font-bold px-2 py-0.5 rounded-full">Rule 4 ({ruleMetrics.rule4.count} Orders)</span>
+            </div>
+            <p className="text-[11px]">• कूरियर कैश कलेक्ट कर पोर्टल को देगा। 10% Comm + 18% GST + 0.1% TDS + 0.5% TCS कटेगा। ₹400+ पर डिलीवरी ₹0, बची राशि सेलर को।</p>
           </div>
-        </div>
+        )}
+
+        {activeRuleTab === 'all' && (
+          <div className="pt-2 border-t border-white/15 text-[11px] space-y-1.5 text-teal-100/90">
+            <div className="flex items-start gap-1.5">
+              <span className="font-bold text-amber-300 shrink-0">₹400 से अधिक के ऑर्डर पर:</span>
+              <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (₹0 डिलीवरी कटौती)।</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <span className="font-bold text-sky-300 shrink-0">GST TCS (Sec 52):</span>
+              <span>पात्र बिक्री पर कुल 0.5% — एक ही राज्य (Intra-State) में 0.25% CGST + 0.25% SGST, या अंतरराज्यीय (Inter-State) बिक्री पर 0.5% IGST। (Rule 3 COD पर 0% TCS)।</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <span className="font-bold text-rose-300 shrink-0">COD + सेलर डिलीवरी (Rule 3):</span>
+              <span>ग्राहक पूरा पैसा सीधे सेलर को देगा। 10% कमीशन + 18% GST + 0.1% TDS (0% TCS) पोर्टल में देय (-) होगा और सेलर का सेटलमेंट माइनस (-) में दिखेगा।</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <span className="font-bold text-purple-300 shrink-0">COD + कूरियर डिलीवरी (Rule 4):</span>
+              <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल 10% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹400+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* KPI Cards */}

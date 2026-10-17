@@ -21,6 +21,11 @@ export function getProductGstRate(item) {
   if (explicitGst !== undefined && explicitGst !== null && String(explicitGst).trim() !== '' && !isNaN(Number(explicitGst))) {
     return Number(explicitGst);
   }
+  const cat = String(item?.category || item?.productId?.category || '').toLowerCase();
+  const name = String(item?.name || item?.productName || item?.productId?.name || '').toLowerCase();
+  if (cat.includes('book') || name.includes('book') || cat.includes('textbook') || name.includes('textbook')) {
+    return 0;
+  }
   return 5;
 }
 
@@ -204,6 +209,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
   const normStatus = rawStatus.replace(/[\s-]+/g, '_');
+  const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || Boolean(order.isCancelled) || Boolean(order.cancelledAt);
 
   const isBulkOrder = Boolean(
     order.isBulkOrder ||
@@ -259,11 +265,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
     Number(order.advancePaidAmount || 0) > 0;
 
-  const isOrderStrictlyPending = isPendingUnconfirmed && !isPaid && !isConfirmedAndOnward;
+  // Strict Tax Invoice Lock:
+  // Tax Invoice is ONLY generated when the order status is confirmed (or processing, packed, shipped, delivered, completed, cancelled).
+  // Unconfirmed / Pending orders remain strictly LOCKED, regardless of whether payment was made online (UPI/Razorpay).
+  const isOrderStrictlyPending = isPendingUnconfirmed && !hasConfirmedItem;
 
   const confirmed = isBulkOrder
-    ? (isConfirmedAndOnward || normStatus.length > 0)
-    : (isConfirmedAndOnward || isPaid || hasConfirmedItem || !isOrderStrictlyPending);
+    ? (isConfirmedAndOnward || (normStatus && !isPendingUnconfirmed))
+    : (isCancelled || (!isOrderStrictlyPending && (isConfirmedAndOnward || hasConfirmedItem)));
 
   const shippingAddr = typeof order.shippingAddress === 'object' && order.shippingAddress !== null
     ? order.shippingAddress
@@ -387,11 +396,32 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     };
   });
 
+  // Dynamic Product GST Rate for Delivery (Composite Supply under Section 8 of CGST Act: Principal supply rate governs freight/delivery)
+  // Delivery charge GST strictly matches the product's GST rate (e.g., 5% product -> 5% delivery, 0% product -> 0% delivery)
+  const defaultProductGstRate = (() => {
+    const itemRates = itemBreakdowns.map(it => Number(it.rate)).filter(r => !isNaN(r));
+    if (itemRates.length > 0) {
+      return Math.max(...itemRates);
+    }
+    if (order.shippingGstRate !== undefined && order.shippingGstRate !== null && !isNaN(Number(order.shippingGstRate))) {
+      return Number(order.shippingGstRate);
+    }
+    return 5;
+  })();
+
+  const shippingGstRate = defaultProductGstRate;
+
   // Include shipping GST into total taxable value & total tax amount for unified grand total breakdown
   if (shippingCost > 0) {
-    const shippingGstRate = 18;
-    const shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
-    const shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+    let shippingTaxable = 0;
+    let shippingTax = 0;
+    if (shippingGstRate > 0) {
+      shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
+      shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+    } else {
+      shippingTaxable = shippingCost;
+      shippingTax = 0;
+    }
     totalTaxableValue += shippingTaxable;
     totalTaxAmount += shippingTax;
   }
@@ -798,7 +828,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   if (isThirdParty && !isDeliveryExemptedForSeller) {
     deliveryChargeAmount = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? 40);
-    gstOnDeliveryAmount = Math.round(((deliveryChargeAmount * 18) / 100) * 100) / 100;
+    gstOnDeliveryAmount = Math.round(((deliveryChargeAmount * shippingGstRate) / 100) * 100) / 100;
     totalDeliveryDeduction = Math.round((deliveryChargeAmount + gstOnDeliveryAmount) * 100) / 100;
   }
 
@@ -1060,7 +1090,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 <div className="flex justify-between text-rose-900 font-medium">
                   <span>Delivery Charges (Policy):</span>
                   {totalDeliveryDeduction > 0 ? (
-                    <span className="font-mono text-rose-700">-₹{totalDeliveryDeduction.toFixed(2)} (₹{deliveryChargeAmount.toFixed(2)} + ₹{gstOnDeliveryAmount.toFixed(2)} GST 18%)</span>
+                    <span className="font-mono text-rose-700">-₹{totalDeliveryDeduction.toFixed(2)} (₹{deliveryChargeAmount.toFixed(2)} + ₹{gstOnDeliveryAmount.toFixed(2)} GST {shippingGstRate}%)</span>
                   ) : (
                     <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs &gt;₹400)</span>
                   )}

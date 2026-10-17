@@ -325,7 +325,14 @@ export const SellerDataProvider = ({ children }) => {
   }, []);
 
   // Loading state for product & seller profile fetching directly from backend MongoDB
-  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_seller_products');
+      return !saved || JSON.parse(saved).length === 0;
+    } catch {
+      return true;
+    }
+  });
   const [isLoadingSellerData, setIsLoadingSellerData] = useState(true);
 
   // Domain Entity States (Directly backed by MongoDB)
@@ -346,7 +353,14 @@ export const SellerDataProvider = ({ children }) => {
     }
   });
   const [isLoadingKits, setIsLoadingKits] = useState(false);
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('bv_seller_orders_cache') || localStorage.getItem('bv_seller_orders_cache');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   // Track recently applied seller order statuses with 30s lock to eliminate status flicker
   const latestStatusMapRef = useRef(new Map());
@@ -675,6 +689,9 @@ export const SellerDataProvider = ({ children }) => {
         if (sellerRes.status === 'fulfilled' && Array.isArray(sellerRes.value)) {
           const freshNormalized = normalizeOrderList(sellerRes.value);
           setOrders(freshNormalized);
+          try {
+            sessionStorage.setItem('bv_seller_orders_cache', JSON.stringify(freshNormalized));
+          } catch {}
         }
 
         if (schoolRes.status === 'fulfilled' && Array.isArray(schoolRes.value)) {
@@ -792,8 +809,49 @@ export const SellerDataProvider = ({ children }) => {
       setIsLoadingSellerData(false);
       return;
     }
+
+    // Fast-path independent product sync: finishes in ~100-200ms without being blocked by 10 other APIs
+    const syncProductsFast = async () => {
+      try {
+        const productsData = await fetchSellerProductsApi();
+        if (!isMounted) return;
+        if (Array.isArray(productsData)) {
+          const normalized = productsData.map(p => {
+            const idStr = String(p._id || p.id || '');
+            let cleanSku = p.sku;
+            if (!cleanSku || !String(cleanSku).trim() || String(cleanSku).includes('6ab') || String(cleanSku).length > 20) {
+              const numericSuffix = idStr.length >= 6 ? (parseInt(idStr.slice(-6), 16) % 9000 + 1000) : Math.floor(1000 + Math.random() * 9000);
+              cleanSku = `SC-${numericSuffix}`;
+            } else {
+              cleanSku = String(cleanSku).trim().toUpperCase();
+            }
+            return {
+              ...p,
+              id: p._id || p.id,
+              _id: p._id || p.id,
+              sku: cleanSku,
+              displayId: cleanSku,
+              stockQuantity: p.stockQuantity ?? p.stock ?? 50,
+              inStock: p.inStock !== undefined ? p.inStock : ((p.stockQuantity ?? p.stock ?? 50) > 0)
+            };
+          });
+          setProducts(normalized);
+          try {
+            localStorage.setItem('bv_seller_products', JSON.stringify(normalized));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.debug('Fast product sync note:', err.message);
+      } finally {
+        if (isMounted) {
+          setIsLoadingProducts(false);
+        }
+      }
+    };
+
+    syncProductsFast();
+
     async function loadBackendData() {
-      setIsLoadingProducts(true);
       setIsLoadingSellerData(true);
       try {
         setIsLoadingKits(true);
@@ -1418,7 +1476,13 @@ export const SellerDataProvider = ({ children }) => {
       rejectionReason: null
     };
 
-    setProducts(prev => [createdProduct, ...prev]);
+    setProducts(prev => {
+      const next = [createdProduct, ...prev];
+      try {
+        localStorage.setItem('bv_seller_products', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
     showToast(`Product "${createdProduct.name}" submitted for Admin Approval!`);
 
     createSellerProductApi(createdProduct)
@@ -1427,6 +1491,9 @@ export const SellerDataProvider = ({ children }) => {
           const realId = res.product._id || res.product.id;
           setProducts(prev => {
             const updated = prev.map(p => (p.id === createdProduct.id || p.name === createdProduct.name) ? { ...p, ...res.product, id: realId, _id: realId } : p);
+            try {
+              localStorage.setItem('bv_seller_products', JSON.stringify(updated));
+            } catch (e) {}
             return updated;
           });
 

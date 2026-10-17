@@ -99,7 +99,7 @@ const STATUS_CONFIG = {
 };
 
 export default function OrdersTab() {
-  const { orders, products = [], updateOrderStatus, updateOrderItemStatus, updateReturnExchangeStatus, resendDeliveryBoyWhatsApp, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
+  const { orders, isLoadingOrders, products = [], updateOrderStatus, updateOrderItemStatus, updateReturnExchangeStatus, resendDeliveryBoyWhatsApp, addOrder, deleteOrder, downloadSellerInvoice, sellerUser } = useSellerData();
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOrderModal, setActiveOrderModal] = useState(null);
@@ -823,7 +823,19 @@ export default function OrdersTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredOrders.length === 0 ? (
+              {isLoadingOrders && orders.length === 0 ? (
+                [...Array(6)].map((_, i) => (
+                  <tr key={`seller-skel-${i}`} className="animate-pulse border-b border-gray-100">
+                    <td className="py-3.5 px-3 text-center"><div className="w-4 h-4 bg-gray-200 rounded mx-auto"></div></td>
+                    <td className="py-3.5 px-4"><div className="h-4 bg-gray-200 rounded w-20 mb-1"></div><div className="h-3 bg-gray-100 rounded w-16"></div></td>
+                    <td className="py-3.5 px-3"><div className="h-4 bg-gray-200 rounded w-28 mb-1"></div><div className="h-3 bg-gray-100 rounded w-20"></div></td>
+                    <td className="py-3.5 px-3"><div className="h-4 bg-gray-200 rounded w-24 mb-1"></div><div className="h-3 bg-gray-100 rounded w-16"></div></td>
+                    <td className="py-3.5 px-3"><div className="h-4 bg-gray-200 rounded w-16 mb-1"></div><div className="h-3 bg-gray-100 rounded w-12"></div></td>
+                    <td className="py-3.5 px-3"><div className="h-7 bg-gray-200 rounded-lg w-28"></div></td>
+                    <td className="py-3.5 px-4 text-right"><div className="h-8 bg-gray-200 rounded-lg w-24 ml-auto"></div></td>
+                  </tr>
+                ))
+              ) : filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="py-14 text-center text-gray-500">
                     <ShoppingBag size={44} className="mx-auto text-gray-300 mb-3" />
@@ -2113,20 +2125,55 @@ export default function OrdersTab() {
 
                 let totalTaxable = 0;
                 let totalTax = 0;
+                const itemsRawSum = (activeOrderModal.items || []).reduce((acc, it) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                const hasPerItemDiscount = (activeOrderModal.items || []).some(it => Number(it.offerDiscount || it.discount || 0) > 0);
+
                 (activeOrderModal.items || []).forEach(item => {
                   const qty = Number(item.quantity || 1);
                   const unitPrice = Number(item.price || 0);
-                  const itemDiscount = Number(item.offerDiscount || item.discount || 0);
+                  const itemDiscount = Number(item.offerDiscount || item.discount || 0) > 0
+                    ? Number(item.offerDiscount || item.discount)
+                    : (!hasPerItemDiscount && couponVal > 0 && itemsRawSum > 0 ? (couponVal * ((unitPrice * qty) / itemsRawSum)) : 0);
                   const grossPrice = Math.max(0, (unitPrice * qty) - itemDiscount);
                   const gstRate = Number(item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.gst ?? 5);
                   if (gstRate > 0) {
-                    const taxable = grossPrice / (1 + gstRate / 100);
+                    const taxable = Math.round((grossPrice / (1 + gstRate / 100)) * 100) / 100;
+                    const tax = Math.round((grossPrice - taxable) * 100) / 100;
                     totalTaxable += taxable;
-                    totalTax += (grossPrice - taxable);
+                    totalTax += tax;
                   } else {
                     totalTaxable += grossPrice;
                   }
                 });
+
+                // Dynamic Product GST Rate for Delivery (Composite Supply under Section 8 of CGST Act: Principal supply rate governs freight/delivery)
+                // Delivery charge GST strictly matches the product's GST rate (e.g., 5% product -> 5% delivery, 0% product -> 0% delivery)
+                const defaultProductGstRate = (() => {
+                  const itemRates = (activeOrderModal.items || []).map(it => {
+                    const cat = String(it.category || '').toLowerCase();
+                    const isBook = cat.includes('book') || cat.includes('textbook') || String(it.name || '').toLowerCase().includes('book');
+                    return Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? (isBook ? 0 : 5));
+                  }).filter(r => !isNaN(r));
+                  if (itemRates.length > 0) {
+                    return Math.max(...itemRates);
+                  }
+                  if (activeOrderModal.shippingGstRate !== undefined && activeOrderModal.shippingGstRate !== null && !isNaN(Number(activeOrderModal.shippingGstRate))) {
+                    return Number(activeOrderModal.shippingGstRate);
+                  }
+                  return 5;
+                })();
+
+                const shippingGstRate = defaultProductGstRate;
+                const shipTaxable = shipVal > 0 ? (shippingGstRate > 0 ? Math.round((shipVal / (1 + shippingGstRate / 100)) * 100) / 100 : shipVal) : 0;
+                const shipTax = shipVal > 0 ? Math.round((shipVal - shipTaxable) * 100) / 100 : 0;
+
+                let combinedTaxable = Math.round((totalTaxable + shipTaxable) * 100) / 100;
+                let combinedTax = Math.round((totalTax + shipTax) * 100) / 100;
+
+                // Adjust small precision rounding against grand total
+                if (grandVal > 0 && Math.abs((combinedTaxable + combinedTax) - grandVal) > 0 && Math.abs((combinedTaxable + combinedTax) - grandVal) <= 0.05) {
+                  combinedTaxable = Math.round((grandVal - combinedTax) * 100) / 100;
+                }
 
                 const firstSellerObj = activeOrderModal.items?.[0]?.sellerId;
                 const sellerStateInfo = parseStateInfo(
@@ -2144,39 +2191,26 @@ export default function OrdersTab() {
                 const sellerStateStr = sellerStateInfo.name || 'Uttar Pradesh';
                 const customerStateStr = customerStateInfo.name || 'Uttar Pradesh';
 
+                const cgst = Math.round((combinedTax / 2) * 100) / 100;
+                const sgst = Math.round((combinedTax - cgst) * 100) / 100;
+
                 return (
                   <div className="p-3.5 bg-teal-50/50 rounded-xl border border-teal-100 space-y-2 text-xs">
+                    {/* 1. Items Subtotal */}
                     <div className="flex justify-between text-gray-700">
                       <span>Items Subtotal:</span>
                       <span className="font-mono font-bold">₹{subtotalVal.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-gray-500 text-[11px]">
-                      <span>Base Taxable Amount (Excl. GST):</span>
-                      <span className="font-mono">₹{totalTaxable.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-teal-900 text-[11px] bg-teal-100/60 p-2 rounded-lg border border-teal-200">
-                      <div>
-                        <span className="font-bold block">GST Tax Breakdown ({isSameState ? 'Intra-State Same State' : 'Inter-State Different State'}):</span>
-                        {isSameState ? (
-                          <span className="text-[10px] text-teal-800">CGST (50%): ₹{(totalTax / 2).toFixed(2)} • SGST (50%): ₹{(totalTax / 2).toFixed(2)}</span>
-                        ) : (
-                          <span className="text-[10px] text-teal-800">IGST (Integrated 100%): ₹{totalTax.toFixed(2)} • Supply ({sellerStateStr} ➔ {customerStateStr})</span>
-                        )}
-                      </div>
-                      <span className="font-mono font-bold self-center text-teal-950">₹{totalTax.toFixed(2)}</span>
-                    </div>
+
+                    {/* 2. Delivery Charges (Added directly to Subtotal before GST calculation) */}
                     <div className="flex justify-between text-gray-700">
                       <span>Delivery Charges:</span>
                       <span className="font-mono font-bold text-teal-800">
-                        {shipVal === 0 ? 'Not Applied (FREE)' : `₹${shipVal.toFixed(2)}`}
+                        {shipVal === 0 ? 'Not Applied (FREE)' : `+₹${shipVal.toFixed(2)}`}
                       </span>
                     </div>
-                    {codFeeVal > 0 && (
-                      <div className="flex justify-between text-gray-700">
-                        <span>COD / Convenience Fee:</span>
-                        <span className="font-mono font-bold text-teal-800">₹{codFeeVal.toFixed(2)}</span>
-                      </div>
-                    )}
+
+                    {/* 3. Offer / Coupon */}
                     {couponVal > 0 ? (
                       <div className="flex justify-between text-teal-800 font-bold">
                         <span>Offer / Coupon Applied{activeOrderModal.couponCode ? ` (${activeOrderModal.couponCode})` : ''}:</span>
@@ -2188,12 +2222,214 @@ export default function OrdersTab() {
                         <span className="font-mono">Not Applied (₹0.00)</span>
                       </div>
                     )}
+
+                    {/* 4. COD / Convenience Fee */}
+                    {codFeeVal > 0 && (
+                      <div className="flex justify-between text-gray-700">
+                        <span>COD / Convenience Fee:</span>
+                        <span className="font-mono font-bold text-teal-800">+₹{codFeeVal.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {/* 5. Base Taxable Amount (Excl. GST) - after adding delivery charges */}
+                    <div className="flex justify-between text-gray-600 text-[11px] pt-1.5 border-t border-dashed border-teal-200">
+                      <span>Base Taxable Amount (Excl. GST):</span>
+                      <span className="font-mono font-semibold">₹{combinedTaxable.toFixed(2)}</span>
+                    </div>
+
+                    {/* 6. GST Tax Breakdown */}
+                    <div className="flex justify-between text-teal-900 text-[11px] bg-teal-100/60 p-2 rounded-lg border border-teal-200">
+                      <div>
+                        <span className="font-bold block">GST Tax Breakdown ({isSameState ? 'Intra-State Same State' : 'Inter-State Different State'}):</span>
+                        {isSameState ? (
+                          <span className="text-[10px] text-teal-800">
+                            CGST ({(shippingGstRate / 2).toFixed(1).replace(/\.0$/, '')}%): ₹{cgst.toFixed(2)} • SGST ({(shippingGstRate / 2).toFixed(1).replace(/\.0$/, '')}%): ₹{sgst.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-teal-800">IGST (Integrated 100%): ₹{combinedTax.toFixed(2)} • Supply ({sellerStateStr} ➔ {customerStateStr})</span>
+                        )}
+                      </div>
+                      <span className="font-mono font-bold self-center text-teal-950">₹{combinedTax.toFixed(2)}</span>
+                    </div>
+
+                    {/* 7. Total Payable Amount */}
                     <div className="pt-2 border-t border-teal-200 flex items-center justify-between">
                       <div>
                         <div className="font-bold text-teal-950">Total Payable Amount</div>
                         <div className="text-[10px] text-teal-700">{activeOrderModal.paymentMethod} • {activeOrderModal.paymentStatus}</div>
                       </div>
                       <div className="text-lg font-extrabold text-teal-900 font-mono">₹{grandVal.toFixed(2)}</div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Dynamic Seller Settlement Breakdown (Rule 2 / Rules 1, 3 & 4) */}
+              {(() => {
+                const isCod = String(activeOrderModal.paymentMethod || '').toUpperCase().includes('COD') || String(activeOrderModal.paymentMethod || '').toUpperCase().includes('CASH');
+                const rawDeliveryMode = String(activeOrderModal.deliveryMode || activeOrderModal.deliveryType || '').toLowerCase();
+                const hasCourier = Boolean(activeOrderModal.courierName && activeOrderModal.courierName !== 'N/A' && activeOrderModal.courierName !== '');
+                const isThirdParty = activeOrderModal.isThirdParty === true || 
+                                     rawDeliveryMode.includes('third') || 
+                                     rawDeliveryMode.includes('courier') || 
+                                     (hasCourier && !rawDeliveryMode.includes('self')) ||
+                                     (activeOrderModal.items || []).some(it => String(it.deliveryType || '').toLowerCase().includes('third') || Boolean(it.thirdPartyDetails?.courierName));
+                const isSelf = !isThirdParty;
+
+                let ruleNum = 1;
+                let ruleTitleHi = 'नियम 1: ऑनलाइन भुगतान + सेलर डिलीवरी';
+                let ruleTitleEn = 'Rule 1: Online Payment + Self Delivery';
+                let ruleColor = 'bg-teal-100 text-teal-900 border-teal-300';
+
+                if (!isCod && isThirdParty) {
+                  ruleNum = 2;
+                  ruleTitleHi = 'नियम 2: ऑनलाइन भुगतान + कूरियर से डिलीवरी';
+                  ruleTitleEn = 'Rule 2: Online Payment + Third-Party Delivery';
+                  ruleColor = 'bg-amber-100 text-amber-950 border-amber-300';
+                } else if (isCod && isSelf) {
+                  ruleNum = 3;
+                  ruleTitleHi = 'नियम 3: कैश भुगतान + सेलर डिलीवरी';
+                  ruleTitleEn = 'Rule 3: COD + Self Delivery';
+                  ruleColor = 'bg-rose-100 text-rose-950 border-rose-300';
+                } else if (isCod && isThirdParty) {
+                  ruleNum = 4;
+                  ruleTitleHi = 'नियम 4: कैश भुगतान + कूरियर डिलीवरी (रेमिटेड)';
+                  ruleTitleEn = 'Rule 4: COD + Third-Party Courier';
+                  ruleColor = 'bg-purple-100 text-purple-950 border-purple-300';
+                }
+
+                const grossSale = Number(activeOrderModal.sellerSubtotal || activeOrderModal.subtotal || activeOrderModal.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || activeOrderModal.total || 0);
+                const commRate = Number(activeOrderModal.commissionRate ?? activeOrderModal.sellerCommissionRate ?? activeOrderModal.items?.[0]?.commissionRate ?? 10);
+                
+                // 1. Portal Commission
+                const portalComm = Math.round(((grossSale * commRate) / 100) * 100) / 100;
+                // 2. GST on Commission (18%)
+                const gstOnComm = Math.round(((portalComm * 18) / 100) * 100) / 100;
+                // 3. TDS (0.1% Sec 194-O)
+                const tdsAmt = Math.round(((grossSale * 0.1) / 100) * 100) / 100;
+
+                // 4. GST TCS (0.5% Sec 52): 0% for Rule 3 COD Self or Tax-Free (books)
+                const isTaxFreeOrder = (activeOrderModal.items || []).every(it => {
+                  const r = Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
+                  const cat = String(it.category || '').toLowerCase();
+                  return r === 0 || cat.includes('book');
+                });
+                const tcsRate = (ruleNum === 3 || isTaxFreeOrder) ? 0 : 0.5;
+                const tcsAmt = (ruleNum === 3 || isTaxFreeOrder) ? 0 : Math.round(((grossSale * tcsRate) / 100) * 100) / 100;
+
+                // 5. Delivery Charges + 18% GST (Rule 2 & Rule 4: Client Norms)
+                const isAbove400 = (grossSale > 400 || Number(activeOrderModal.total || activeOrderModal.totalAmount || 0) > 400);
+                let delivBorneBy = activeOrderModal.deliveryChargeBorneBy;
+                if (!delivBorneBy) {
+                  if (isAbove400) delivBorneBy = 'admin';
+                  else if (activeOrderModal.isDeliveryBorneBySeller || activeOrderModal.deliveryBorneBy === 'seller') delivBorneBy = 'seller';
+                  else if (Number(activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 0) > 0) delivBorneBy = 'customer';
+                  else delivBorneBy = isThirdParty ? 'seller' : 'admin';
+                }
+
+                let delivFeeAmt = 0;
+                let delivGstAmt = 0;
+                let totalDelivDed = 0;
+                let delivStatusNote = '';
+
+                const itemGstRates = (activeOrderModal.items || []).map(it => {
+                  const cat = String(it.category || '').toLowerCase();
+                  const isBook = cat.includes('book') || cat.includes('textbook') || String(it.name || '').toLowerCase().includes('book');
+                  return Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? (isBook ? 0 : 5));
+                }).filter(r => !isNaN(r));
+                const orderProductGstRate = itemGstRates.length > 0 ? Math.max(...itemGstRates) : 5;
+
+                if (isThirdParty && delivBorneBy === 'seller' && !isAbove400) {
+                  const rawDeliv = Math.max(0, Number(activeOrderModal.deliveryCharge ?? activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 40));
+                  delivFeeAmt = Math.round(rawDeliv * 100) / 100;
+                  delivGstAmt = Math.round(((delivFeeAmt * orderProductGstRate) / 100) * 100) / 100;
+                  totalDelivDed = Math.round((delivFeeAmt + delivGstAmt) * 100) / 100;
+                  delivStatusNote = `सेलर वहन (कूरियर ₹${delivFeeAmt.toFixed(2)} + ${orderProductGstRate}% GST ₹${delivGstAmt.toFixed(2)})`;
+                } else if (isAbove400) {
+                  delivStatusNote = '₹400+ ऑर्डर पर एडमिन वहन करता है — सेलर से ₹0 कटौती';
+                } else if (delivBorneBy === 'customer') {
+                  delivStatusNote = 'ग्राहक द्वारा वहन — सेलर से ₹0 कटौती';
+                } else {
+                  delivStatusNote = 'सेलर सेल्फ डिलीवरी — ₹0 कूरियर कटौती';
+                }
+
+                const totalDeductions = Math.round((portalComm + gstOnComm + tdsAmt + tcsAmt + totalDelivDed) * 100) / 100;
+                
+                let finalNet;
+                if (ruleNum === 3) {
+                  finalNet = -totalDeductions;
+                } else {
+                  finalNet = Math.max(0, Math.round((grossSale - totalDeductions) * 100) / 100);
+                }
+
+                return (
+                  <div className="p-3.5 bg-gradient-to-br from-amber-50/80 via-orange-50/30 to-amber-50/80 rounded-xl border border-amber-300 space-y-2 text-xs">
+                    {/* Header */}
+                    <div className="flex items-center justify-between flex-wrap gap-1.5 pb-2 border-b border-amber-200">
+                      <div>
+                        <span className="font-extrabold text-amber-950 flex items-center gap-1.5 text-xs sm:text-[13px]">
+                          📋 {ruleTitleHi}
+                        </span>
+                        <span className="text-[10px] text-amber-800 font-medium block">
+                          {ruleTitleEn}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${ruleColor}`}>
+                        Rule {ruleNum} Active
+                      </span>
+                    </div>
+
+                    {/* All Client Rule Points Breakdown */}
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex justify-between text-gray-800">
+                        <span>• Gross Sale (ग्राहक से प्राप्त कुल बिक्री राशि):</span>
+                        <span className="font-mono font-bold text-gray-950">₹{grossSale.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex justify-between text-gray-700">
+                        <span>• Portal Commission ({commRate}% पोर्टल कमीशन):</span>
+                        <span className="font-mono font-semibold text-amber-900">−₹{portalComm.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex justify-between text-gray-700">
+                        <span>• GST on Commission (कमीशन पर 18% GST):</span>
+                        <span className="font-mono font-semibold text-indigo-900">−₹{gstOnComm.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex justify-between text-gray-700">
+                        <span>• TDS (आयकर Sec 194-O लागू 0.1% TDS):</span>
+                        <span className="font-mono font-semibold text-purple-900">−₹{tdsAmt.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex justify-between text-gray-700">
+                        <span>• GST TCS (जहाँ कानून अनुसार लागू हो 0.5% TCS):</span>
+                        <span className="font-mono font-semibold text-sky-900">−₹{tcsAmt.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex justify-between text-gray-700 pt-1 border-t border-amber-200/70">
+                        <div>
+                          <span>• Delivery Charges + 18% GST:</span>
+                          <span className="text-[10px] text-amber-800 block font-medium">({delivStatusNote})</span>
+                        </div>
+                        <span className="font-mono font-bold text-rose-800 self-center">
+                          {totalDelivDed > 0 ? `−₹${totalDelivDed.toFixed(2)}` : '₹0.00'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Formula & Final Settlement */}
+                    <div className="pt-2 border-t border-amber-300 flex items-center justify-between">
+                      <div>
+                        <div className="font-extrabold text-amber-950 text-xs">
+                          {ruleNum === 3 ? 'Portal Due / Settlement (माइनस)' : 'Final Seller Settlement (शुद्ध सेलर भुगतान)'}
+                        </div>
+                        <div className="text-[9.5px] text-amber-800">
+                          Gross (₹{grossSale.toFixed(2)}) − Deductions (₹{totalDeductions.toFixed(2)})
+                        </div>
+                      </div>
+                      <div className={`text-base font-black font-mono ${ruleNum === 3 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                        {ruleNum === 3 ? `−₹${Math.abs(finalNet).toFixed(2)}` : `₹${finalNet.toFixed(2)}`}
+                      </div>
                     </div>
                   </div>
                 );

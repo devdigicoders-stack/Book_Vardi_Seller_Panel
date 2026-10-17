@@ -2,6 +2,53 @@ import React, { useState, useRef } from 'react';
 import { UploadCloud, Image as ImageIcon, X, Star, Plus, Link, Trash2, CheckCircle2 } from 'lucide-react';
 import { resolveImageUrl } from '../utils/mediaUrl';
 
+export const compressImageFile = (file, maxWidth = 1200, quality = 0.82) => {
+  return new Promise((resolve) => {
+    if (!file || !file.type?.startsWith('image/')) {
+      return resolve('');
+    }
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxWidth) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = () => resolve(e.target.result);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+};
+
 export default function ImageUploadDropzone({ 
   images = [], 
   onChange, 
@@ -26,23 +73,18 @@ export default function ImageUploadDropzone({
     }
   };
 
-  const handleFiles = (files) => {
+  const handleFiles = async (files) => {
     if (!files || files.length === 0) return;
     const fileList = Array.from(files).filter(file => file.type.startsWith('image/'));
     if (fileList.length === 0) return;
 
-    const readPromises = fileList.map(file => {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result);
-        reader.readAsDataURL(file);
-      });
-    });
-
-    Promise.all(readPromises).then(newImages => {
+    try {
+      const newImages = await Promise.all(fileList.map(file => compressImageFile(file)));
       const combined = Array.from(new Set([...safeImages, ...newImages].filter(Boolean))).slice(0, maxImages);
       notifyChange(combined);
-    });
+    } catch (err) {
+      console.warn('Image compression fallback:', err);
+    }
   };
 
   const handleDrop = (e) => {

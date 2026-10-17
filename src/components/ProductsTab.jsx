@@ -292,8 +292,13 @@ export default function ProductsTab() {
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Package className="text-teal-700" size={24} /> Products Management
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Total {products.length} products listed • {products.filter(p => (p.stockQuantity ?? 50) > 0).length} In Stock
+          <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+            <span>Total {products.length} products listed • {products.filter(p => (p.stockQuantity ?? 50) > 0).length} In Stock</span>
+            {isLoadingProducts && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-ping"></span> Syncing DB...
+              </span>
+            )}
           </p>
         </div>
 
@@ -486,7 +491,7 @@ export default function ProductsTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {isLoadingProducts ? (
+              {isLoadingProducts && filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="py-16 text-center text-gray-500">
                     <div className="flex flex-col items-center justify-center space-y-3">
