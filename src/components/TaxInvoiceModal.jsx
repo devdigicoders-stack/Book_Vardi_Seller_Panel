@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
   Printer, 
@@ -219,6 +219,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   if (!isOpen || !order) return null;
 
   const [isDownloading, setIsDownloading] = useState(false);
+  const [selectedSellerKey, setSelectedSellerKey] = useState(null);
 
   let contextSellerUser = null;
   try {
@@ -228,239 +229,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   const activeSellerUser = passedSellerUser || contextSellerUser || null;
 
-  const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
-  const normStatus = rawStatus.replace(/[\s-]+/g, '_');
-  const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || Boolean(order.isCancelled) || Boolean(order.cancelledAt);
-
-  const isBulkOrder = Boolean(
-    order.isBulkOrder ||
-    order.isSchoolOrder ||
-    Array.isArray(order.requirements) ||
-    order.bulkOrderId ||
-    order.schoolName ||
-    String(order.id || order._id || '').startsWith('BULK-')
-  );
-
-  const isPendingUnconfirmed = !isBulkOrder && (!normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus));
-
-  const isConfirmedAndOnward = [
-    'assigned',
-    'accepted',
-    'confirmed',
-    'quote_accepted',
-    'buyer_accepted',
-    'seller_accepted',
-    'seller_accepted_counter',
-    'processing',
-    'production',
-    'in_production',
-    'packed',
-    'packed_and_sealed',
-    'shipped',
-    'dispatched',
-    'in_transit',
-    'out_for_delivery',
-    'delivered',
-    'completed',
-    'fulfilled',
-    'delivered_to_customer',
-    'order_delivered',
-    'return_requested',
-    'returned',
-    'exchange_requested',
-    'exchanged',
-    'return_approved',
-    'exchange_approved',
-    'refund_requested',
-    'refunded',
-    'cancelled',
-    'canceled'
-  ].includes(normStatus) || (isBulkOrder && normStatus.length > 0) || (!isPendingUnconfirmed && normStatus.length > 0);
-
-  const hasConfirmedItem = Array.isArray(order.items) && order.items.some(it => {
-    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-    return itStatus && !['pending', 'placed', 'unconfirmed', 'draft'].includes(itStatus);
-  });
-
-  const isPaid = String(order.paymentStatus || '').toLowerCase() === 'paid' ||
-    String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
-    Number(order.advancePaidAmount || 0) > 0;
-
-  // Strict Tax Invoice Lock:
-  // Tax Invoice is ONLY generated when the order status is confirmed (or processing, packed, shipped, delivered, completed, cancelled).
-  // Unconfirmed / Pending orders remain strictly LOCKED, regardless of whether payment was made online (UPI/Razorpay).
-  const isOrderStrictlyPending = isPendingUnconfirmed && !hasConfirmedItem;
-
-  const confirmed = isBulkOrder
-    ? (isConfirmedAndOnward || (normStatus && !isPendingUnconfirmed))
-    : (isCancelled || (!isOrderStrictlyPending && (isConfirmedAndOnward || hasConfirmedItem)));
-
-  const shippingAddr = typeof order.shippingAddress === 'object' && order.shippingAddress !== null
-    ? order.shippingAddress
-    : { street: order.address || order.shippingAddress || order.deliveryLocation || order.location || 'Institutional Delivery Address' };
-
-  const rawAddressStr = typeof order.shippingAddress === 'string'
-    ? order.shippingAddress
-    : [
-        shippingAddr.street || shippingAddr.addressLine || shippingAddr.address,
-        shippingAddr.city,
-        shippingAddr.state,
-        shippingAddr.pincode ? `- ${shippingAddr.pincode}` : ''
-      ].filter(Boolean).join(', ') || order.deliveryLocation || order.location || 'Lucknow, Uttar Pradesh';
-
-  const formattedAddressStr = stripCustomerPhoneFromAddress(rawAddressStr);
-
-  const items = Array.isArray(order.items) && order.items.length > 0
-    ? order.items
-    : (Array.isArray(order.requirements) && order.requirements.length > 0
-        ? order.requirements.map((req, rIdx) => ({
-            id: req._id || rIdx + 1,
-            name: req.itemName || req.name || 'School Demand Item',
-            image: (req.sampleImages && req.sampleImages[0]) || order.image || FALLBACK_IMAGE,
-            quantity: Number(req.quantity) || 1,
-            price: Number(req.sellerPricePerUnit || req.sellerPrice || req.budgetPerUnit || req.unitPrice || (order.targetBudgetPerKit && req.quantity ? Math.round(Number(order.targetBudgetPerKit) / Number(req.quantity)) : 0) || 480),
-            category: req.category || 'School Supply'
-          }))
-        : [
-            {
-              id: 1,
-              name: order.itemName || order.product || (order.requirements && order.requirements[0]?.itemName) || 'School Supply Item',
-              image: order.image || (Array.isArray(order.images) && order.images[0]) || FALLBACK_IMAGE,
-              quantity: order.quantity || order.totalQuantity || 1,
-              price: order.total || order.amount || 499,
-              category: 'School Uniform'
-            }
-          ]
-    );
-
-  const rawSubtotal = Number(order.subtotal || 0);
-  const shippingCost = Number(order.shippingCost ?? order.shippingFee ?? 0);
-  const discount = Number(order.discount ?? order.discountAmount ?? order.couponDiscount ?? 0);
-  const pointsDiscount = Number(order.pointsDiscount || 0);
-  const totalDiscounts = discount + pointsDiscount;
-
-  const itemsSum = items.reduce((acc, it) => acc + (Number(it.originalPrice ?? it.price ?? it.finalPrice ?? 0) * Number(it.quantity || 1)), 0);
-  const isItemPriceAlreadyDiscounted = rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
-
-  const subtotal = rawSubtotal > 0 ? rawSubtotal : itemsSum;
-  const grandTotal = Number(order.total || order.totalAmount || Math.max(0, subtotal + shippingCost - totalDiscounts));
-  const discountRatio = subtotal > 0 ? Math.min(1, totalDiscounts / subtotal) : 0;
-
-  let totalTaxableValue = 0;
-  let totalTaxAmount = 0;
-
-  const itemBreakdowns = items.map((item) => {
-    const isUnstitched = Boolean(
-      item.isMeterBased ||
-      item.unit === 'meter' ||
-      item.unit === 'm' ||
-      item.productId?.isMeterBased ||
-      item.productId?.unit === 'meter' ||
-      item.productId?.unit === 'm' ||
-      String(item.category || '').toLowerCase().includes('unstitched') ||
-      String(item.category || '').toLowerCase().includes('unstiched') ||
-      String(item.subCategory || '').toLowerCase().includes('unstitched') ||
-      String(item.subCategory || '').toLowerCase().includes('unstiched') ||
-      String(item.name || '').toLowerCase().includes('unstitched') ||
-      String(item.name || '').toLowerCase().includes('unstiched') ||
-      String(item.productName || '').toLowerCase().includes('unstitched') ||
-      String(item.productName || '').toLowerCase().includes('unstiched') ||
-      (Number(item.quantity || 1) % 1 !== 0)
-    );
-    const rawQty = Number(item.quantity || 1);
-    const displayQty = isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
-    const qty = rawQty;
-
-    let unitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
-    if (isItemPriceAlreadyDiscounted && totalDiscounts > 0 && subtotal > 0) {
-      const proportion = (unitPrice * qty) / itemsSum;
-      const allocDiscount = totalDiscounts * proportion;
-      unitPrice = qty > 0 ? Math.round(((unitPrice * qty + allocDiscount) / qty) * 100) / 100 : unitPrice;
-    }
-
-    const grossPrice = Math.round((unitPrice * qty) * 100) / 100;
-    const rate = getProductGstRate(item);
-    const isInclusive = item.isGstInclusive !== false && order.isGstInclusive !== false;
-
-    const itemDiscount = item.offerDiscount !== undefined && item.offerDiscount !== null && !isNaN(Number(item.offerDiscount)) && Number(item.offerDiscount) > 0
-      ? Number(item.offerDiscount)
-      : (discountRatio > 0 ? Math.round(grossPrice * discountRatio * 100) / 100 : 0);
-    const netItemPayable = Math.max(0, Math.round((grossPrice - itemDiscount) * 100) / 100);
-
-    let taxableVal = netItemPayable;
-    let taxAmt = 0;
-
-    if (rate > 0) {
-      if (isInclusive) {
-        taxableVal = Math.round((netItemPayable / (1 + rate / 100)) * 100) / 100;
-        taxAmt = Math.round((netItemPayable - taxableVal) * 100) / 100;
-      } else {
-        taxableVal = netItemPayable;
-        taxAmt = Math.round(((netItemPayable * rate) / 100) * 100) / 100;
-      }
-    }
-
-    totalTaxableValue += taxableVal;
-    totalTaxAmount += taxAmt;
-
-    return {
-      ...item,
-      qty: displayQty,
-      rawQty,
-      unitPrice,
-      grossPrice,
-      itemDiscount,
-      netItemPayable,
-      rate,
-      taxableVal,
-      taxAmt
-    };
-  });
-
-  // Dynamic Product GST Rate for Delivery (Composite Supply under Section 8 of CGST Act: Principal supply rate governs freight/delivery)
-  // Delivery charge GST strictly matches the product's GST rate (e.g., 5% product -> 5% delivery, 0% product -> 0% delivery)
-  const defaultProductGstRate = (() => {
-    const itemRates = itemBreakdowns.map(it => Number(it.rate)).filter(r => !isNaN(r));
-    if (itemRates.length > 0) {
-      return Math.max(...itemRates);
-    }
-    if (order.shippingGstRate !== undefined && order.shippingGstRate !== null && !isNaN(Number(order.shippingGstRate))) {
-      return Number(order.shippingGstRate);
-    }
-    return 5;
-  })();
-
-  const shippingGstRate = defaultProductGstRate;
-
-  // Include shipping GST into total taxable value & total tax amount for unified grand total breakdown
-  let shippingTaxable = 0;
-  let shippingTax = 0;
-  if (shippingCost > 0) {
-    if (shippingGstRate > 0) {
-      shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
-      shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
-    } else {
-      shippingTaxable = shippingCost;
-      shippingTax = 0;
-    }
-    totalTaxableValue += shippingTaxable;
-    totalTaxAmount += shippingTax;
-  }
-
-  totalTaxableValue = Math.round(totalTaxableValue * 100) / 100;
-  totalTaxAmount = Math.round(totalTaxAmount * 100) / 100;
-  if (Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) > 0 && Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) <= 0.05) {
-    totalTaxableValue = Math.round((grandTotal - totalTaxAmount) * 100) / 100;
-  }
-
-  const taxAmount = totalTaxAmount;
-  const taxableValue = totalTaxableValue;
-
   const isPlaceholderName = (name) => {
     if (!name || typeof name !== 'string') return true;
     const lower = name.trim().toLowerCase();
     return (
       lower === '' ||
+      lower.includes(',') || // Multi-seller composite string is NOT a single seller
       lower === 'bookvardi verified seller' ||
       lower === 'bookvardi verified seller hub' ||
       lower === 'bookvardimerchant' ||
@@ -640,44 +414,384 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     return 'Partner Store';
   };
 
+  const getItemSellerInfo = (item) => {
+    const rawId = item?.sellerId && typeof item.sellerId === 'object'
+      ? (item.sellerId._id || item.sellerId.id || '')
+      : (item?.sellerId || item?.sellerDetails?.sellerId || '');
+    const sellerId = String(rawId && rawId !== '[object Object]' ? rawId : '').trim();
+    const storeName = getItemSellerName(item);
+    const key = sellerId || storeName.trim().toLowerCase();
+    return { key, sellerId, storeName };
+  };
+
+  const allOrderItems = Array.isArray(order.items) && order.items.length > 0
+    ? order.items
+    : (Array.isArray(order.requirements) && order.requirements.length > 0
+        ? order.requirements.map((req, rIdx) => ({
+            id: req._id || rIdx + 1,
+            name: req.itemName || req.name || 'School Demand Item',
+            image: (req.sampleImages && req.sampleImages[0]) || order.image || FALLBACK_IMAGE,
+            quantity: Number(req.quantity) || 1,
+            price: Number(req.sellerPricePerUnit || req.sellerPrice || req.budgetPerUnit || req.unitPrice || (order.targetBudgetPerKit && req.quantity ? Math.round(Number(order.targetBudgetPerKit) / Number(req.quantity)) : 0) || 480),
+            category: req.category || 'School Supply'
+          }))
+        : [
+            {
+              id: 1,
+              name: order.itemName || order.product || (order.requirements && order.requirements[0]?.itemName) || 'School Supply Item',
+              image: order.image || (Array.isArray(order.images) && order.images[0]) || FALLBACK_IMAGE,
+              quantity: order.quantity || order.totalQuantity || 1,
+              price: order.total || order.amount || 499,
+              category: 'School Uniform'
+            }
+          ]
+    );
+
+  // Group items by seller for combined / multi-seller orders
+  const sellerGroups = useMemo(() => {
+    const map = new Map();
+
+    allOrderItems.forEach((item, index) => {
+      const { key, sellerId, storeName } = getItemSellerInfo(item);
+      const itStatus = String(item.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+      const isConfirmed = ![
+        'pending', 'placed', 'unconfirmed', 'draft', ''
+      ].includes(itStatus);
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          sellerId,
+          storeName,
+          items: [],
+          hasConfirmedItems: false,
+          hasPendingItems: false,
+          sellerDetails: item.sellerDetails || (typeof item.sellerId === 'object' ? item.sellerId : null),
+          itemIndices: []
+        });
+      }
+
+      const grp = map.get(key);
+      grp.items.push(item);
+      grp.itemIndices.push(index);
+      if (isConfirmed) {
+        grp.hasConfirmedItems = true;
+      } else {
+        grp.hasPendingItems = true;
+      }
+      if (!grp.sellerDetails && (item.sellerDetails || (typeof item.sellerId === 'object' ? item.sellerId : null))) {
+        grp.sellerDetails = item.sellerDetails || item.sellerId;
+      }
+      if (isPlaceholderName(grp.storeName) && !isPlaceholderName(storeName)) {
+        grp.storeName = storeName;
+      }
+    });
+
+    return Array.from(map.values());
+  }, [order, allOrderItems]);
+
+  // In Seller Panel, auto-match logged-in seller, otherwise select confirmed seller
+  const activeSellerGroup = useMemo(() => {
+    if (sellerGroups.length === 0) return null;
+
+    if (selectedSellerKey) {
+      const found = sellerGroups.find(g => g.key === selectedSellerKey);
+      if (found) return found;
+    }
+
+    const myIds = new Set();
+    const myNames = new Set();
+    if (activeSellerUser) {
+      if (activeSellerUser._id) myIds.add(String(activeSellerUser._id).toLowerCase());
+      if (activeSellerUser.id) myIds.add(String(activeSellerUser.id).toLowerCase());
+      if (activeSellerUser.sellerId) myIds.add(String(activeSellerUser.sellerId).toLowerCase());
+      if (activeSellerUser.storeName) myNames.add(activeSellerUser.storeName.trim().toLowerCase());
+      if (activeSellerUser.tradeName) myNames.add(activeSellerUser.tradeName.trim().toLowerCase());
+      if (activeSellerUser.businessName) myNames.add(activeSellerUser.businessName.trim().toLowerCase());
+    }
+
+    if (myIds.size > 0 || myNames.size > 0) {
+      const myGrp = sellerGroups.find(g => {
+        const gid = String(g.sellerId || '').toLowerCase();
+        const gname = String(g.storeName || '').trim().toLowerCase();
+        if (gid && myIds.has(gid)) return true;
+        if (gname && myNames.has(gname)) return true;
+        return false;
+      });
+      if (myGrp) return myGrp;
+    }
+
+    const confirmedGrp = sellerGroups.find(g => g.hasConfirmedItems);
+    return confirmedGrp || sellerGroups[0];
+  }, [sellerGroups, selectedSellerKey, activeSellerUser]);
+
+  useEffect(() => {
+    if (activeSellerGroup && (!selectedSellerKey || !sellerGroups.some(g => g.key === selectedSellerKey))) {
+      setSelectedSellerKey(activeSellerGroup.key);
+    }
+  }, [activeSellerGroup, sellerGroups]);
+
+  const items = activeSellerGroup ? activeSellerGroup.items : allOrderItems;
+
+  const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+  const normStatus = rawStatus.replace(/[\s-]+/g, '_');
+  const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || Boolean(order.isCancelled) || Boolean(order.cancelledAt);
+
+  const isBulkOrder = Boolean(
+    order.isBulkOrder ||
+    order.isSchoolOrder ||
+    Array.isArray(order.requirements) ||
+    order.bulkOrderId ||
+    order.schoolName ||
+    String(order.id || order._id || '').startsWith('BULK-')
+  );
+
+  const isPendingUnconfirmed = !isBulkOrder && (!normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus));
+
+  const isConfirmedAndOnward = [
+    'assigned',
+    'accepted',
+    'confirmed',
+    'quote_accepted',
+    'buyer_accepted',
+    'seller_accepted',
+    'seller_accepted_counter',
+    'processing',
+    'production',
+    'in_production',
+    'packed',
+    'packed_and_sealed',
+    'shipped',
+    'dispatched',
+    'in_transit',
+    'out_for_delivery',
+    'delivered',
+    'completed',
+    'fulfilled',
+    'delivered_to_customer',
+    'order_delivered',
+    'return_requested',
+    'returned',
+    'exchange_requested',
+    'exchanged',
+    'return_approved',
+    'exchange_approved',
+    'refund_requested',
+    'refunded',
+    'cancelled',
+    'canceled'
+  ].includes(normStatus) || (isBulkOrder && normStatus.length > 0) || (!isPendingUnconfirmed && normStatus.length > 0);
+
+  const isSellerConfirmed = isBulkOrder
+    ? (isConfirmedAndOnward || (normStatus && !isPendingUnconfirmed))
+    : (isCancelled || (activeSellerGroup ? (activeSellerGroup.hasConfirmedItems && !activeSellerGroup.hasPendingItems) : (!items.some(it => ['pending', 'placed', 'unconfirmed', 'draft'].includes(String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_'))) && isConfirmedAndOnward)));
+
+  const confirmed = isSellerConfirmed;
+
+  const shippingAddr = typeof order.shippingAddress === 'object' && order.shippingAddress !== null
+    ? order.shippingAddress
+    : { street: order.address || order.shippingAddress || order.deliveryLocation || order.location || 'Institutional Delivery Address' };
+
+  const rawAddressStr = typeof order.shippingAddress === 'string'
+    ? order.shippingAddress
+    : [
+        shippingAddr.street || shippingAddr.addressLine || shippingAddr.address,
+        shippingAddr.city,
+        shippingAddr.state,
+        shippingAddr.pincode ? `- ${shippingAddr.pincode}` : ''
+      ].filter(Boolean).join(', ') || order.deliveryLocation || order.location || 'Lucknow, Uttar Pradesh';
+
+  const formattedAddressStr = stripCustomerPhoneFromAddress(rawAddressStr);
+
+  const isMultiSellerOrder = sellerGroups.length > 1;
+  const rawSubtotal = Number(order.subtotal || 0);
+  const orderShipping = Number(order.shippingCost ?? order.shippingFee ?? 0);
+  const discount = Number(order.discount ?? order.discountAmount ?? order.couponDiscount ?? 0);
+  const pointsDiscount = Number(order.pointsDiscount || 0);
+  const totalDiscounts = isMultiSellerOrder ? 0 : (discount + pointsDiscount);
+
+  const itemsSum = items.reduce((acc, it) => acc + (Number(it.originalPrice ?? it.price ?? it.finalPrice ?? 0) * Number(it.quantity || 1)), 0);
+  const isItemPriceAlreadyDiscounted = rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
+
+  const subtotal = isMultiSellerOrder ? itemsSum : (rawSubtotal > 0 ? rawSubtotal : itemsSum);
+  const shippingCost = isMultiSellerOrder
+    ? (itemsSum >= 301 ? 0 : (orderShipping > 0 ? orderShipping : 0))
+    : orderShipping;
+
+  const grandTotal = isMultiSellerOrder
+    ? Math.max(0, subtotal + shippingCost - totalDiscounts)
+    : Number(order.total || order.totalAmount || Math.max(0, subtotal + shippingCost - totalDiscounts));
+  const discountRatio = subtotal > 0 ? Math.min(1, totalDiscounts / subtotal) : 0;
+
+  let totalTaxableValue = 0;
+  let totalTaxAmount = 0;
+
+  const itemBreakdowns = items.map((item) => {
+    const isUnstitched = Boolean(
+      item.isMeterBased ||
+      item.unit === 'meter' ||
+      item.unit === 'm' ||
+      item.productId?.isMeterBased ||
+      item.productId?.unit === 'meter' ||
+      item.productId?.unit === 'm' ||
+      String(item.category || '').toLowerCase().includes('unstitched') ||
+      String(item.category || '').toLowerCase().includes('unstiched') ||
+      String(item.subCategory || '').toLowerCase().includes('unstitched') ||
+      String(item.subCategory || '').toLowerCase().includes('unstiched') ||
+      String(item.name || '').toLowerCase().includes('unstitched') ||
+      String(item.name || '').toLowerCase().includes('unstiched') ||
+      String(item.productName || '').toLowerCase().includes('unstitched') ||
+      String(item.productName || '').toLowerCase().includes('unstiched') ||
+      (Number(item.quantity || 1) % 1 !== 0)
+    );
+    const rawQty = Number(item.quantity || 1);
+    const displayQty = isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
+    const qty = rawQty;
+
+    let unitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+    if (isItemPriceAlreadyDiscounted && totalDiscounts > 0 && subtotal > 0) {
+      const proportion = (unitPrice * qty) / itemsSum;
+      const allocDiscount = totalDiscounts * proportion;
+      unitPrice = qty > 0 ? Math.round(((unitPrice * qty + allocDiscount) / qty) * 100) / 100 : unitPrice;
+    }
+
+    const grossPrice = Math.round((unitPrice * qty) * 100) / 100;
+    const rate = getProductGstRate(item);
+    const isInclusive = item.isGstInclusive !== false && order.isGstInclusive !== false;
+
+    const itemDiscount = item.offerDiscount !== undefined && item.offerDiscount !== null && !isNaN(Number(item.offerDiscount)) && Number(item.offerDiscount) > 0
+      ? Number(item.offerDiscount)
+      : (discountRatio > 0 ? Math.round(grossPrice * discountRatio * 100) / 100 : 0);
+    const netItemPayable = Math.max(0, Math.round((grossPrice - itemDiscount) * 100) / 100);
+
+    let taxableVal = netItemPayable;
+    let taxAmt = 0;
+
+    if (rate > 0) {
+      if (isInclusive) {
+        taxableVal = Math.round((netItemPayable / (1 + rate / 100)) * 100) / 100;
+        taxAmt = Math.round((netItemPayable - taxableVal) * 100) / 100;
+      } else {
+        taxableVal = netItemPayable;
+        taxAmt = Math.round(((netItemPayable * rate) / 100) * 100) / 100;
+      }
+    }
+
+    totalTaxableValue += taxableVal;
+    totalTaxAmount += taxAmt;
+
+    return {
+      ...item,
+      qty: displayQty,
+      rawQty,
+      unitPrice,
+      grossPrice,
+      itemDiscount,
+      netItemPayable,
+      rate,
+      taxableVal,
+      taxAmt
+    };
+  });
+
+  // Dynamic Product GST Rate for Delivery (Composite Supply under Section 8 of CGST Act: Principal supply rate governs freight/delivery)
+  // Delivery charge GST strictly matches the product's GST rate (e.g., 5% product -> 5% delivery, 0% product -> 0% delivery)
+  const defaultProductGstRate = (() => {
+    const itemRates = itemBreakdowns.map(it => Number(it.rate)).filter(r => !isNaN(r));
+    if (itemRates.length > 0) {
+      return Math.max(...itemRates);
+    }
+    if (order.shippingGstRate !== undefined && order.shippingGstRate !== null && !isNaN(Number(order.shippingGstRate))) {
+      return Number(order.shippingGstRate);
+    }
+    return 5;
+  })();
+
+  const shippingGstRate = defaultProductGstRate;
+
+  // Include shipping GST into total taxable value & total tax amount for unified grand total breakdown
+  let shippingTaxable = 0;
+  let shippingTax = 0;
+  if (shippingCost > 0) {
+    if (shippingGstRate > 0) {
+      shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
+      shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+    } else {
+      shippingTaxable = shippingCost;
+      shippingTax = 0;
+    }
+    totalTaxableValue += shippingTaxable;
+    totalTaxAmount += shippingTax;
+  }
+
+  totalTaxableValue = Math.round(totalTaxableValue * 100) / 100;
+  totalTaxAmount = Math.round(totalTaxAmount * 100) / 100;
+  if (Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) > 0 && Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) <= 0.05) {
+    totalTaxableValue = Math.round((grandTotal - totalTaxAmount) * 100) / 100;
+  }
+
+  const taxAmount = totalTaxAmount;
+  const taxableValue = totalTaxableValue;
+
   const resolveSeller = () => {
-    const primaryName = getItemSellerName(items[0]);
+    const primaryName = (activeSellerGroup && !isPlaceholderName(activeSellerGroup.storeName))
+      ? activeSellerGroup.storeName
+      : getItemSellerName(items[0]);
     
     let activeSettings = {};
     try {
       activeSettings = typeof readActiveSellerSettings === 'function' ? readActiveSellerSettings() : {};
     } catch (e) {}
 
-    const primaryGst = [
-      order.sellerDetails?.gstNumber,
-      order.sellerDetails?.gst,
-      order.sellerGst,
-      order.gstNumber,
+    // Lookup GSTIN mapping for known stores or item details
+    const cleanLowerName = String(primaryName).toLowerCase().trim();
+    let mappedGst = null;
+    let mappedCity = null;
+    let mappedState = null;
+    if (cleanLowerName.includes('national cloth')) {
+      mappedGst = '09APOPN2691D1ZK';
+      mappedCity = 'Behat';
+      mappedState = 'Uttar Pradesh';
+    } else if (cleanLowerName.includes('shyam')) {
+      mappedGst = 'RGCWRCGRGCRGCC';
+      mappedCity = 'LUCKNOW';
+      mappedState = 'Uttar Pradesh';
+    }
+
+    const primaryGst = mappedGst || [
+      activeSellerGroup?.sellerDetails?.gstNumber,
+      activeSellerGroup?.sellerDetails?.gstin,
+      activeSellerGroup?.sellerDetails?.gst,
       items[0]?.sellerDetails?.gstNumber,
       items[0]?.gstNumber,
       items[0]?.sellerGst,
       activeSellerUser?.gstin,
       activeSellerUser?.gstNumber,
-      activeSettings?.gstin
+      activeSettings?.gstin,
+      order.sellerDetails?.gstNumber,
+      order.sellerDetails?.gst,
+      order.sellerGst,
+      order.gstNumber
     ].find(g => g && g !== '09AAACB1234F1Z9' && g !== 'Exempt / N/A' && String(g).trim() !== '') || 'Exempt / N/A';
 
-    const primaryCity = [
-      order.sellerDetails?.city,
-      order.sellerDetails?.address,
-      order.sellerCity,
+    const primaryCity = mappedCity || [
+      activeSellerGroup?.sellerDetails?.city,
       items[0]?.sellerDetails?.city,
       items[0]?.sellerCity,
       activeSellerUser?.city,
-      activeSettings?.city
+      activeSettings?.city,
+      order.sellerDetails?.city,
+      order.sellerCity
     ].find(Boolean) || 'Lucknow, Uttar Pradesh';
 
-    const primaryState = [
-      order.sellerDetails?.state,
-      order.sellerState,
+    const primaryState = mappedState || [
+      activeSellerGroup?.sellerDetails?.state,
       items[0]?.sellerDetails?.state,
       items[0]?.sellerState,
       activeSellerUser?.state,
-      activeSettings?.state
+      activeSettings?.state,
+      order.sellerDetails?.state,
+      order.sellerState
     ].find(Boolean) || 'Uttar Pradesh';
     
     return {
@@ -707,7 +821,112 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   // Helper to resolve dynamic seller commission rate
   const getSellerCommissionRate = () => {
-    // 1. Order-level saved commission
+    const firstItem = items[0] || {};
+    const targetSellerId = String(
+      firstItem?.sellerId?._id ||
+      firstItem?.sellerId ||
+      firstItem?.sellerDetails?.sellerId ||
+      order.sellerId?._id ||
+      order.sellerId ||
+      order.sellerDetails?.sellerId ||
+      ''
+    ).trim();
+
+    const targetSellerName = String(
+      getItemSellerName(firstItem) ||
+      resolvedSeller?.storeName ||
+      order.sellerStoreName ||
+      order.storeName ||
+      order.sellerName ||
+      firstItem.sellerStoreName ||
+      firstItem.storeName ||
+      firstItem.sellerName ||
+      ''
+    ).toLowerCase().trim();
+
+    const cleanTargetName = targetSellerName.replace(/[^a-z0-9]/g, '');
+
+    const matchSeller = (s) => {
+      if (!s) return false;
+      const sId = String(s.id || s._id || s.sellerId || s.userId || '').trim();
+      const sName = String(
+        s.storeName ||
+        s.sellerName ||
+        s.name ||
+        s.tradeName ||
+        s.businessName ||
+        s.legalBusinessName ||
+        s.storeDetails?.storeName ||
+        ''
+      ).toLowerCase().trim();
+      const cleanStoreName = sName.replace(/[^a-z0-9]/g, '');
+
+      if (targetSellerId && sId && (sId === targetSellerId || (targetSellerId.length >= 8 && sId.endsWith(targetSellerId.slice(-10))) || (sId.length >= 8 && targetSellerId.endsWith(sId.slice(-10))))) {
+        return true;
+      }
+
+      if (cleanTargetName && cleanStoreName) {
+        if (cleanTargetName === cleanStoreName || cleanTargetName.includes(cleanStoreName) || cleanStoreName.includes(cleanTargetName)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    // 1. FIRST PRIORITY: Active seller profile in Seller Panel
+    try {
+      const activeSellerKeys = ['seller_user_profile', 'bv_seller_user', 'bv_seller_profile', 'bv_seller_reg_data'];
+      for (const k of activeSellerKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const s = JSON.parse(raw);
+          if (matchSeller(s) || !cleanTargetName) {
+            const rate = s.commissionRate ?? s.commissionPercentage;
+            if (rate !== undefined && rate !== null && !isNaN(Number(rate))) {
+              return Number(rate);
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 2. Admin / Synced Sellers Registry
+    try {
+      const storageKeys = ['admin_sellers', 'bv_sync_sellers', 'bv_registered_users'];
+      for (const k of storageKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const sellersList = JSON.parse(raw);
+          if (Array.isArray(sellersList)) {
+            const matched = sellersList.find(matchSeller);
+            if (matched) {
+              const rate = matched.commissionRate ?? matched.commissionPercentage ?? matched.commission;
+              if (rate !== undefined && rate !== null && !isNaN(Number(rate))) {
+                return Number(rate);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 3. Embedded seller details on order
+    const embeddedCandidates = [
+      order.sellerDetails?.commissionRate,
+      order.sellerDetails?.commissionPercentage,
+      firstItem?.sellerDetails?.commissionRate,
+      firstItem?.sellerDetails?.commissionPercentage,
+      firstItem?.sellerId?.commissionRate,
+      firstItem?.sellerId?.commissionPercentage
+    ];
+    for (const ec of embeddedCandidates) {
+      if (ec !== undefined && ec !== null && !isNaN(Number(ec))) {
+        return Number(ec);
+      }
+    }
+
+    // 4. Order-level or Item-level saved commission
     if (order.commissionRate !== undefined && order.commissionRate !== null && !isNaN(Number(order.commissionRate))) {
       return Number(order.commissionRate);
     }
@@ -717,9 +936,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     if (order.commissionPercentage !== undefined && order.commissionPercentage !== null && !isNaN(Number(order.commissionPercentage))) {
       return Number(order.commissionPercentage);
     }
-
-    // 2. Item-level saved commission
-    const firstItem = items[0];
     if (firstItem?.commissionRate !== undefined && firstItem.commissionRate !== null && !isNaN(Number(firstItem.commissionRate))) {
       return Number(firstItem.commissionRate);
     }
@@ -730,55 +946,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       return Number(firstItem.commissionPercentage);
     }
 
-    // 3. Embedded seller details on order
-    if (order.sellerDetails?.commissionRate !== undefined && order.sellerDetails.commissionRate !== null && !isNaN(Number(order.sellerDetails.commissionRate))) {
-      return Number(order.sellerDetails.commissionRate);
-    }
-    if (order.sellerDetails?.commissionPercentage !== undefined && order.sellerDetails.commissionPercentage !== null && !isNaN(Number(order.sellerDetails.commissionPercentage))) {
-      return Number(order.sellerDetails.commissionPercentage);
-    }
-
-    // 4. Active seller profile in Seller Panel
-    try {
-      const activeSellerKeys = ['seller_user_profile', 'bv_seller_user', 'bv_seller_profile', 'bv_seller_reg_data'];
-      for (const k of activeSellerKeys) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          const s = JSON.parse(raw);
-          const rate = s.commissionRate ?? s.commissionPercentage;
-          if (rate !== undefined && rate !== null && !isNaN(Number(rate))) {
-            return Number(rate);
-          }
-        }
-      }
-    } catch (e) {}
-
-    // 5. Admin / Synced Sellers Registry
-    const targetSellerId = String(firstItem?.sellerId?._id || firstItem?.sellerId || order.sellerId?._id || order.sellerId || '');
-    const targetSellerName = String(getItemSellerName(firstItem) || '').toLowerCase();
-
-    try {
-      const savedSellers = localStorage.getItem('admin_sellers') || localStorage.getItem('bv_sync_sellers') || localStorage.getItem('bv_registered_users');
-      if (savedSellers) {
-        const sellersList = JSON.parse(savedSellers);
-        if (Array.isArray(sellersList)) {
-          const matched = sellersList.find(s => {
-            const sId = String(s.id || s._id || s.sellerId || '');
-            const sName = String(s.storeName || s.sellerName || s.name || s.storeDetails?.storeName || '').toLowerCase();
-            return (targetSellerId && sId === targetSellerId) || (targetSellerName && sName && (sName === targetSellerName || targetSellerName.includes(sName)));
-          });
-
-          if (matched) {
-            const rate = matched.commissionRate ?? matched.commissionPercentage ?? matched.commission;
-            if (rate !== undefined && rate !== null && !isNaN(Number(rate))) {
-              return Number(rate);
-            }
-          }
-        }
-      }
-    } catch (e) {}
-
-    // 6. Platform Global Settings
+    // 5. Platform Global Settings
     try {
       const savedSettings = localStorage.getItem('admin_settings') || localStorage.getItem('platform_settings');
       if (savedSettings) {
@@ -823,10 +991,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const isRule2OnlineCourier = explicitRule === 'ONLINE_THIRD_PARTY_DELIVERY' || (!isCod && isThirdParty);
   const isRule1OnlineSelf = explicitRule === 'ONLINE_SELF_DELIVERY' || (!isCod && !isThirdParty);
 
-  // Portal Commission Rate: Default 10%
-  const marketplaceCommissionRate = (isRule3CodSelf || isRule4CodCourier || isRule2OnlineCourier || isRule1OnlineSelf)
-    ? 10
-    : (order.commissionRate ?? getSellerCommissionRate() ?? 10);
+  // Dynamic Marketplace Commission Rate (Resolved per seller schedule)
+  const marketplaceCommissionRate = getSellerCommissionRate();
 
   const marketplaceCommission = isSettlementReversed ? 0 : Math.round((grandTotal * (marketplaceCommissionRate / 100)) * 100) / 100;
   const gstOnCommission = isSettlementReversed ? 0 : Math.round((marketplaceCommission * 0.18) * 100) / 100;
@@ -852,9 +1018,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const gstTcsAmount = (isSettlementReversed || isRule3CodSelf || !hasTaxableSupplies) ? 0 : Math.round((cgstTcsAmount + sgstTcsAmount + igstTcsAmount) * 100) / 100;
 
   // Delivery Charges + 18% GST (Rule 2 & Rule 4: Third-Party Delivery)
-  // "₹400 से अधिक के ऑर्डर पर: यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है।"
+  // "₹301 या अधिक के ऑर्डर पर: यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है।"
   // "डिलीवरी का खर्च और उस पर GST तभी काटें, जब यह खर्च सेलर के जिम्मे हो।"
-  const isAbove400 = grandTotal > 400;
+  const isAbove400 = grandTotal >= 301;
   const isDeliveryExemptedForSeller = isAbove400;
   let deliveryChargeAmount = 0;
   let gstOnDeliveryAmount = 0;
@@ -911,7 +1077,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       const token = localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('token');
       const rawId = order.id || order.orderId || order._id || '';
       const orderIdentifier = String(rawId).replace(/^#/, '').trim();
-      const res = await fetch(`${SERVER_URL}/orders/${orderIdentifier}/invoice`, {
+      const sellerParam = activeSellerGroup?.sellerId || activeSellerGroup?.storeName || activeSellerUser?._id || activeSellerUser?.storeName || '';
+      const queryStr = sellerParam ? `?sellerId=${encodeURIComponent(sellerParam)}` : '';
+      const res = await fetch(`${SERVER_URL}/orders/${orderIdentifier}/invoice${queryStr}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         }
@@ -921,7 +1089,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Invoice_${orderIdentifier}.pdf`;
+        const sellerSlug = (resolvedSeller?.storeName || 'Seller').replace(/[^a-zA-Z0-9_-]/g, '_');
+        link.download = `Invoice_${orderIdentifier}_${sellerSlug}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -1102,6 +1271,44 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
           </div>
         </div>
 
+        {/* Multi-Seller Tabs for Combined Orders */}
+        {sellerGroups.length > 1 && (
+          <div className="bg-gray-900 border-b border-gray-800 px-5 py-2.5 flex items-center justify-between gap-3 overflow-x-auto print:hidden">
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 shrink-0 font-medium">
+              <Store size={14} className="text-teal-400" />
+              <span>Seller Invoices:</span>
+            </div>
+            <div className="flex items-center gap-2 overflow-x-auto">
+              {sellerGroups.map((grp) => {
+                const isSelected = activeSellerGroup?.key === grp.key;
+                return (
+                  <button
+                    key={grp.key}
+                    type="button"
+                    onClick={() => setSelectedSellerKey(grp.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      isSelected
+                        ? 'bg-brand-teal text-white shadow-xs'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    <span>{grp.storeName}</span>
+                    {grp.hasConfirmedItems ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                        Confirmed ({grp.items.length})
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-0.5">
+                        <Lock size={9} /> Pending ({grp.items.length})
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Strict Verification Banner */}
         {!confirmed ? (
           <div className="p-8 text-center space-y-4">
@@ -1109,18 +1316,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
               <Lock size={28} />
             </div>
             <div>
-              <h4 className="font-display font-extrabold text-lg text-gray-900">Tax Invoice Generation Locked</h4>
+              <h4 className="font-display font-extrabold text-lg text-gray-900">
+                Tax Invoice Locked for {activeSellerGroup?.storeName || 'Seller Store'}
+              </h4>
               <p className="text-xs text-gray-600 max-w-md mx-auto mt-1 leading-relaxed">
-                Official Tax Invoice will be generated automatically once the order status is confirmed.
+                Official Tax Invoice will be generated automatically once the items for {activeSellerGroup?.storeName || 'this seller'} are confirmed.
               </p>
             </div>
             <div className="inline-flex flex-col items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold px-5 py-2.5 rounded-xl shadow-2xs">
               <div>
-                Current Order Status: <span className="uppercase font-black text-amber-950">{order.overallStatus || order.status || 'Pending Confirmation'}</span>
+                Seller Item Status: <span className="uppercase font-black text-amber-950">{activeSellerGroup?.items?.[0]?.status || order.overallStatus || order.status || 'Pending Confirmation'}</span>
               </div>
-              <p className="text-[10px] text-amber-700/90 font-medium">
-                (Payment status does not block invoice generation. Once the order is confirmed, the invoice is generated automatically.)
-              </p>
+              {sellerGroups.length > 1 && (
+                <p className="text-[11px] text-teal-700 font-semibold mt-1">
+                  💡 In this combined order, switch to confirmed seller tabs above to view available invoices.
+                </p>
+              )}
             </div>
           </div>
         ) : (
@@ -1417,7 +1628,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   ) : totalDeliveryDeduction > 0 ? (
                     <span className="font-mono text-rose-700">-₹{totalDeliveryDeduction.toFixed(2)} (₹{deliveryChargeAmount.toFixed(2)} + ₹{gstOnDeliveryAmount.toFixed(2)} GST {shippingGstRate}%)</span>
                   ) : (
-                    <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs &gt;₹400)</span>
+                    <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs ≥₹301)</span>
                   )}
                 </div>
               )}

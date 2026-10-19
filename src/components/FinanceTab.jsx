@@ -351,7 +351,7 @@ export default function FinanceTab() {
             : Math.round(((gross * 0.5) / 100) * 100) / 100);
 
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const isAbove400 = ordTotalVal > 400;
+      const isAbove400 = ordTotalVal >= 301;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
       if (!deliveryChargeBorneBy) {
@@ -455,7 +455,7 @@ export default function FinanceTab() {
 
       const gstTcs = isRule3 ? 0 : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const isAbove400 = ordTotalVal > 400;
+      const isAbove400 = ordTotalVal >= 301;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
       if (!deliveryChargeBorneBy) {
@@ -531,7 +531,7 @@ export default function FinanceTab() {
         const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
         const isThirdParty = o.isThirdParty === true || rawDeliveryMode.includes('third') || rawDeliveryMode.includes('courier') || (hasCourier && !rawDeliveryMode.includes('self'));
         const ordTotalVal = Number(o.totalAmount || o.total || gross);
-        const isAbove400 = ordTotalVal > 400;
+        const isAbove400 = ordTotalVal >= 301;
 
         let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
         if (!deliveryChargeBorneBy) {
@@ -593,7 +593,7 @@ export default function FinanceTab() {
         : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
 
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const isAbove400 = ordTotalVal > 400;
+      const isAbove400 = ordTotalVal >= 301;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
       if (!deliveryChargeBorneBy) {
@@ -804,7 +804,7 @@ export default function FinanceTab() {
           </div>
 
           <div className="bg-white/10 backdrop-blur-xs p-2.5 rounded-xl border border-white/10">
-            <div className="text-[9.5px] text-amber-200 font-bold uppercase tracking-wider">Portal Comm (10%)</div>
+            <div className="text-[9.5px] text-amber-200 font-bold uppercase tracking-wider">Portal Comm ({commissionRate}%)</div>
             <div className="text-sm font-extrabold text-amber-300 mt-0.5 font-mono">−₹{settlementSummary.portalCommission.toLocaleString('en-IN')}</div>
             <div className="text-[9.5px] text-amber-200 mt-0.5 leading-tight">पोर्टल का कमीशन</div>
           </div>
@@ -858,7 +858,7 @@ export default function FinanceTab() {
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-amber-800 font-bold">•</span>
-                <span><strong>Portal Commission:</strong> 10% (या निर्धारित दर) — पोर्टल का कमीशन।</span>
+                <span><strong>Portal Commission:</strong> {commissionRate}% (या निर्धारित दर) — पोर्टल का कमीशन।</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-amber-800 font-bold">•</span>
@@ -877,7 +877,7 @@ export default function FinanceTab() {
                 <span><strong>Delivery Charges + 18% GST:</strong> डिलीवरी का खर्च और उस पर GST तभी काटें, जब यह खर्च सेलर के जिम्मे हो।</span>
               </div>
               <div className="flex items-start gap-1.5 md:col-span-2 bg-amber-100 p-2.5 rounded-lg border border-amber-300 text-amber-950 font-medium">
-                <span className="font-extrabold text-amber-900 shrink-0">✨ ₹400 से अधिक के ऑर्डर पर:</span>
+                <span className="font-extrabold text-amber-900 shrink-0">✨ ₹301 या अधिक के ऑर्डर पर:</span>
                 <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (सेलर से ₹0 डिलीवरी कटौती)।</span>
               </div>
               <div className="flex items-start gap-1.5 md:col-span-2">
@@ -914,7 +914,7 @@ export default function FinanceTab() {
               <h5 className="font-extrabold text-teal-950">1. Online Payment + Self Delivery (ऑनलाइन भुगतान + सेलर डिलीवरी)</h5>
               <span className="text-[10px] bg-teal-200 text-teal-950 font-bold px-2 py-0.5 rounded-full">Rule 1 ({ruleMetrics.rule1.count} Orders)</span>
             </div>
-            <p className="text-[11px]">• Gross − [10% Comm + 18% GST + 0.1% TDS + 0.5% TCS] = Net Settlement। (सेलर स्वयं डिलीवरी करता है, ₹0 कूरियर कटौती)।</p>
+            <p className="text-[11px]">• Gross − [{commissionRate}% Comm + 18% GST + 0.1% TDS + 0.5% TCS] = Net Settlement। (सेलर स्वयं डिलीवरी करता है, ₹0 कूरियर कटौती)।</p>
           </div>
         )}
 
@@ -924,7 +924,7 @@ export default function FinanceTab() {
               <h5 className="font-extrabold text-rose-950">3. COD + Self Delivery (कैश ऑन डिलीवरी + सेलर डिलीवरी)</h5>
               <span className="text-[10px] bg-rose-200 text-rose-950 font-bold px-2 py-0.5 rounded-full">Rule 3 ({ruleMetrics.rule3.count} Orders)</span>
             </div>
-            <p className="text-[11px]">• ग्राहक पूरा पैसा सेलर को कैश देता है। पोर्टल 10% Comm + 18% GST + 0.1% TDS (0% TCS) लेगा। सेटलमेंट माइनस (−Deductions) दिखेगा।</p>
+            <p className="text-[11px]">• ग्राहक पूरा पैसा सेलर को कैश देता है। पोर्टल {commissionRate}% Comm + 18% GST + 0.1% TDS (0% TCS) लेगा। सेटलमेंट माइनस (−Deductions) दिखेगा।</p>
           </div>
         )}
 
@@ -934,14 +934,14 @@ export default function FinanceTab() {
               <h5 className="font-extrabold text-purple-950">4. COD + Third-Party Delivery (कैश ऑन डिलीवरी + कूरियर से डिलीवरी)</h5>
               <span className="text-[10px] bg-purple-200 text-purple-950 font-bold px-2 py-0.5 rounded-full">Rule 4 ({ruleMetrics.rule4.count} Orders)</span>
             </div>
-            <p className="text-[11px]">• कूरियर कैश कलेक्ट कर पोर्टल को देगा। 10% Comm + 18% GST + 0.1% TDS + 0.5% TCS कटेगा। ₹400+ पर डिलीवरी ₹0, बची राशि सेलर को।</p>
+            <p className="text-[11px]">• कूरियर कैश कलेक्ट कर पोर्टल को देगा। {commissionRate}% Comm + 18% GST + 0.1% TDS + 0.5% TCS कटेगा। ₹301+ पर डिलीवरी ₹0, बची राशि सेलर को।</p>
           </div>
         )}
 
         {activeRuleTab === 'all' && (
           <div className="pt-2 border-t border-white/15 text-[11px] space-y-1.5 text-teal-100/90">
             <div className="flex items-start gap-1.5">
-              <span className="font-bold text-amber-300 shrink-0">₹400 से अधिक के ऑर्डर पर:</span>
+              <span className="font-bold text-amber-300 shrink-0">₹301 या अधिक के ऑर्डर पर:</span>
               <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (₹0 डिलीवरी कटौती)।</span>
             </div>
             <div className="flex items-start gap-1.5">
@@ -950,11 +950,11 @@ export default function FinanceTab() {
             </div>
             <div className="flex items-start gap-1.5">
               <span className="font-bold text-rose-300 shrink-0">COD + सेलर डिलीवरी (Rule 3):</span>
-              <span>ग्राहक पूरा पैसा सीधे सेलर को देगा। 10% कमीशन + 18% GST + 0.1% TDS (0% TCS) पोर्टल में देय (-) होगा और सेलर का सेटलमेंट माइनस (-) में दिखेगा।</span>
+              <span>ग्राहक पूरा पैसा सीधे सेलर को देगा। {commissionRate}% कमीशन + 18% GST + 0.1% TDS (0% TCS) पोर्टल में देय (-) होगा और सेलर का सेटलमेंट माइनस (-) में दिखेगा।</span>
             </div>
             <div className="flex items-start gap-1.5">
               <span className="font-bold text-purple-300 shrink-0">COD + कूरियर डिलीवरी (Rule 4):</span>
-              <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल 10% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹400+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
+              <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल {commissionRate}% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹301+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
             </div>
           </div>
         )}
@@ -1182,7 +1182,7 @@ export default function FinanceTab() {
                           </span>
                           {txn.isThirdParty && txn.isAbove400 && (
                             <span className="text-teal-800 font-semibold bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200">
-                              &gt;₹400 Free Deliv.
+                              ≥₹301 Free Deliv.
                             </span>
                           )}
                           {txn.deliveryDeduction > 0 && (

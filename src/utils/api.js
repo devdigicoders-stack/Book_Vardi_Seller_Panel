@@ -86,18 +86,41 @@ export const verifyPhoneOtpApi = async (phone, otp, isRegistration = false) => {
 
 export const submitSellerApplicationApi = async (formData) => {
   try {
+    const rawData = { ...formData };
+    // Standardize all field aliases for register/update endpoints
+    const normalized = {
+      ...rawData,
+      name: rawData.name || rawData.sellerName || rawData.ownerFullName || '',
+      sellerName: rawData.sellerName || rawData.name || rawData.ownerFullName || '',
+      storeName: rawData.storeName || rawData.tradeName || rawData.legalBusinessName || '',
+      email: rawData.email || rawData.sellerEmail || '',
+      sellerEmail: rawData.sellerEmail || rawData.email || '',
+      phone: rawData.phone || rawData.sellerPhone || '',
+      sellerPhone: rawData.sellerPhone || rawData.phone || '',
+      address: rawData.address || rawData.addressLine1 || rawData.registeredAddress || '',
+      addressLine1: rawData.addressLine1 || rawData.address || rawData.registeredAddress || '',
+      city: rawData.city || '',
+      state: rawData.state || 'Uttar Pradesh',
+      pincode: rawData.pincode || '',
+      password: rawData.password || 'BookVardiSeller@123'
+    };
+
     const token = localStorage.getItem('bv_seller_jwt_token');
     if (token) {
-      const updateRes = await loggedFetch(`${API_BASE_URL}/auth/application`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify(formData)
-      });
-      if (updateRes.ok) {
-        return await updateRes.json();
+      try {
+        const updateRes = await loggedFetch(`${API_BASE_URL}/auth/application`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify(normalized)
+        });
+        if (updateRes.ok) {
+          return await updateRes.json();
+        }
+      } catch (err) {
+        console.warn('PUT application error, falling back to POST register:', err.message);
       }
     }
 
@@ -107,7 +130,7 @@ export const submitSellerApplicationApi = async (formData) => {
         'Content-Type': 'application/json',
         ...getAuthHeaders()
       },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(normalized)
     });
     return await res.json();
   } catch (error) {

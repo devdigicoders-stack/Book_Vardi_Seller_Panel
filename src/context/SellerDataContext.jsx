@@ -1298,7 +1298,22 @@ export const SellerDataProvider = ({ children }) => {
     localStorage.setItem('seller_settings', JSON.stringify(updatedSettings));
     localStorage.setItem('seller_is_authenticated', JSON.stringify(true));
 
-    submitSellerApplicationApi(appData).catch(() => {});
+    try {
+      const res = await submitSellerApplicationApi({
+        ...appData,
+        name: matchedName,
+        storeName: matchedStoreName,
+        email: matchedEmail,
+        phone: matchedPhone,
+        address: appData.registeredAddress || appData.addressLine1 || settings.address || '',
+        city: appData.city || settings.city || '',
+        state: appData.state || settings.state || 'Uttar Pradesh',
+        pincode: appData.pincode || settings.pincode || ''
+      });
+      return res;
+    } catch (err) {
+      console.warn('submitSellerApplication error:', err);
+    }
   };
 
   const approveSellerApplication = async () => {

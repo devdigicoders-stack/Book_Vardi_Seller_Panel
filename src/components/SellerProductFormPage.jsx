@@ -178,13 +178,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   const categoryUnitType = selectedUnitType || getCategoryUnitType(formData.category);
 
   const toggleCategorySizeVariant = (sz, scaleName = 'size') => {
-        const target = String(sz).toLowerCase().trim();
-        const targetNoPrefix = target.replace(/^size\s+/i, '');
-        const existingIndex = sizeVariants.findIndex(v => {
-          const s = String(v.size || v.measureValue || '').toLowerCase().trim();
-          const sNoPrefix = s.replace(/^size\s+/i, '');
-          return s === target || s === targetNoPrefix || sNoPrefix === targetNoPrefix;
-        });
+    const target = String(sz).toLowerCase().trim();
+    const targetNoPrefix = target.replace(/^size\s+/i, '');
+    const existingIndex = sizeVariants.findIndex(v => {
+      const s = String(v.size || v.measureValue || '').toLowerCase().trim();
+      const sNoPrefix = s.replace(/^size\s+/i, '');
+      return s === target || s === targetNoPrefix || sNoPrefix === targetNoPrefix;
+    });
     const defaultPrice = formData.price || '499';
     const defaultMrp = formData.originalPrice || Math.round(Number(defaultPrice || 499) * 1.25).toString();
     const defaultStock = formData.stockQuantity || '25';
@@ -289,13 +289,13 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
   // Compute dynamic categories with fallback to static schema
   const displayCategories = (dbCategories && dbCategories.length > 0)
     ? dbCategories.map(c => ({
-        id: c.name,
-        name: c.name,
-        gstPercentage: c.gstPercentage,
-        subCategories: Array.isArray(c.subCategories)
-          ? c.subCategories.map(s => typeof s === 'string' ? s : (s.name || '')).filter(Boolean)
-          : []
-      }))
+      id: c.name,
+      name: c.name,
+      gstPercentage: c.gstPercentage,
+      subCategories: Array.isArray(c.subCategories)
+        ? c.subCategories.map(s => typeof s === 'string' ? s : (s.name || '')).filter(Boolean)
+        : []
+    }))
     : CATEGORY_STRUCTURE;
 
   const getDynamicSubCategories = (catName) => {
@@ -394,9 +394,9 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
       });
 
       // Load sizeVariants safely via parseSizeVariants (filtering out any legacy/artificial base product)
-      const parsedVariants = parseSizeVariants(product).filter(v => 
-        !v.isBase && 
-        String(v.size || '').trim().toLowerCase() !== 'base product' && 
+      const parsedVariants = parseSizeVariants(product).filter(v =>
+        !v.isBase &&
+        String(v.size || '').trim().toLowerCase() !== 'base product' &&
         String(v.measureValue || '').trim().toLowerCase() !== 'base product'
       );
       if (parsedVariants.length > 0) {
@@ -635,7 +635,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     };
 
     if (!customApparelSizes.some(s => s.toLowerCase() === val.toLowerCase()) &&
-        !APPAREL_SIZES.some(s => s.toLowerCase() === val.toLowerCase())) {
+      !APPAREL_SIZES.some(s => s.toLowerCase() === val.toLowerCase())) {
       setCustomApparelSizes(prev => [...prev, val]);
     }
 
@@ -815,9 +815,9 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
       setSubmitting(true);
       try {
-        const cleanVariants = sizeVariants.filter(v => 
-          !v.isBase && 
-          String(v.size || '').trim().toLowerCase() !== 'base product' && 
+        const cleanVariants = sizeVariants.filter(v =>
+          !v.isBase &&
+          String(v.size || '').trim().toLowerCase() !== 'base product' &&
           String(v.measureValue || '').trim().toLowerCase() !== 'base product'
         );
         const validPrices = cleanVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
@@ -835,8 +835,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         const formattedAgeGroup = selectedAges.length > 0 ? selectedAges.join(', ') : (formData.ageGroup || formData.ages || '');
 
         const paymentAllowedStr = formData.paymentMethodAllowed || 'Both';
-        const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
-          ? ['Online'] 
+        const paymentAllowedArr = paymentAllowedStr === 'Online_Only'
+          ? ['Online']
           : (paymentAllowedStr === 'COD_Only' ? ['COD'] : ['COD', 'Online']);
 
         const parsedAges = selectedAges.length > 0
@@ -999,8 +999,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           : (formData.images && formData.images.length > 0 ? formData.images : (formData.image ? [formData.image] : []));
 
         const paymentAllowedStr = kitData.paymentMethodAllowed || 'Both';
-        const paymentAllowedArr = paymentAllowedStr === 'Online_Only' 
-          ? ['Online'] 
+        const paymentAllowedArr = paymentAllowedStr === 'Online_Only'
+          ? ['Online']
           : (paymentAllowedStr === 'COD_Only' ? ['COD'] : ['COD', 'Online']);
 
         const payload = {
@@ -1039,7 +1039,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
   return (
     <div className="space-y-6 pb-20">
-      
+
       {/* Top Header & Breadcrumbs */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl shadow-xs border border-gray-100">
         <div className="flex items-center gap-3">
@@ -1100,9 +1100,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
               setEntryType('single');
               setActiveTab('general');
             }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              entryType === 'single' ? 'bg-brand-teal text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
-            }`}
+            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${entryType === 'single' ? 'bg-brand-teal text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+              }`}
           >
             Standard Product (With Variants)
           </button>
@@ -1116,9 +1115,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 setActiveTab('kit');
               }
             }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              entryType === 'kit' ? 'bg-brand-teal text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
-            }`}
+            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${entryType === 'kit' ? 'bg-brand-teal text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+              }`}
           >
             Kit / Bundle Package (Multi-Item)
           </button>
@@ -1146,9 +1144,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  isActive ? 'bg-brand-teal text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isActive ? 'bg-brand-teal text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                  }`}
               >
                 <Icon size={15} />
                 <span>{tab.label}</span>
@@ -1167,9 +1164,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  isActive ? 'bg-brand-teal text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isActive ? 'bg-brand-teal text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                  }`}
               >
                 <Icon size={15} />
                 <span>{tab.label}</span>
@@ -1235,11 +1231,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       disabled={!formData.category}
                       value={formData.subCategory}
                       onChange={e => setFormData({ ...formData, subCategory: e.target.value })}
-                      className={`w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold outline-none transition-all ${
-                        !formData.category
+                      className={`w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold outline-none transition-all ${!formData.category
                           ? 'bg-gray-100/90 text-gray-400 border-gray-200 cursor-not-allowed opacity-75'
                           : 'bg-gray-50 text-gray-800 border-gray-200 cursor-pointer focus:border-teal-500 focus:bg-white'
-                      }`}
+                        }`}
                       title={!formData.category ? 'Please select a Category first' : 'Select Sub-Category'}
                     >
                       {!formData.category ? (
@@ -1440,11 +1435,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                               setSelectedGrades(prev => [...prev, grade]);
                             }
                           }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                            isSelected
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${isSelected
                               ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
                               : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                          }`}
+                            }`}
                         >
                           {isSelected && <span className="mr-1">✓</span>}
                           {grade}
@@ -1515,11 +1509,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                               setSelectedAges(prev => [...prev, age]);
                             }
                           }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                            isSelected
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${isSelected
                               ? 'bg-indigo-800 text-white border-indigo-900 shadow-2xs font-extrabold'
                               : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/50'
-                          }`}
+                            }`}
                         >
                           {isSelected && <span className="mr-1">✓</span>}
                           {age}
@@ -1616,33 +1609,30 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       <button
                         type="button"
                         onClick={() => setSelectedUnitType('apparel')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                          categoryUnitType === 'apparel'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${categoryUnitType === 'apparel'
                             ? 'bg-teal-700 text-white shadow-xs'
                             : 'text-gray-600 hover:text-teal-800 hover:bg-teal-50'
-                        }`}
+                          }`}
                       >
                         👔 Apparel & Sizes (18-44, S-4XL)
                       </button>
                       <button
                         type="button"
                         onClick={() => setSelectedUnitType('footwear')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                          categoryUnitType === 'footwear'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${categoryUnitType === 'footwear'
                             ? 'bg-teal-700 text-white shadow-xs'
                             : 'text-gray-600 hover:text-teal-800 hover:bg-teal-50'
-                        }`}
+                          }`}
                       >
                         👟 Shoe Sizes
                       </button>
                       <button
                         type="button"
                         onClick={() => setSelectedUnitType('general')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                          categoryUnitType === 'general'
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${categoryUnitType === 'general'
                             ? 'bg-teal-700 text-white shadow-xs'
                             : 'text-gray-600 hover:text-teal-800 hover:bg-teal-50'
-                        }`}
+                          }`}
                       >
                         📦 Single Piece (No Sizes)
                       </button>
@@ -1655,11 +1645,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div
                           onClick={() => setFormData({ ...formData, isMeterBased: false, unit: 'piece' })}
-                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
-                            !formData.isMeterBased
+                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${!formData.isMeterBased
                               ? 'border-brand-teal bg-white shadow-xs font-bold'
                               : 'border-gray-200 bg-white/60'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
                             <span>👔 Stitched Item / Ready-To-Wear (Sizes S, M, L, 32...)</span>
@@ -1671,11 +1660,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
                         <div
                           onClick={() => setFormData({ ...formData, isMeterBased: true, unit: 'meter' })}
-                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${
-                            formData.isMeterBased
+                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer ${formData.isMeterBased
                               ? 'border-brand-teal bg-white shadow-xs font-bold'
                               : 'border-gray-200 bg-white/60'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-2 text-xs font-bold text-gray-900">
                             <span>✂️ Unstitched Fabric (Sold per Meter)</span>
@@ -1892,11 +1880,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                   />
                                   <label
                                     htmlFor="custom-size-img-upload"
-                                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all ${
-                                      customSizeImage
+                                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all ${customSizeImage
                                         ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
                                         : 'bg-white border-teal-300 text-teal-900 hover:bg-teal-50'
-                                    }`}
+                                      }`}
                                     title="Add photo for this size (Optional)"
                                   >
                                     {customSizeImage ? (
@@ -1948,11 +1935,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                       key={sz}
                                       type="button"
                                       onClick={() => toggleCategorySizeVariant(sz, 'size')}
-                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                                        isSelected
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${isSelected
                                           ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
                                           : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                                      }`}
+                                        }`}
                                     >
                                       {isSelected && <span className="mr-1">✓</span>}
                                       {sz}
@@ -1975,11 +1961,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                       key={sz}
                                       type="button"
                                       onClick={() => toggleCategorySizeVariant(sz, 'size')}
-                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                                        isSelected
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${isSelected
                                           ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
                                           : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                                      }`}
+                                        }`}
                                     >
                                       {isSelected && <span className="mr-1">✓</span>}
                                       {sz}
@@ -2002,11 +1987,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                     return (
                                       <span
                                         key={sz}
-                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                                          isSelected
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${isSelected
                                             ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
                                             : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                                        }`}
+                                          }`}
                                       >
                                         <button
                                           type="button"
@@ -2362,11 +2346,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                 key={sz}
                                 type="button"
                                 onClick={() => toggleCategorySizeVariant(sz, 'size')}
-                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                                  isSelected
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${isSelected
                                     ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
                                     : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                                }`}
+                                  }`}
                               >
                                 {isSelected && <span className="mr-1">✓</span>}
                                 {sz}
@@ -2397,11 +2380,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                                 key={sz}
                                 type="button"
                                 onClick={() => toggleCategorySizeVariant(sz, 'size')}
-                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                                  isSelected
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${isSelected
                                     ? 'bg-teal-800 text-white border-teal-900 shadow-2xs font-extrabold'
                                     : 'bg-white text-gray-700 border-gray-200 hover:border-teal-400 hover:bg-teal-50/50'
-                                }`}
+                                  }`}
                               >
                                 {isSelected && <span className="mr-1">✓</span>}
                                 {sz}
@@ -2644,141 +2626,141 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                     </div>
 
                     {formData.enableSizeChart && (
-                    <div className="space-y-3 pt-3 border-t border-indigo-100">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-indigo-950">Size Chart Matrix (Inches)</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const rows = formData.sizeChart?.rows || [];
-                            setFormData({
-                              ...formData,
-                              sizeChart: {
-                                ...formData.sizeChart,
-                                rows: [...rows, { size: '', chest: '', length: '', sleeve: '', waist: '', shoulder: '' }]
-                              }
-                            });
-                          }}
-                          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
-                        >
-                          + Add Size Row
-                        </button>
-                      </div>
+                      <div className="space-y-3 pt-3 border-t border-indigo-100">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-extrabold text-indigo-950">Size Chart Matrix (Inches)</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const rows = formData.sizeChart?.rows || [];
+                              setFormData({
+                                ...formData,
+                                sizeChart: {
+                                  ...formData.sizeChart,
+                                  rows: [...rows, { size: '', chest: '', length: '', sleeve: '', waist: '', shoulder: '' }]
+                                }
+                              });
+                            }}
+                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                          >
+                            + Add Size Row
+                          </button>
+                        </div>
 
-                      <div className="overflow-x-auto rounded-lg border border-indigo-200 bg-white">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-indigo-100/70 text-indigo-950 font-bold uppercase text-[10px]">
-                            <tr>
-                              <th className="p-2">Size</th>
-                              <th className="p-2">Chest (in)</th>
-                              <th className="p-2">Length (in)</th>
-                              <th className="p-2">Sleeve (in)</th>
-                              <th className="p-2">Waist (in)</th>
-                              <th className="p-2">Shoulder (in)</th>
-                              <th className="p-2 text-right">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-indigo-100">
-                            {(formData.sizeChart?.rows || []).map((row, idx) => (
-                              <tr key={idx}>
-                                <td className="p-1.5">
-                                  <input
-                                    type="text"
-                                    value={row.size}
-                                    onChange={e => {
-                                      const rows = [...(formData.sizeChart?.rows || [])];
-                                      rows[idx].size = e.target.value;
-                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
-                                    }}
-                                    placeholder="e.g. S"
-                                    className="w-16 px-2 py-1 border border-gray-200 rounded font-bold text-xs"
-                                  />
-                                </td>
-                                <td className="p-1.5">
-                                  <input
-                                    type="text"
-                                    value={row.chest}
-                                    onChange={e => {
-                                      const rows = [...(formData.sizeChart?.rows || [])];
-                                      rows[idx].chest = e.target.value;
-                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
-                                    }}
-                                    placeholder='36"'
-                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
-                                  />
-                                </td>
-                                <td className="p-1.5">
-                                  <input
-                                    type="text"
-                                    value={row.length}
-                                    onChange={e => {
-                                      const rows = [...(formData.sizeChart?.rows || [])];
-                                      rows[idx].length = e.target.value;
-                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
-                                    }}
-                                    placeholder='26"'
-                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
-                                  />
-                                </td>
-                                <td className="p-1.5">
-                                  <input
-                                    type="text"
-                                    value={row.sleeve}
-                                    onChange={e => {
-                                      const rows = [...(formData.sizeChart?.rows || [])];
-                                      rows[idx].sleeve = e.target.value;
-                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
-                                    }}
-                                    placeholder='8"'
-                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
-                                  />
-                                </td>
-                                <td className="p-1.5">
-                                  <input
-                                    type="text"
-                                    value={row.waist}
-                                    onChange={e => {
-                                      const rows = [...(formData.sizeChart?.rows || [])];
-                                      rows[idx].waist = e.target.value;
-                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
-                                    }}
-                                    placeholder='30"'
-                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
-                                  />
-                                </td>
-                                <td className="p-1.5">
-                                  <input
-                                    type="text"
-                                    value={row.shoulder}
-                                    onChange={e => {
-                                      const rows = [...(formData.sizeChart?.rows || [])];
-                                      rows[idx].shoulder = e.target.value;
-                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
-                                    }}
-                                    placeholder='16"'
-                                    className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
-                                  />
-                                </td>
-                                <td className="p-1.5 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const rows = (formData.sizeChart?.rows || []).filter((_, i) => i !== idx);
-                                      setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
-                                    }}
-                                    className="text-red-600 hover:text-red-800 text-xs font-bold p-1 cursor-pointer"
-                                  >
-                                    ✕
-                                  </button>
-                                </td>
+                        <div className="overflow-x-auto rounded-lg border border-indigo-200 bg-white">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-indigo-100/70 text-indigo-950 font-bold uppercase text-[10px]">
+                              <tr>
+                                <th className="p-2">Size</th>
+                                <th className="p-2">Chest (in)</th>
+                                <th className="p-2">Length (in)</th>
+                                <th className="p-2">Sleeve (in)</th>
+                                <th className="p-2">Waist (in)</th>
+                                <th className="p-2">Shoulder (in)</th>
+                                <th className="p-2 text-right">Action</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-indigo-100">
+                              {(formData.sizeChart?.rows || []).map((row, idx) => (
+                                <tr key={idx}>
+                                  <td className="p-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.size}
+                                      onChange={e => {
+                                        const rows = [...(formData.sizeChart?.rows || [])];
+                                        rows[idx].size = e.target.value;
+                                        setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                      }}
+                                      placeholder="e.g. S"
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded font-bold text-xs"
+                                    />
+                                  </td>
+                                  <td className="p-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.chest}
+                                      onChange={e => {
+                                        const rows = [...(formData.sizeChart?.rows || [])];
+                                        rows[idx].chest = e.target.value;
+                                        setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                      }}
+                                      placeholder='36"'
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                    />
+                                  </td>
+                                  <td className="p-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.length}
+                                      onChange={e => {
+                                        const rows = [...(formData.sizeChart?.rows || [])];
+                                        rows[idx].length = e.target.value;
+                                        setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                      }}
+                                      placeholder='26"'
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                    />
+                                  </td>
+                                  <td className="p-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.sleeve}
+                                      onChange={e => {
+                                        const rows = [...(formData.sizeChart?.rows || [])];
+                                        rows[idx].sleeve = e.target.value;
+                                        setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                      }}
+                                      placeholder='8"'
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                    />
+                                  </td>
+                                  <td className="p-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.waist}
+                                      onChange={e => {
+                                        const rows = [...(formData.sizeChart?.rows || [])];
+                                        rows[idx].waist = e.target.value;
+                                        setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                      }}
+                                      placeholder='30"'
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                    />
+                                  </td>
+                                  <td className="p-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.shoulder}
+                                      onChange={e => {
+                                        const rows = [...(formData.sizeChart?.rows || [])];
+                                        rows[idx].shoulder = e.target.value;
+                                        setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                      }}
+                                      placeholder='16"'
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded text-xs"
+                                    />
+                                  </td>
+                                  <td className="p-1.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const rows = (formData.sizeChart?.rows || []).filter((_, i) => i !== idx);
+                                        setFormData({ ...formData, sizeChart: { ...formData.sizeChart, rows } });
+                                      }}
+                                      className="text-red-600 hover:text-red-800 text-xs font-bold p-1 cursor-pointer"
+                                    >
+                                      ✕
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -2798,9 +2780,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div
                 onClick={() => setKitMode('existing')}
-                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                  kitMode === 'existing' ? 'border-brand-teal bg-brand-teal/5 font-bold' : 'border-gray-200 bg-white'
-                }`}
+                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${kitMode === 'existing' ? 'border-brand-teal bg-brand-teal/5 font-bold' : 'border-gray-200 bg-white'
+                  }`}
               >
                 <h4 className="text-xs font-bold text-gray-900">Option A: Bundle Existing Catalog Products</h4>
                 <p className="text-[11px] text-gray-500 mt-1">Pick products from catalog & set bundle discount.</p>
@@ -2808,9 +2789,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
 
               <div
                 onClick={() => setKitMode('scratch')}
-                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                  kitMode === 'scratch' ? 'border-brand-teal bg-brand-teal/5 font-bold' : 'border-gray-200 bg-white'
-                }`}
+                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${kitMode === 'scratch' ? 'border-brand-teal bg-brand-teal/5 font-bold' : 'border-gray-200 bg-white'
+                  }`}
               >
                 <h4 className="text-xs font-bold text-gray-900">Option B: Create Kit from Scratch</h4>
                 <p className="text-[11px] text-gray-500 mt-1">Manually type kit line items without product variants.</p>
@@ -2923,11 +2903,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 if (entryType === 'single') setFormData({ ...formData, paymentMethodAllowed: 'Both' });
                 else setKitData({ ...kitData, paymentMethodAllowed: 'Both' });
               }}
-              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                (entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'Both'
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${(entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'Both'
                   ? 'border-brand-teal bg-brand-teal/5 font-bold'
                   : 'border-gray-200 bg-white'
-              }`}
+                }`}
             >
               <h4 className="text-xs font-bold text-gray-900">💳 Both Methods</h4>
               <p className="text-[11px] text-gray-500 mt-1">Allows Online Payment & Cash on Delivery (COD).</p>
@@ -2938,11 +2917,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 if (entryType === 'single') setFormData({ ...formData, paymentMethodAllowed: 'Online_Only' });
                 else setKitData({ ...kitData, paymentMethodAllowed: 'Online_Only' });
               }}
-              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                (entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'Online_Only'
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${(entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'Online_Only'
                   ? 'border-amber-500 bg-amber-50/50 font-bold'
                   : 'border-gray-200 bg-white'
-              }`}
+                }`}
             >
               <h4 className="text-xs font-bold text-amber-800">⚡ Online / Prepaid Only</h4>
               <p className="text-[11px] text-amber-700 mt-1"><strong>Disables COD</strong> on frontend checkout.</p>
@@ -2953,11 +2931,10 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                 if (entryType === 'single') setFormData({ ...formData, paymentMethodAllowed: 'COD_Only' });
                 else setKitData({ ...kitData, paymentMethodAllowed: 'COD_Only' });
               }}
-              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                (entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'COD_Only'
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${(entryType === 'single' ? formData.paymentMethodAllowed : kitData.paymentMethodAllowed) === 'COD_Only'
                   ? 'border-blue-500 bg-blue-50/50 font-bold'
                   : 'border-gray-200 bg-white'
-              }`}
+                }`}
             >
               <h4 className="text-xs font-bold text-blue-800">💵 Cash on Delivery Only</h4>
               <p className="text-[11px] text-blue-700 mt-1"><strong>Disables Online</strong> payment on frontend checkout.</p>

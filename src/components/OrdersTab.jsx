@@ -1047,7 +1047,11 @@ export default function OrdersTab() {
               <div className="flex items-center gap-2">
                 {(() => {
                   const modalStatus = String(activeOrderModal.status || activeOrderModal.overallStatus || '').toLowerCase().trim();
-                  const isConfirmedOrder = modalStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(modalStatus);
+                  const hasPendingItems = Array.isArray(activeOrderModal.items) && activeOrderModal.items.length > 0 && activeOrderModal.items.some(it => {
+                    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                    return !itStatus || ['pending', 'placed', 'unconfirmed', 'draft'].includes(itStatus);
+                  });
+                  const isConfirmedOrder = modalStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(modalStatus) && !hasPendingItems;
                   const isLocked = !isConfirmedOrder;
 
                   return (
@@ -2318,7 +2322,7 @@ export default function OrdersTab() {
                 const tcsAmt = (ruleNum === 3 || isTaxFreeOrder) ? 0 : Math.round(((grossSale * tcsRate) / 100) * 100) / 100;
 
                 // 5. Delivery Charges + 18% GST (Rule 2 & Rule 4: Client Norms)
-                const isAbove400 = (grossSale > 400 || Number(activeOrderModal.total || activeOrderModal.totalAmount || 0) > 400);
+                const isAbove400 = (grossSale >= 301 || Number(activeOrderModal.total || activeOrderModal.totalAmount || 0) >= 301);
                 let delivBorneBy = activeOrderModal.deliveryChargeBorneBy;
                 if (!delivBorneBy) {
                   if (isAbove400) delivBorneBy = 'admin';
@@ -2346,7 +2350,7 @@ export default function OrdersTab() {
                   totalDelivDed = Math.round((delivFeeAmt + delivGstAmt) * 100) / 100;
                   delivStatusNote = `सेलर वहन (कूरियर ₹${delivFeeAmt.toFixed(2)} + ${orderProductGstRate}% GST ₹${delivGstAmt.toFixed(2)})`;
                 } else if (isAbove400) {
-                  delivStatusNote = '₹400+ ऑर्डर पर एडमिन वहन करता है — सेलर से ₹0 कटौती';
+                  delivStatusNote = '₹301+ ऑर्डर पर एडमिन वहन करता है — सेलर से ₹0 कटौती';
                 } else if (delivBorneBy === 'customer') {
                   delivStatusNote = 'ग्राहक द्वारा वहन — सेलर से ₹0 कटौती';
                 } else {
