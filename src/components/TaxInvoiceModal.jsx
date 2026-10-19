@@ -533,6 +533,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   const items = activeSellerGroup ? activeSellerGroup.items : allOrderItems;
 
+  const activeSellerStatusRaw = (
+    items.find(i => {
+      const s = String(i.status || '').toLowerCase().trim();
+      return s && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(s);
+    })?.status ||
+    items[0]?.status ||
+    order.overallStatus ||
+    order.status ||
+    'Confirmed'
+  );
+  const activeSellerStatusLabel = String(activeSellerStatusRaw)
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+
   const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
   const normStatus = rawStatus.replace(/[\s-]+/g, '_');
   const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || Boolean(order.isCancelled) || Boolean(order.cancelledAt);
@@ -1293,15 +1309,29 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                     }`}
                   >
                     <span>{grp.storeName}</span>
-                    {grp.hasConfirmedItems ? (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        Confirmed ({grp.items.length})
-                      </span>
-                    ) : (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-0.5">
-                        <Lock size={9} /> Pending ({grp.items.length})
-                      </span>
-                    )}
+                    {(() => {
+                      const grpStatusRaw = (
+                        grp.items.find(i => {
+                          const s = String(i.status || '').toLowerCase().trim();
+                          return s && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(s);
+                        })?.status ||
+                        grp.items[0]?.status ||
+                        (grp.hasConfirmedItems ? 'Confirmed' : 'Pending')
+                      );
+                      const grpStatusLabel = grpStatusRaw
+                        ? String(grpStatusRaw).replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+                        : (grp.hasConfirmedItems ? 'Confirmed' : 'Pending');
+
+                      return grp.hasConfirmedItems ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          {grpStatusLabel} ({grp.items.length})
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-0.5">
+                          <Lock size={9} /> Pending ({grp.items.length})
+                        </span>
+                      );
+                    })()}
                   </button>
                 );
               })}
@@ -1383,7 +1413,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Billed To (Customer / Institution)</span>
                   <p className="font-extrabold text-gray-900 text-sm">{stripCustomerPhoneFromAddress(order.schoolName || (typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || order.contactPerson || 'School Representative')))}</p>
                   <p className="text-gray-600 mt-0.5">{stripCustomerPhoneFromAddress(order.deliveryLocation || order.location || formattedAddressStr)}</p>
-                  <p className="text-gray-500 mt-1">Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId || order._id}</strong> | Payment: <strong>{order.paymentMethod || 'Institutional Procurement / Advance ESCROW'}</strong></p>
+                  <p className="text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                    <span>Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId || order._id}</strong></span>
+                    <span>•</span>
+                    <span>Payment: <strong>{order.paymentMethod || 'Institutional Procurement / Advance ESCROW'}</strong></span>
+                    <span>•</span>
+                    <span>Status: <strong className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px]">{activeSellerStatusLabel}</strong></span>
+                  </p>
                 </div>
               </div>
             );
@@ -1415,7 +1451,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                     <tr key={idx} className="hover:bg-gray-50/50">
                       <td className="py-2.5 px-3">
                         <p className="font-bold text-gray-900">{item.name}</p>
-                        <p className="text-[10px] text-gray-400">{item.category || 'School Supply'}</p>
+                        <div className="flex items-center gap-1.5 text-[10px] text-gray-400 flex-wrap">
+                          <span>{item.category || 'School Supply'}</span>
+                          {item.status && (
+                            <>
+                              <span>•</span>
+                              <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px]">
+                                {String(item.status).replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2.5 px-3">
                         <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={sellerName}>
@@ -1674,6 +1720,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 </div>
 
                 <div className="space-y-1.5 text-gray-600">
+                  <div className="flex justify-between items-center">
+                    <span>Order / Fulfillment Status:</span>
+                    <strong className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">{activeSellerStatusLabel}</strong>
+                  </div>
                   <div className="flex justify-between items-center">
                     <span>Payment Mode:</span>
                     <strong className="text-gray-900 font-sans">{order.paymentMethod || 'Cash on Delivery (COD)'} ({order.paymentStatus || 'Pending'})</strong>
