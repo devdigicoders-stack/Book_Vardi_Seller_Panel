@@ -351,7 +351,8 @@ export default function FinanceTab() {
             : Math.round(((gross * 0.5) / 100) * 100) / 100);
 
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const isAbove400 = ordTotalVal >= 301;
+      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+      const isAbove400 = ordTotalVal >= orderThreshold;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
       if (!deliveryChargeBorneBy) {
@@ -455,7 +456,8 @@ export default function FinanceTab() {
 
       const gstTcs = isRule3 ? 0 : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const isAbove400 = ordTotalVal >= 301;
+      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+      const isAbove400 = ordTotalVal >= orderThreshold;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
       if (!deliveryChargeBorneBy) {
@@ -531,7 +533,8 @@ export default function FinanceTab() {
         const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
         const isThirdParty = o.isThirdParty === true || rawDeliveryMode.includes('third') || rawDeliveryMode.includes('courier') || (hasCourier && !rawDeliveryMode.includes('self'));
         const ordTotalVal = Number(o.totalAmount || o.total || gross);
-        const isAbove400 = ordTotalVal >= 301;
+        const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+        const isAbove400 = ordTotalVal >= orderThreshold;
 
         let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
         if (!deliveryChargeBorneBy) {
@@ -593,7 +596,8 @@ export default function FinanceTab() {
         : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
 
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const isAbove400 = ordTotalVal >= 301;
+      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+      const isAbove400 = ordTotalVal >= orderThreshold;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
       if (!deliveryChargeBorneBy) {
@@ -1182,7 +1186,7 @@ export default function FinanceTab() {
                           </span>
                           {txn.isThirdParty && txn.isAbove400 && (
                             <span className="text-teal-800 font-semibold bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200">
-                              ≥₹301 Free Deliv.
+                              ≥₹{txn.freeDeliveryThreshold || 401} Free Deliv.
                             </span>
                           )}
                           {txn.deliveryDeduction > 0 && (

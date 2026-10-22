@@ -284,15 +284,16 @@ export default function OrdersTab() {
   const hasActiveReturnRequest = (order) => {
     if (!order) return false;
     const req = order.returnRequest;
+    let hasReq = false;
     if (req && typeof req === 'object') {
       const type = req.requestType || req.type;
       const status = String(req.status || '').toLowerCase().trim();
       const invalidStatuses = ['', 'none', 'n/a', 'no_request', 'normal', 'null', 'undefined'];
       
-      if (type && !['none', 'n/a', ''].includes(String(type).toLowerCase())) return true;
-      if (status && !invalidStatuses.includes(status)) return true;
-      if (req.requestedAt) return true;
-      if (req.reason && req.reason !== 'N/A' && req.reason.trim() !== '') return true;
+      if (type && !['none', 'n/a', ''].includes(String(type).toLowerCase())) hasReq = true;
+      else if (status && !invalidStatuses.includes(status)) hasReq = true;
+      else if (req.requestedAt) hasReq = true;
+      else if (req.reason && req.reason !== 'N/A' && req.reason.trim() !== '') hasReq = true;
     }
     const s = String(order.status || order.rawStatus || '').toLowerCase();
     const returnStatuses = [
@@ -301,7 +302,29 @@ export default function OrdersTab() {
       'refund_initiated', 'refund_processed', 'refund_completed', 'exchanged', 'exchange_dispatched',
       'refund_requested', 'refunded'
     ];
-    return returnStatuses.includes(s);
+    if (returnStatuses.includes(s)) hasReq = true;
+
+    if (!hasReq) return false;
+
+    // Multi-seller combine order check: Does this return/exchange belong to an item sold by the current seller?
+    if (sellerUser && Array.isArray(order.items) && order.items.length > 0) {
+      const reqItemId = req?.itemId;
+      if (reqItemId) {
+        const targetItem = order.items.find(it => String(it._id || it.id || it.productId) === String(reqItemId));
+        if (targetItem) {
+          return isItemBelongingToCurrentSeller(targetItem);
+        }
+      }
+      const myItems = order.items.filter(isItemBelongingToCurrentSeller);
+      if (myItems.length > 0) {
+        return myItems.some(it => {
+          const itSt = String(it.status || '').toLowerCase();
+          return itSt.includes('return') || itSt.includes('exchange') || itSt.includes('refund');
+        }) || (myItems.length === order.items.length && hasReq);
+      }
+    }
+
+    return hasReq;
   };
 
   const isReturnExchangeOrder = (order) => {
@@ -1189,23 +1212,32 @@ export default function OrdersTab() {
                           )}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                          <div className="bg-white p-2.5 rounded-lg border border-purple-100">
-                            <span className="text-[10px] font-bold uppercase text-purple-600 block">Original Item to Collect:</span>
-                            <strong className="text-gray-900">{activeOrderModal.returnRequest?.itemName || activeOrderModal.items?.[0]?.name}</strong>
-                            <div className="text-[11px] text-gray-600 mt-0.5 font-mono">
-                              Spec: {activeOrderModal.items?.[0]?.size ? `Size ${activeOrderModal.items?.[0]?.size}` : (activeOrderModal.returnRequest?.isMeterBased ? `${activeOrderModal.items?.[0]?.quantity}m` : 'Base Item')} • Price: ₹{activeOrderModal.returnRequest?.originalItemPrice || activeOrderModal.items?.[0]?.price}
-                            </div>
-                          </div>
+                        {(() => {
+                          const targetReturnItem = (activeOrderModal.items || []).find(it => 
+                            (activeOrderModal.returnRequest?.itemId && String(it._id || it.id || it.productId) === String(activeOrderModal.returnRequest.itemId)) ||
+                            (activeOrderModal.returnRequest?.itemName && it.name === activeOrderModal.returnRequest.itemName)
+                          ) || activeOrderModal.items?.[0] || {};
 
-                          <div className="bg-white p-2.5 rounded-lg border border-purple-100">
-                            <span className="text-[10px] font-bold uppercase text-indigo-600 block">Replacement Item to Send:</span>
-                            <strong className="text-gray-900">{activeOrderModal.returnRequest?.itemName || activeOrderModal.items?.[0]?.name}</strong>
-                            <div className="text-[11px] text-indigo-900 font-extrabold mt-0.5 font-mono">
-                              Requested: {activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength} Meter(s)` : (activeOrderModal.returnRequest?.exchangeSize || 'Replacement')} • Price: ₹{activeOrderModal.returnRequest?.replacementItemPrice || activeOrderModal.returnRequest?.originalItemPrice || activeOrderModal.items?.[0]?.price}
+                          return (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <div className="bg-white p-2.5 rounded-lg border border-purple-100">
+                                <span className="text-[10px] font-bold uppercase text-purple-600 block">Original Item to Collect:</span>
+                                <strong className="text-gray-900">{activeOrderModal.returnRequest?.itemName || targetReturnItem?.name}</strong>
+                                <div className="text-[11px] text-gray-600 mt-0.5 font-mono">
+                                  Spec: {targetReturnItem?.size ? `Size ${targetReturnItem.size}` : (activeOrderModal.returnRequest?.isMeterBased ? `${targetReturnItem?.quantity}m` : 'Base Item')} • Price: ₹{activeOrderModal.returnRequest?.originalItemPrice || targetReturnItem?.finalPrice || targetReturnItem?.price || 0}
+                                </div>
+                              </div>
+
+                              <div className="bg-white p-2.5 rounded-lg border border-purple-100">
+                                <span className="text-[10px] font-bold uppercase text-indigo-600 block">Replacement Item to Send:</span>
+                                <strong className="text-gray-900">{activeOrderModal.returnRequest?.itemName || targetReturnItem?.name}</strong>
+                                <div className="text-[11px] text-indigo-900 font-extrabold mt-0.5 font-mono">
+                                  Requested: {activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength} Meter(s)` : (activeOrderModal.returnRequest?.exchangeSize || 'Replacement')} • Price: ₹{activeOrderModal.returnRequest?.replacementItemPrice || activeOrderModal.returnRequest?.originalItemPrice || targetReturnItem?.finalPrice || targetReturnItem?.price || 0}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
+                          );
+                        })()}
 
                         <div className="text-[11px] rounded-lg p-2 bg-white/80 border border-purple-100 font-semibold text-purple-950">
                           {activeOrderModal.returnRequest?.priceAdjustmentType === 'extra_payment' ? (
@@ -2035,11 +2067,15 @@ export default function OrdersTab() {
                                 return isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
                               })()} {item.size ? `• Size: ${item.size}` : ''} {item.color ? `• Color: ${item.color}` : ''}
                             </div>
-                            {Number(item.offerDiscount || item.discount || 0) > 0 && (
-                              <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
-                                <span>🏷️ Coupon {item.couponCode ? `(${item.couponCode})` : ''}: -₹{Number(item.offerDiscount || item.discount).toFixed(2)}</span>
-                              </div>
-                            )}
+                            {(() => {
+                              const itDisc = Number(item.offerDiscount || item.discount || 0) || (Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice) ? Math.round((Number(item.price) - Number(item.finalPrice)) * Number(item.quantity || 1) * 100) / 100 : 0);
+                              if (itDisc <= 0) return null;
+                              return (
+                                <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
+                                  <span>🏷️ Coupon {item.couponCode ? `(${item.couponCode})` : ''}: -₹{itDisc.toFixed(2)} off</span>
+                                </div>
+                              );
+                            })()}
                             {!isMyItem && (
                               <div className="text-[10px] text-teal-800 font-bold flex items-center gap-1 mt-0.5">
                                 <Store size={11} className="text-teal-600" />
@@ -2103,14 +2139,19 @@ export default function OrdersTab() {
                             )}
                           </div>
                           <div className="font-bold text-gray-900 text-xs min-w-[50px] text-right">
-                            {Number(item.offerDiscount || item.discount || 0) > 0 ? (
-                              <div>
-                                <span className="line-through text-gray-400 text-[10px] mr-1">₹{(Number(item.price || 0) * Number(item.quantity || 1))}</span>
-                                <span className="text-emerald-700">₹{Math.max(0, (Number(item.price || 0) * Number(item.quantity || 1)) - Number(item.offerDiscount || item.discount || 0)).toFixed(2)}</span>
-                              </div>
-                            ) : (
-                              `₹${(Number(item.price || 0) * Number(item.quantity || 1))}`
-                            )}
+                            {(() => {
+                              const itDisc = Number(item.offerDiscount || item.discount || 0) || (Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice) ? Math.round((Number(item.price) - Number(item.finalPrice)) * Number(item.quantity || 1) * 100) / 100 : 0);
+                              const grossLine = Math.round((Number(item.price || 0) * Number(item.quantity || 1)) * 100) / 100;
+                              if (itDisc > 0) {
+                                return (
+                                  <div>
+                                    <span className="line-through text-gray-400 text-[10px] mr-1">₹{grossLine.toFixed(2)}</span>
+                                    <span className="text-emerald-700">₹{Math.max(0, grossLine - itDisc).toFixed(2)}</span>
+                                  </div>
+                                );
+                              }
+                              return `₹${grossLine.toFixed(2)}`;
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -2121,23 +2162,47 @@ export default function OrdersTab() {
 
               {/* Summary Footer & Complete Itemized Price Breakdown */}
               {(() => {
-                const subtotalVal = Number(activeOrderModal.sellerSubtotal || activeOrderModal.subtotal || activeOrderModal.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || activeOrderModal.total || 0);
+                const myItems = (activeOrderModal.items || []).filter(isItemBelongingToCurrentSeller);
+                const myItemsSubtotal = myItems.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+                const subtotalVal = Number(activeOrderModal.sellerSubtotal || (myItems.length > 0 ? myItemsSubtotal : null) || activeOrderModal.subtotal || activeOrderModal.total || 0);
                 const shipVal = Number(activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 0);
                 const couponVal = Number(activeOrderModal.discountAmount ?? activeOrderModal.discount ?? 0);
                 const codFeeVal = Number(activeOrderModal.codFee ?? activeOrderModal.codCharges ?? 0);
-                const grandVal = Number(activeOrderModal.total || activeOrderModal.totalAmount || (subtotalVal + shipVal + codFeeVal - couponVal));
+                const grandVal = Math.max(0, Math.round((subtotalVal + shipVal + codFeeVal - couponVal) * 100) / 100);
 
                 let totalTaxable = 0;
                 let totalTax = 0;
                 const itemsRawSum = (activeOrderModal.items || []).reduce((acc, it) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-                const hasPerItemDiscount = (activeOrderModal.items || []).some(it => Number(it.offerDiscount || it.discount || 0) > 0);
+                const hasPerItemDiscount = (activeOrderModal.items || []).some(
+                  it => (it.offerDiscount !== undefined && it.offerDiscount !== null && !isNaN(Number(it.offerDiscount)) && Number(it.offerDiscount) > 0) ||
+                        (it.discount !== undefined && it.discount !== null && !isNaN(Number(it.discount)) && Number(it.discount) > 0) ||
+                        Boolean(it.couponCode) ||
+                        (Number(it.finalPrice) > 0 && Number(it.price) > Number(it.finalPrice))
+                );
+                const isProductSpecificCouponCalc = Boolean(
+                  activeOrderModal.couponDetails?.applicableScope === 'specific_product' ||
+                  (Array.isArray(activeOrderModal.couponDetails?.applicableProducts) && activeOrderModal.couponDetails.applicableProducts.length > 0)
+                );
+                const eligibleProductIdsCalc = new Set(
+                  (activeOrderModal.couponDetails?.applicableProducts || [activeOrderModal.couponDetails?.specificProductId])
+                    .filter(Boolean)
+                    .map(id => String(id))
+                );
 
                 (activeOrderModal.items || []).forEach(item => {
                   const qty = Number(item.quantity || 1);
                   const unitPrice = Number(item.price || 0);
-                  const itemDiscount = Number(item.offerDiscount || item.discount || 0) > 0
-                    ? Number(item.offerDiscount || item.discount)
-                    : (!hasPerItemDiscount && couponVal > 0 && itemsRawSum > 0 ? (couponVal * ((unitPrice * qty) / itemsRawSum)) : 0);
+                  const isEligible = !isProductSpecificCouponCalc || eligibleProductIdsCalc.has(String(item.productId || item.id || item._id || ''));
+                  let itemDiscount = 0;
+                  if (hasPerItemDiscount) {
+                    itemDiscount = Number(item.offerDiscount || item.discount || 0);
+                    if (itemDiscount === 0 && Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice)) {
+                      itemDiscount = Math.round((Number(item.price) - Number(item.finalPrice)) * qty * 100) / 100;
+                    }
+                  } else if (couponVal > 0 && itemsRawSum > 0 && isEligible) {
+                    itemDiscount = Math.round((couponVal * ((unitPrice * qty) / itemsRawSum)) * 100) / 100;
+                  }
+                  itemDiscount = Math.min(unitPrice * qty, Math.max(0, itemDiscount));
                   const grossPrice = Math.max(0, (unitPrice * qty) - itemDiscount);
                   const gstRate = Number(item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.gst ?? 5);
                   if (gstRate > 0) {
@@ -2302,8 +2367,33 @@ export default function OrdersTab() {
                   ruleColor = 'bg-purple-100 text-purple-950 border-purple-300';
                 }
 
-                const grossSale = Number(activeOrderModal.sellerSubtotal || activeOrderModal.subtotal || activeOrderModal.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || activeOrderModal.total || 0);
-                const commRate = Number(activeOrderModal.commissionRate ?? activeOrderModal.sellerCommissionRate ?? activeOrderModal.items?.[0]?.commissionRate ?? 10);
+                const isExchangeReq = Boolean(
+                  activeOrderModal.returnRequest?.type === 'exchange' ||
+                  activeOrderModal.returnRequest?.requestType === 'exchange' ||
+                  String(activeOrderModal.overallStatus || activeOrderModal.status || '').toLowerCase().includes('exchange')
+                );
+                const exchangePriceDiff = Number(activeOrderModal.returnRequest?.priceDifference || 0);
+                const exchangePriceAdjType = activeOrderModal.returnRequest?.priceAdjustmentType || (exchangePriceDiff > 0 ? 'extra_payment' : exchangePriceDiff < 0 ? 'partial_refund' : 'none');
+                
+                // Check if the exchanged item belongs to this seller
+                const targetExchangeItem = (activeOrderModal.items || []).find(it => 
+                  (activeOrderModal.returnRequest?.itemId && String(it._id || it.id || it.productId) === String(activeOrderModal.returnRequest.itemId)) ||
+                  (activeOrderModal.returnRequest?.itemName && it.name === activeOrderModal.returnRequest.itemName)
+                );
+                const isMyItemExchanged = targetExchangeItem ? isItemBelongingToCurrentSeller(targetExchangeItem) : true;
+                const exchangeAdjustmentVal = (isExchangeReq && isMyItemExchanged)
+                  ? (exchangePriceAdjType === 'extra_payment' ? Math.abs(exchangePriceDiff) : (exchangePriceAdjType === 'partial_refund' ? -Math.abs(exchangePriceDiff) : 0))
+                  : 0;
+
+                const mySellerItems = (activeOrderModal.items || []).filter(isItemBelongingToCurrentSeller);
+                const mySellerItemsGross = mySellerItems.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+                const mySellerDiscounts = mySellerItems.reduce((acc, i) => acc + (Number(i.offerDiscount || i.discount) || (Number(i.finalPrice) > 0 && Number(i.price) > Number(i.finalPrice) ? Math.round((Number(i.price) - Number(i.finalPrice)) * Number(i.quantity || 1) * 100) / 100 : 0)), 0);
+                const totalOrderDiscount = Number(activeOrderModal.discountAmount ?? activeOrderModal.discount ?? 0);
+                const effectiveSellerDiscount = mySellerDiscounts > 0 ? mySellerDiscounts : (mySellerItems.length === (activeOrderModal.items || []).length ? totalOrderDiscount : 0);
+                const rawSellerSubtotal = Number(activeOrderModal.sellerSubtotal || (mySellerItems.length > 0 ? mySellerItemsGross : null) || activeOrderModal.subtotal || activeOrderModal.total || 0);
+                const baseGross = Math.max(0, Math.round((rawSellerSubtotal - effectiveSellerDiscount) * 100) / 100);
+                const grossSale = Math.max(0, Math.round((baseGross + exchangeAdjustmentVal) * 100) / 100);
+                const commRate = Number(activeOrderModal.commissionRate ?? activeOrderModal.sellerCommissionRate ?? mySellerItems[0]?.commissionRate ?? activeOrderModal.items?.[0]?.commissionRate ?? 10);
                 
                 // 1. Portal Commission
                 const portalComm = Math.round(((grossSale * commRate) / 100) * 100) / 100;
@@ -2322,10 +2412,11 @@ export default function OrdersTab() {
                 const tcsAmt = (ruleNum === 3 || isTaxFreeOrder) ? 0 : Math.round(((grossSale * tcsRate) / 100) * 100) / 100;
 
                 // 5. Delivery Charges + 18% GST (Rule 2 & Rule 4: Client Norms)
-                const isAbove400 = (grossSale >= 301 || Number(activeOrderModal.total || activeOrderModal.totalAmount || 0) >= 301);
+                const orderThreshold = Number(activeOrderModal.freeDeliveryThreshold ?? activeOrderModal.minOrderFreeShipping ?? 401);
+                const isAboveThreshold = (grossSale >= orderThreshold || Number(activeOrderModal.total || activeOrderModal.totalAmount || 0) >= orderThreshold || Number(activeOrderModal.subtotal || 0) >= orderThreshold);
                 let delivBorneBy = activeOrderModal.deliveryChargeBorneBy;
                 if (!delivBorneBy) {
-                  if (isAbove400) delivBorneBy = 'admin';
+                  if (isAboveThreshold) delivBorneBy = 'admin';
                   else if (activeOrderModal.isDeliveryBorneBySeller || activeOrderModal.deliveryBorneBy === 'seller') delivBorneBy = 'seller';
                   else if (Number(activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 0) > 0) delivBorneBy = 'customer';
                   else delivBorneBy = isThirdParty ? 'seller' : 'admin';
@@ -2343,14 +2434,14 @@ export default function OrdersTab() {
                 }).filter(r => !isNaN(r));
                 const orderProductGstRate = itemGstRates.length > 0 ? Math.max(...itemGstRates) : 5;
 
-                if (isThirdParty && delivBorneBy === 'seller' && !isAbove400) {
+                if (isThirdParty && delivBorneBy === 'seller' && !isAboveThreshold) {
                   const rawDeliv = Math.max(0, Number(activeOrderModal.deliveryCharge ?? activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 40));
                   delivFeeAmt = Math.round(rawDeliv * 100) / 100;
                   delivGstAmt = Math.round(((delivFeeAmt * orderProductGstRate) / 100) * 100) / 100;
                   totalDelivDed = Math.round((delivFeeAmt + delivGstAmt) * 100) / 100;
                   delivStatusNote = `सेलर वहन (कूरियर ₹${delivFeeAmt.toFixed(2)} + ${orderProductGstRate}% GST ₹${delivGstAmt.toFixed(2)})`;
-                } else if (isAbove400) {
-                  delivStatusNote = '₹301+ ऑर्डर पर एडमिन वहन करता है — सेलर से ₹0 कटौती';
+                } else if (isAboveThreshold) {
+                  delivStatusNote = `₹${orderThreshold}+ ऑर्डर पर एडमिन वहन करता है — सेलर से ₹0 कटौती`;
                 } else if (delivBorneBy === 'customer') {
                   delivStatusNote = 'ग्राहक द्वारा वहन — सेलर से ₹0 कटौती';
                 } else {
@@ -2390,6 +2481,23 @@ export default function OrdersTab() {
                         <span className="font-mono font-bold text-gray-950">₹{grossSale.toFixed(2)}</span>
                       </div>
 
+                      {isExchangeReq && isMyItemExchanged && (
+                        <div className="flex justify-between text-purple-900 bg-purple-100/60 p-1.5 rounded border border-purple-200">
+                          <span className="flex items-center gap-1">
+                            <span>🔄</span> Exchange Adjustment ({activeOrderModal.returnRequest?.itemName || 'Item'}):
+                          </span>
+                          <span className="font-mono font-bold">
+                            {exchangeAdjustmentVal > 0 ? (
+                              <span className="text-amber-800">+₹{exchangeAdjustmentVal.toFixed(2)} (अतिरिक्त कैश)</span>
+                            ) : exchangeAdjustmentVal < 0 ? (
+                              <span className="text-emerald-800">−₹{Math.abs(exchangeAdjustmentVal).toFixed(2)} (आंशिक रिफंड)</span>
+                            ) : (
+                              <span className="text-blue-800">मूल्य बराबर (₹0 Diff)</span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="flex justify-between text-gray-700">
                         <span>• Portal Commission ({commRate}% पोर्टल कमीशन):</span>
                         <span className="font-mono font-semibold text-amber-900">−₹{portalComm.toFixed(2)}</span>
@@ -2422,17 +2530,28 @@ export default function OrdersTab() {
                     </div>
 
                     {/* Formula & Final Settlement */}
-                    <div className="pt-2 border-t border-amber-300 flex items-center justify-between">
+                    <div className="pt-2 border-t border-amber-300 flex items-center justify-between flex-wrap gap-2">
                       <div>
                         <div className="font-extrabold text-amber-950 text-xs">
-                          {ruleNum === 3 ? 'Portal Due / Settlement (माइनस)' : 'Final Seller Settlement (शुद्ध सेलर भुगतान)'}
+                          {ruleNum === 3 ? '⚠️ पोर्टल को देय कमीशन/टैक्स (Payable to Portal)' : 'Final Seller Settlement (शुद्ध सेलर भुगतान)'}
                         </div>
-                        <div className="text-[9.5px] text-amber-800">
-                          Gross (₹{grossSale.toFixed(2)}) − Deductions (₹{totalDeductions.toFixed(2)})
+                        <div className="text-[10px] text-amber-900 mt-0.5">
+                          {ruleNum === 3 ? (
+                            <span>सेलर के पास कुल कैश: ₹{grossSale.toFixed(2)} • <strong>सेलर की शुद्ध बचत: ₹{(grossSale - totalDeductions).toFixed(2)}</strong></span>
+                          ) : (
+                            <span>Gross (₹{grossSale.toFixed(2)}) − Deductions (₹{totalDeductions.toFixed(2)})</span>
+                          )}
                         </div>
                       </div>
-                      <div className={`text-base font-black font-mono ${ruleNum === 3 ? 'text-rose-700' : 'text-emerald-800'}`}>
-                        {ruleNum === 3 ? `−₹${Math.abs(finalNet).toFixed(2)}` : `₹${finalNet.toFixed(2)}`}
+                      <div className="text-right">
+                        <div className={`text-base font-black font-mono ${ruleNum === 3 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                          {ruleNum === 3 ? `−₹${Math.abs(finalNet).toFixed(2)}` : `₹${finalNet.toFixed(2)}`}
+                        </div>
+                        {ruleNum === 3 && (
+                          <div className="text-[10px] font-bold text-emerald-800 font-mono">
+                            (सेलर शुद्ध बचत: ₹{(grossSale - totalDeductions).toFixed(2)})
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
