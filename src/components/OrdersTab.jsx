@@ -2181,18 +2181,36 @@ export default function OrdersTab() {
                 );
                 const isProductSpecificCouponCalc = Boolean(
                   activeOrderModal.couponDetails?.applicableScope === 'specific_product' ||
-                  (Array.isArray(activeOrderModal.couponDetails?.applicableProducts) && activeOrderModal.couponDetails.applicableProducts.length > 0)
+                  activeOrderModal.couponDetails?.applicableScope === 'specific_kit' ||
+                  activeOrderModal.couponDetails?.specificProductId ||
+                  activeOrderModal.couponDetails?.specificKitId ||
+                  activeOrderModal.couponDetails?.specificProductName ||
+                  activeOrderModal.couponDetails?.specificKitTitle ||
+                  (Array.isArray(activeOrderModal.couponDetails?.applicableProducts) && activeOrderModal.couponDetails.applicableProducts.length > 0) ||
+                  (Array.isArray(activeOrderModal.couponDetails?.applicableKits) && activeOrderModal.couponDetails.applicableKits.length > 0)
                 );
                 const eligibleProductIdsCalc = new Set(
-                  (activeOrderModal.couponDetails?.applicableProducts || [activeOrderModal.couponDetails?.specificProductId])
+                  (activeOrderModal.couponDetails?.applicableProducts || [])
+                    .concat(activeOrderModal.couponDetails?.specificProductId ? [activeOrderModal.couponDetails.specificProductId] : [])
+                    .concat(activeOrderModal.couponDetails?.applicableKits || [])
+                    .concat(activeOrderModal.couponDetails?.specificKitId ? [activeOrderModal.couponDetails.specificKitId] : [])
                     .filter(Boolean)
-                    .map(id => String(id))
+                    .map(id => String(id).toLowerCase().trim())
                 );
+                const specProdNameCalc = String(activeOrderModal.couponDetails?.specificProductName || '').toLowerCase().trim();
+                const specKitTitleCalc = String(activeOrderModal.couponDetails?.specificKitTitle || '').toLowerCase().trim();
 
                 (activeOrderModal.items || []).forEach(item => {
                   const qty = Number(item.quantity || 1);
                   const unitPrice = Number(item.price || 0);
-                  const isEligible = !isProductSpecificCouponCalc || eligibleProductIdsCalc.has(String(item.productId || item.id || item._id || ''));
+                  const itemCandidateIds = [item.productId, item.id, item._id, item.customId].filter(Boolean).map(id => String(id).toLowerCase().trim());
+                  const isIdMatched = itemCandidateIds.some(id => eligibleProductIdsCalc.has(id));
+                  const itemNameLower = String(item.name || '').toLowerCase();
+                  const isNameMatched = Boolean(
+                    (specProdNameCalc && itemNameLower.includes(specProdNameCalc)) ||
+                    (specKitTitleCalc && itemNameLower.includes(specKitTitleCalc))
+                  );
+                  const isEligible = isProductSpecificCouponCalc ? (isIdMatched || isNameMatched) : true;
                   let itemDiscount = 0;
                   if (hasPerItemDiscount) {
                     itemDiscount = Number(item.offerDiscount || item.discount || 0);
