@@ -658,6 +658,10 @@ export const SellerDataProvider = ({ children }) => {
         date: resolvedDate || o.date,
         status: resolvedStatus,
         overallStatus: resolvedStatus,
+        paymentStatus: (
+          String(resolvedStatus || '').toLowerCase().includes('delivered') ||
+          String(o.paymentStatus || '').toLowerCase() === 'paid'
+        ) ? 'Paid' : (o.paymentStatus || (String(o.paymentMethod || '').toUpperCase().includes('COD') ? 'Pending' : 'Paid')),
         shippingAddress: typeof o.shippingAddress === 'object' && o.shippingAddress !== null
           ? [
               o.shippingAddress.name || o.shippingAddress.fullName,
@@ -2008,14 +2012,25 @@ export const SellerDataProvider = ({ children }) => {
 
   const updateOrderStatus = async (id, status, details = {}) => {
     checkPermission();
-    editOrder(id, { status, overallStatus: status, ...details });
+    const isMarkingDelivered = String(status || '').toLowerCase().includes('delivered');
+    const optimisticPayload = {
+      status,
+      overallStatus: status,
+      ...(isMarkingDelivered ? { paymentStatus: 'Paid' } : {}),
+      ...details
+    };
+    editOrder(id, optimisticPayload);
     try {
       const res = await updateOrderStatusApi(id, status, details);
       if (res && (res.order || res.success)) {
         const updatedOrder = res.order || {};
         // The seller's selected status is authoritative and final
         const finalStatus = status || updatedOrder.status || updatedOrder.overallStatus;
-        editOrder(id, { ...updatedOrder, status: finalStatus, overallStatus: finalStatus, ...details });
+        const finalIsDelivered = String(finalStatus || '').toLowerCase().includes('delivered');
+        const finalPaymentStatus = (finalIsDelivered || String(updatedOrder.paymentStatus || '').toLowerCase() === 'paid')
+          ? 'Paid'
+          : (updatedOrder.paymentStatus || (optimisticPayload.paymentStatus || 'Pending'));
+        editOrder(id, { ...updatedOrder, status: finalStatus, overallStatus: finalStatus, paymentStatus: finalPaymentStatus, ...details });
         showToast(`Order #${id} status updated to ${finalStatus}`);
       } else if (res && (res.success === false || res.message)) {
         showToast(`⚠️ ${res.message || 'Failed to update order status'}`);

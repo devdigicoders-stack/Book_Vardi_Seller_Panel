@@ -937,11 +937,17 @@ export default function OrdersTab() {
                       {/* Total */}
                       <td className="py-3.5 px-3">
                         <div className="font-extrabold text-gray-900 text-sm">₹{o.total}</div>
-                        <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                          o.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {o.paymentStatus || 'Paid'}
-                        </span>
+                        {(() => {
+                          const isDelivered = String(o.status || '').toLowerCase().includes('delivered') || String(o.overallStatus || '').toLowerCase().includes('delivered');
+                          const isPaid = String(o.paymentStatus || '').toLowerCase() === 'paid' || isDelivered;
+                          return (
+                            <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {isPaid ? 'Paid' : (o.paymentStatus || 'Pending')}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* Interactive Status Selector */}
@@ -2343,7 +2349,7 @@ export default function OrdersTab() {
                     <div className="pt-2 border-t border-teal-200 flex items-center justify-between">
                       <div>
                         <div className="font-bold text-teal-950">Total Payable Amount</div>
-                        <div className="text-[10px] text-teal-700">{activeOrderModal.paymentMethod} • {activeOrderModal.paymentStatus}</div>
+                        <div className="text-[10px] text-teal-700">{activeOrderModal.paymentMethod} • {((String(activeOrderModal.status || '').toLowerCase().includes('delivered') || String(activeOrderModal.paymentStatus || '').toLowerCase() === 'paid') ? 'Paid' : (activeOrderModal.paymentStatus || 'Pending'))}</div>
                       </div>
                       <div className="text-lg font-extrabold text-teal-900 font-mono">₹{grandVal.toFixed(2)}</div>
                     </div>
