@@ -29,7 +29,8 @@ import {
   ExternalLink,
   Copy,
   MessageSquare,
-  Download
+  Download,
+  XCircle
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import { SERVER_URL } from '../utils/api';

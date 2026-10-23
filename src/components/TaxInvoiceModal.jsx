@@ -1107,11 +1107,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const orderThreshold = Number(order.freeDeliveryThreshold ?? order.minOrderFreeShipping ?? 401);
   const isAboveThreshold = (settlementGross >= orderThreshold || grandTotal >= orderThreshold || Number(order.total || order.totalAmount || 0) >= orderThreshold || Number(order.subtotal || 0) >= orderThreshold);
   const isAbove400 = isAboveThreshold;
+  const customerShippingPaid = Number(shippingCost || order.shippingFee || order.shippingCost || order.shippingAmount || 0);
   let delivBorneBy = order.deliveryChargeBorneBy;
-  if (!delivBorneBy) {
+  if (!delivBorneBy || customerShippingPaid > 0) {
     if (isAboveThreshold) delivBorneBy = 'admin';
+    else if (customerShippingPaid > 0) delivBorneBy = 'customer';
     else if (order.isDeliveryBorneBySeller || order.deliveryBorneBy === 'seller') delivBorneBy = 'seller';
-    else if (shippingCost > 0 || Number(order.shippingFee ?? order.shippingCost ?? 0) > 0) delivBorneBy = 'customer';
     else delivBorneBy = isThirdParty ? 'seller' : 'admin';
   }
 
@@ -1120,9 +1121,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   let totalDeliveryDeduction = 0;
 
   if (!isSettlementReversed && isThirdParty && delivBorneBy === 'seller' && !isAbove400) {
-    deliveryChargeAmount = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? 40);
-    gstOnDeliveryAmount = Math.round(((deliveryChargeAmount * shippingGstRate) / 100) * 100) / 100;
-    totalDeliveryDeduction = Math.round((deliveryChargeAmount + gstOnDeliveryAmount) * 100) / 100;
+    const rawDeliveryFee = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? order.shippingFee ?? 49);
+    // Delivery charges are GST INCLUSIVE (no extra GST added on top)
+    totalDeliveryDeduction = Math.round(rawDeliveryFee * 100) / 100;
+    deliveryChargeAmount = Math.round((totalDeliveryDeduction / (1 + shippingGstRate / 100)) * 100) / 100;
+    gstOnDeliveryAmount = Math.round((totalDeliveryDeduction - deliveryChargeAmount) * 100) / 100;
   }
 
   const statutoryDeductions = isSettlementReversed ? 0 : Math.round((marketplaceCommission + gstOnCommission + tdsAmount + gstTcsAmount) * 100) / 100;
@@ -1589,7 +1592,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 })}
 
                 {/* Dedicated Delivery Charges Line Item */}
-                {shippingCost > 0 && (
+                {shippingCost > 0 ? (
                   <tr className="hover:bg-gray-50/50 bg-teal-50/15">
                     <td className="py-2.5 px-3">
                       <p className="font-bold text-gray-900">Delivery &amp; Shipping Charges</p>
@@ -1630,6 +1633,33 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-right font-bold text-gray-900 font-mono whitespace-nowrap pr-3.5">₹{shippingCost.toFixed(2)}</td>
+                  </tr>
+                ) : (
+                  <tr className="hover:bg-emerald-50/40 bg-emerald-50/20">
+                    <td className="py-2.5 px-3">
+                      <p className="font-bold text-emerald-950 flex items-center gap-1.5">
+                        <span>🚚</span> Delivery &amp; Shipping Charges
+                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-300">
+                          FREE Delivery
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-emerald-700">Order Policy (Admin Absorbed / Free Shipping Promotion)</p>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={resolvedSeller.storeName}>
+                        {resolvedSeller.storeName}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-gray-400">NA</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-gray-400 line-through">₹49.00</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹0.00</td>
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                      <span className="text-emerald-700 font-semibold text-[10px] block">0% GST</span>
+                      <span className="text-[9px] text-gray-400 block font-mono">₹0.00 (Exempt)</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-bold text-emerald-700 font-mono whitespace-nowrap pr-3.5">
+                      FREE (₹0.00)
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -1751,7 +1781,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   {isSettlementReversed ? (
                     <span className="font-mono text-teal-700 font-bold">₹0.00 (Waived)</span>
                   ) : totalDeliveryDeduction > 0 ? (
-                    <span className="font-mono text-rose-700">-₹{totalDeliveryDeduction.toFixed(2)} (₹{deliveryChargeAmount.toFixed(2)} + ₹{gstOnDeliveryAmount.toFixed(2)} GST {shippingGstRate}%)</span>
+                    <span className="font-mono text-rose-700">-₹{totalDeliveryDeduction.toFixed(2)} (कूरियर ₹${totalDeliveryDeduction.toFixed(2)} GST सहित / Base: ₹{deliveryChargeAmount.toFixed(2)} + ₹{gstOnDeliveryAmount.toFixed(2)} GST {shippingGstRate}%)</span>
+                  ) : delivBorneBy === 'customer' ? (
+                    <span className="font-mono text-teal-700 font-bold">₹0.00 (ग्राहक द्वारा वहन / Paid by Customer)</span>
                   ) : (
                     <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs ≥₹{orderThreshold})</span>
                   )}

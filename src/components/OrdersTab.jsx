@@ -2299,7 +2299,7 @@ export default function OrdersTab() {
                     <div className="flex justify-between text-gray-700">
                       <span>Delivery Charges:</span>
                       <span className="font-mono font-bold text-teal-800">
-                        {shipVal === 0 ? 'Not Applied (FREE)' : `+₹${shipVal.toFixed(2)}`}
+                        {shipVal === 0 ? 'FREE Delivery (₹0.00)' : `+₹${shipVal.toFixed(2)}`}
                       </span>
                     </div>
 
@@ -2435,14 +2435,15 @@ export default function OrdersTab() {
                 const tcsRate = (ruleNum === 3 || isTaxFreeOrder) ? 0 : 0.5;
                 const tcsAmt = (ruleNum === 3 || isTaxFreeOrder) ? 0 : Math.round(((grossSale * tcsRate) / 100) * 100) / 100;
 
-                // 5. Delivery Charges + 18% GST (Rule 2 & Rule 4: Client Norms)
+                // 5. Delivery Charges (Rule 2 & Rule 4: Client Norms)
                 const orderThreshold = Number(activeOrderModal.freeDeliveryThreshold ?? activeOrderModal.minOrderFreeShipping ?? 401);
                 const isAboveThreshold = (grossSale >= orderThreshold || Number(activeOrderModal.total || activeOrderModal.totalAmount || 0) >= orderThreshold || Number(activeOrderModal.subtotal || 0) >= orderThreshold);
+                const customerShippingPaid = Number(activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? activeOrderModal.shippingAmount ?? 0);
                 let delivBorneBy = activeOrderModal.deliveryChargeBorneBy;
-                if (!delivBorneBy) {
+                if (!delivBorneBy || customerShippingPaid > 0) {
                   if (isAboveThreshold) delivBorneBy = 'admin';
+                  else if (customerShippingPaid > 0) delivBorneBy = 'customer';
                   else if (activeOrderModal.isDeliveryBorneBySeller || activeOrderModal.deliveryBorneBy === 'seller') delivBorneBy = 'seller';
-                  else if (Number(activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 0) > 0) delivBorneBy = 'customer';
                   else delivBorneBy = isThirdParty ? 'seller' : 'admin';
                 }
 
@@ -2459,11 +2460,12 @@ export default function OrdersTab() {
                 const orderProductGstRate = itemGstRates.length > 0 ? Math.max(...itemGstRates) : 5;
 
                 if (isThirdParty && delivBorneBy === 'seller' && !isAboveThreshold) {
-                  const rawDeliv = Math.max(0, Number(activeOrderModal.deliveryCharge ?? activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 40));
-                  delivFeeAmt = Math.round(rawDeliv * 100) / 100;
-                  delivGstAmt = Math.round(((delivFeeAmt * orderProductGstRate) / 100) * 100) / 100;
-                  totalDelivDed = Math.round((delivFeeAmt + delivGstAmt) * 100) / 100;
-                  delivStatusNote = `सेलर वहन (कूरियर ₹${delivFeeAmt.toFixed(2)} + ${orderProductGstRate}% GST ₹${delivGstAmt.toFixed(2)})`;
+                  const rawDeliv = Math.max(0, Number(activeOrderModal.deliveryCharge ?? activeOrderModal.shippingFee ?? activeOrderModal.shippingCost ?? 49));
+                  // Delivery charges are GST INCLUSIVE (no extra GST added on top)
+                  totalDelivDed = Math.round(rawDeliv * 100) / 100;
+                  delivFeeAmt = Math.round((totalDelivDed / (1 + (orderProductGstRate / 100))) * 100) / 100;
+                  delivGstAmt = Math.round((totalDelivDed - delivFeeAmt) * 100) / 100;
+                  delivStatusNote = `सेलर वहन (कूरियर ₹${totalDelivDed.toFixed(2)} GST सहित / Base: ₹${delivFeeAmt.toFixed(2)} + ${orderProductGstRate}% GST ₹${delivGstAmt.toFixed(2)})`;
                 } else if (isAboveThreshold) {
                   delivStatusNote = `₹${orderThreshold}+ ऑर्डर पर एडमिन वहन करता है — सेलर से ₹0 कटौती`;
                 } else if (delivBorneBy === 'customer') {
@@ -2544,7 +2546,7 @@ export default function OrdersTab() {
 
                       <div className="flex justify-between text-gray-700 pt-1 border-t border-amber-200/70">
                         <div>
-                          <span>• Delivery Charges + 18% GST:</span>
+                          <span>• Delivery Charges (कूरियर डिलीवरी खर्च):</span>
                           <span className="text-[10px] text-amber-800 block font-medium">({delivStatusNote})</span>
                         </div>
                         <span className="font-mono font-bold text-rose-800 self-center">

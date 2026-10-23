@@ -354,43 +354,39 @@ export default function FinanceTab() {
       const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
       const isAbove400 = ordTotalVal >= orderThreshold;
 
+      const custShipping = Number(o.shippingAmount ?? o.shippingFee ?? o.shippingCost ?? 0);
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
-      if (!deliveryChargeBorneBy) {
+      if (!deliveryChargeBorneBy || custShipping > 0) {
         if (isAbove400) {
           deliveryChargeBorneBy = 'admin';
+        } else if (custShipping > 0) {
+          deliveryChargeBorneBy = 'customer';
         } else if (o.isDeliveryBorneBySeller || o.deliveryBorneBy === 'seller') {
           deliveryChargeBorneBy = 'seller';
-        } else if (Number(o.shippingAmount || o.shippingFee || 0) > 0) {
-          deliveryChargeBorneBy = 'customer';
         } else {
           deliveryChargeBorneBy = isThirdParty ? 'seller' : 'admin';
         }
       }
 
       let delivDeduction = 0;
-      if (isRule3) {
-        delivDeduction = 0; // Self-delivery by seller
+      if (isRule3 || deliveryChargeBorneBy === 'customer' || deliveryChargeBorneBy === 'admin' || isAbove400) {
+        delivDeduction = 0; // Self-delivery, customer-paid, or admin-borne
       } else if (o.settlement?.totalDeliveryDeduction !== undefined) {
         delivDeduction = Number(o.settlement.totalDeliveryDeduction);
       } else if (o.totalDeliveryDeduction !== undefined) {
         delivDeduction = Number(o.totalDeliveryDeduction);
       } else if (isThirdParty && deliveryChargeBorneBy === 'seller' && !isAbove400) {
-        const itemRates = (o.items || []).map(it => {
-          const cat = String(it.category || '').toLowerCase();
-          const isBook = cat.includes('book') || cat.includes('textbook') || String(it.name || '').toLowerCase().includes('book');
-          return Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? (isBook ? 0 : 5));
-        }).filter(r => !isNaN(r));
-        const ordProdGstRate = itemRates.length > 0 ? Math.max(...itemRates) : 5;
-        const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? 40));
-        delivDeduction = Math.round((rawDeliveryFee * (1 + (ordProdGstRate / 100))) * 100) / 100;
+        const rawDeliveryFee = Math.max(0, Number(o.deliveryCharge ?? o.shippingAmount ?? o.shippingFee ?? o.shippingCost ?? 49));
+        // Delivery charges are GST INCLUSIVE
+        delivDeduction = Math.round(rawDeliveryFee * 100) / 100;
       }
 
       const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
 
       // Rule 3: Cash collected by seller. Seller owes portal (-deductions).
-      // Rule 1 & 2: Portal collected cash online and pays seller (gross - deductions).
+      // Rule 1, 2 & 4: Portal collected cash (online or courier) and pays seller (gross - deductions).
       let finalNet;
-      if (o.settlement?.netSettlementAmount !== undefined) {
+      if (o.settlement?.netSettlementAmount !== undefined && (isRule3 ? o.settlement.netSettlementAmount <= 0 : o.settlement.netSettlementAmount >= 0)) {
         finalNet = Number(o.settlement.netSettlementAmount);
       } else if (isRule3) {
         finalNet = Math.round(-deductions * 100) / 100;
@@ -878,7 +874,7 @@ export default function FinanceTab() {
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-amber-800 font-bold">•</span>
-                <span><strong>Delivery Charges + 18% GST:</strong> डिलीवरी का खर्च और उस पर GST तभी काटें, जब यह खर्च सेलर के जिम्मे हो।</span>
+                <span><strong>Delivery Charges (कूरियर डिलीवरी खर्च - GST सहित):</strong> डिलीवरी का खर्च (GST सहित) तभी काटें, जब यह खर्च सेलर के जिम्मे हो।</span>
               </div>
               <div className="flex items-start gap-1.5 md:col-span-2 bg-amber-100 p-2.5 rounded-lg border border-amber-300 text-amber-950 font-medium">
                 <span className="font-extrabold text-amber-900 shrink-0">✨ ₹301 या अधिक के ऑर्डर पर:</span>
