@@ -1062,11 +1062,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const hasSelfDeliveryDetails = Boolean(
     order.selfDeliveryDetails?.deliveryPartnerToken || 
     order.selfDeliveryDetails?.deliveryPersonName ||
-    items.some(it => it.selfDeliveryDetails?.deliveryPartnerToken || it.selfDeliveryDetails?.deliveryPersonName)
+    order.deliveryOtp ||
+    items.some(it => it.selfDeliveryDetails?.deliveryPartnerToken || it.selfDeliveryDetails?.deliveryPersonName || it.deliveryOtp)
   );
 
+  const isExplicitSelf = rawMode.includes('self') || 
+                         order.settlementRule === 'COD_SELF_DELIVERY' || 
+                         items.some(it => it.settlementRule === 'COD_SELF_DELIVERY') || 
+                         Boolean((order.deliveryOtp || hasSelfDeliveryDetails) && !hasValidCourier);
+
   // Dynamic Third-Party vs Self-Delivery Resolution
-  const isThirdParty = rawMode.includes('third') || rawMode.includes('courier') || (hasValidCourier && !rawMode.includes('self'));
+  const isThirdParty = !isExplicitSelf && (rawMode.includes('third') || rawMode.includes('courier') || (hasValidCourier && !rawMode.includes('self')));
   const isSelf = !isThirdParty;
 
   // Active Status & Reversal Detection
@@ -1799,12 +1805,18 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <span className="font-mono text-sm font-black text-rose-800">₹0.00 (Reversed)</span>
                 </div>
               ) : isRule3CodSelf ? (
-                <div className="flex justify-between text-rose-700 font-black border-t border-rose-200 pt-1">
-                  <div>
-                    <span>Final Settlement (Owed to Portal):</span>
-                    <span className="text-[9px] text-rose-600 block font-normal">Adjusted from subsequent payouts</span>
+                <div className="space-y-1.5 border-t border-amber-300 pt-1.5">
+                  <div className="flex justify-between text-rose-700 font-extrabold text-xs">
+                    <div>
+                      <span>⚠️ Portal Commission/Taxes (Payable to Portal):</span>
+                      <span className="text-[9px] text-amber-900 block font-normal">Customer paid ₹{settlementGross.toFixed(2)} cash directly to seller</span>
+                    </div>
+                    <span className="font-mono text-xs font-black text-rose-700">-₹{totalDeductions.toFixed(2)}</span>
                   </div>
-                  <span className="font-mono text-xs font-extrabold">-₹{Math.abs(sellerSettlement).toFixed(2)}</span>
+                  <div className="flex justify-between text-emerald-800 font-black text-xs bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                    <span>सेलर शुद्ध बचत (Net Seller Retention):</span>
+                    <span className="font-mono text-emerald-800 font-black">₹{(settlementGross - totalDeductions).toFixed(2)}</span>
+                  </div>
                 </div>
               ) : (
                 <div className="flex justify-between text-emerald-800 font-black border-t border-amber-300 pt-1">
