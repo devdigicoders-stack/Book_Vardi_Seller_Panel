@@ -1071,8 +1071,16 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                          items.some(it => it.settlementRule === 'COD_SELF_DELIVERY') || 
                          Boolean((order.deliveryOtp || hasSelfDeliveryDetails) && !hasValidCourier);
 
+  const isExplicitThirdParty = order.settlementRule === 'COD_THIRD_PARTY_DELIVERY' ||
+                               order.settlementRule === 'ONLINE_THIRD_PARTY_DELIVERY' ||
+                               items.some(it => it.settlementRule === 'COD_THIRD_PARTY_DELIVERY' || it.settlementRule === 'ONLINE_THIRD_PARTY_DELIVERY') ||
+                               rawMode.includes('third') || 
+                               rawMode.includes('courier') || 
+                               hasValidCourier ||
+                               items.some(it => String(it.deliveryType || '').toLowerCase().includes('third') || Boolean(it.thirdPartyDetails?.courierName));
+
   // Dynamic Third-Party vs Self-Delivery Resolution
-  const isThirdParty = !isExplicitSelf && (rawMode.includes('third') || rawMode.includes('courier') || (hasValidCourier && !rawMode.includes('self')));
+  const isThirdParty = isExplicitThirdParty || !isExplicitSelf;
   const isSelf = !isThirdParty;
 
   // Active Status & Reversal Detection
