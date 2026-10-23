@@ -2362,11 +2362,24 @@ export default function OrdersTab() {
                 const isCod = String(activeOrderModal.paymentMethod || '').toUpperCase().includes('COD') || String(activeOrderModal.paymentMethod || '').toUpperCase().includes('CASH');
                 const rawDeliveryMode = String(activeOrderModal.deliveryMode || activeOrderModal.deliveryType || '').toLowerCase();
                 const hasCourier = Boolean(activeOrderModal.courierName && activeOrderModal.courierName !== 'N/A' && activeOrderModal.courierName !== '');
-                const isThirdParty = activeOrderModal.isThirdParty === true || 
-                                     rawDeliveryMode.includes('third') || 
-                                     rawDeliveryMode.includes('courier') || 
-                                     (hasCourier && !rawDeliveryMode.includes('self')) ||
-                                     (activeOrderModal.items || []).some(it => String(it.deliveryType || '').toLowerCase().includes('third') || Boolean(it.thirdPartyDetails?.courierName));
+                const hasSelfDeliveryDetails = Boolean(
+                  activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || 
+                  activeOrderModal.selfDeliveryDetails?.deliveryPersonName ||
+                  activeOrderModal.deliveryOtp ||
+                  (activeOrderModal.items || []).some(it => it.selfDeliveryDetails?.deliveryPartnerToken || it.selfDeliveryDetails?.deliveryPersonName || it.deliveryOtp)
+                );
+                const isExplicitSelf = rawDeliveryMode.includes('self') || 
+                                       activeOrderModal.settlementRule === 'COD_SELF_DELIVERY' || 
+                                       (activeOrderModal.items || []).some(it => it.settlementRule === 'COD_SELF_DELIVERY') || 
+                                       Boolean((activeOrderModal.deliveryOtp || hasSelfDeliveryDetails) && !hasCourier);
+                const isExplicitThirdParty = activeOrderModal.settlementRule === 'COD_THIRD_PARTY_DELIVERY' ||
+                                             activeOrderModal.settlementRule === 'ONLINE_THIRD_PARTY_DELIVERY' ||
+                                             (activeOrderModal.items || []).some(it => it.settlementRule === 'COD_THIRD_PARTY_DELIVERY' || it.settlementRule === 'ONLINE_THIRD_PARTY_DELIVERY') ||
+                                             rawDeliveryMode.includes('third') || 
+                                             rawDeliveryMode.includes('courier') || 
+                                             hasCourier ||
+                                             (activeOrderModal.items || []).some(it => String(it.deliveryType || '').toLowerCase().includes('third') || Boolean(it.thirdPartyDetails?.courierName));
+                const isThirdParty = isExplicitThirdParty || !isExplicitSelf;
                 const isSelf = !isThirdParty;
 
                 let ruleNum = 1;
