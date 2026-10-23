@@ -22,6 +22,33 @@ import { useSellerData } from '../context/SellerDataContext';
 // Helper to evaluate settlement maturity for an order:
 // 1. Non-Return / Non-Exchange Orders: Matures strictly after (Return window + 1) days from delivery (e.g. 7d + 1d = 8d, or 0d + 1d = 1d)
 // 2. Exchanged Orders: Matures strictly 1 day after the exchange date (exchangeDate + 1 day)
+// Helper to reliably resolve if an order is Third-Party Courier or Direct Self-Delivery
+const checkOrderIsThirdParty = (o) => {
+  const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
+  const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
+  const hasSelfDeliveryDetails = Boolean(
+    o.selfDeliveryDetails?.deliveryPartnerToken || 
+    o.selfDeliveryDetails?.deliveryPersonName ||
+    o.deliveryOtp ||
+    (o.items || []).some(it => it.selfDeliveryDetails?.deliveryPartnerToken || it.selfDeliveryDetails?.deliveryPersonName || it.deliveryOtp)
+  );
+  const isExplicitSelf = rawDeliveryMode.includes('self') || 
+                         o.settlementRule === 'COD_SELF_DELIVERY' || 
+                         o.settlement?.settlementRule === 'COD_SELF_DELIVERY' ||
+                         (o.items || []).some(it => it.settlementRule === 'COD_SELF_DELIVERY') || 
+                         Boolean((o.deliveryOtp || hasSelfDeliveryDetails) && !hasCourier);
+  const isExplicitThirdParty = o.settlementRule === 'COD_THIRD_PARTY_DELIVERY' ||
+                               o.settlementRule === 'ONLINE_THIRD_PARTY_DELIVERY' ||
+                               o.settlement?.settlementRule === 'COD_THIRD_PARTY_DELIVERY' ||
+                               o.settlement?.settlementRule === 'ONLINE_THIRD_PARTY_DELIVERY' ||
+                               (o.items || []).some(it => it.settlementRule === 'COD_THIRD_PARTY_DELIVERY' || it.settlementRule === 'ONLINE_THIRD_PARTY_DELIVERY') ||
+                               rawDeliveryMode.includes('third') || 
+                               rawDeliveryMode.includes('courier') || 
+                               hasCourier ||
+                               (o.items || []).some(it => String(it.deliveryType || '').toLowerCase().includes('third') || Boolean(it.thirdPartyDetails?.courierName));
+  return isExplicitThirdParty || !isExplicitSelf;
+};
+
 // 3. Returned / Refunded Orders: Settlement reversed, Credit note auto-recognized under Sec 34
 const evaluateOrderMaturity = (order) => {
   const normStatus = String(order.status || order.overallStatus || '').toLowerCase().trim();
@@ -331,14 +358,8 @@ export default function FinanceTab() {
         ? Number(o.settlement.tdsAmount)
         : Math.round(((gross * 0.1) / 100) * 100) / 100;
 
-      // Rule 2: Delivery Charges + 18% GST (Third-Party Delivery)
-      const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
-      const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
-      const isThirdParty = o.isThirdParty === true || 
-                           rawDeliveryMode.includes('third') || 
-                           rawDeliveryMode.includes('courier') || 
-                           (hasCourier && !rawDeliveryMode.includes('self'));
-
+      // Rule 2 & 4: Delivery Charges + 18% GST (Third-Party Delivery)
+      const isThirdParty = checkOrderIsThirdParty(o);
       const rawPayment = String(o.paymentMethod || o.paymentMode || o.paymentType || '').toUpperCase();
       const isCod = rawPayment.includes('COD') || rawPayment.includes('CASH') || rawPayment.includes('DELIVERY');
       const isRule3 = isCod && !isThirdParty;
@@ -438,12 +459,7 @@ export default function FinanceTab() {
         ? Number(o.settlement.tdsAmount)
         : Math.round(((gross * 0.1) / 100) * 100) / 100;
 
-      const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
-      const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
-      const isThirdParty = o.isThirdParty === true || 
-                           rawDeliveryMode.includes('third') || 
-                           rawDeliveryMode.includes('courier') || 
-                           (hasCourier && !rawDeliveryMode.includes('self'));
+      const isThirdParty = checkOrderIsThirdParty(o);
       const rawPayment = String(o.paymentMethod || o.paymentMode || o.paymentType || '').toUpperCase();
       const isCod = rawPayment.includes('COD') || rawPayment.includes('CASH') || rawPayment.includes('DELIVERY');
       const isRule3 = isCod && !isThirdParty;
@@ -525,9 +541,7 @@ export default function FinanceTab() {
         const tds = o.settlement?.tdsAmount !== undefined ? Number(o.settlement.tdsAmount) : Math.round(((gross * 0.1) / 100) * 100) / 100;
         const gstTcs = o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100;
 
-        const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
-        const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
-        const isThirdParty = o.isThirdParty === true || rawDeliveryMode.includes('third') || rawDeliveryMode.includes('courier') || (hasCourier && !rawDeliveryMode.includes('self'));
+        const isThirdParty = checkOrderIsThirdParty(o);
         const ordTotalVal = Number(o.totalAmount || o.total || gross);
         const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
         const isAbove400 = ordTotalVal >= orderThreshold;
@@ -578,10 +592,7 @@ export default function FinanceTab() {
       const gstComm = o.settlement?.gstOnCommissionAmount !== undefined ? Number(o.settlement.gstOnCommissionAmount) : Math.round(((commAmount * 18) / 100) * 100) / 100;
       const tds = o.settlement?.tdsAmount !== undefined ? Number(o.settlement.tdsAmount) : Math.round(((gross * 0.1) / 100) * 100) / 100;
 
-      const rawDeliveryMode = String(o.deliveryMode || o.deliveryType || '').toLowerCase();
-      const hasCourier = Boolean(o.courierName && o.courierName !== 'N/A' && o.courierName !== '');
-      const isThirdParty = o.isThirdParty === true || rawDeliveryMode.includes('third') || rawDeliveryMode.includes('courier') || (hasCourier && !rawDeliveryMode.includes('self'));
-
+      const isThirdParty = checkOrderIsThirdParty(o);
       const rawPayment = String(o.paymentMethod || o.paymentMode || o.paymentType || '').toUpperCase();
       const isCod = rawPayment.includes('COD') || rawPayment.includes('CASH') || rawPayment.includes('DELIVERY');
       const isRule3 = isCod && !isThirdParty;
