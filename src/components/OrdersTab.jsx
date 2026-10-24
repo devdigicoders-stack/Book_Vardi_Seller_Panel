@@ -2257,15 +2257,37 @@ export default function OrdersTab() {
                 })();
 
                 const shippingGstRate = defaultProductGstRate;
+                // Resolve exchange adjustment on the customer order level
+                const isExchangeReq = Boolean(
+                  activeOrderModal.returnRequest?.type === 'exchange' ||
+                  activeOrderModal.returnRequest?.requestType === 'exchange' ||
+                  String(activeOrderModal.overallStatus || activeOrderModal.status || '').toLowerCase().includes('exchange')
+                );
+                const exchangePriceDiff = Number(activeOrderModal.returnRequest?.priceDifference || 0);
+                const exchangePriceAdjType = activeOrderModal.returnRequest?.priceAdjustmentType || (exchangePriceDiff > 0 ? 'extra_payment' : exchangePriceDiff < 0 ? 'partial_refund' : 'none');
+                const exchangeAdjustmentVal = isExchangeReq
+                  ? (exchangePriceAdjType === 'extra_payment' ? Math.abs(exchangePriceDiff) : (exchangePriceAdjType === 'partial_refund' ? -Math.abs(exchangePriceDiff) : 0))
+                  : 0;
+
+                const finalGrandTotal = Math.max(0, Math.round((grandVal + exchangeAdjustmentVal) * 100) / 100);
+
+                const exchangeGstRate = defaultProductGstRate;
+                const exchangeTaxable = exchangeAdjustmentVal !== 0
+                  ? Math.round((exchangeAdjustmentVal / (1 + exchangeGstRate / 100)) * 100) / 100
+                  : 0;
+                const exchangeTax = exchangeAdjustmentVal !== 0
+                  ? Math.round((exchangeAdjustmentVal - exchangeTaxable) * 100) / 100
+                  : 0;
+
                 const shipTaxable = shipVal > 0 ? (shippingGstRate > 0 ? Math.round((shipVal / (1 + shippingGstRate / 100)) * 100) / 100 : shipVal) : 0;
                 const shipTax = shipVal > 0 ? Math.round((shipVal - shipTaxable) * 100) / 100 : 0;
 
-                let combinedTaxable = Math.round((totalTaxable + shipTaxable) * 100) / 100;
-                let combinedTax = Math.round((totalTax + shipTax) * 100) / 100;
+                let combinedTaxable = Math.round((totalTaxable + shipTaxable + exchangeTaxable) * 100) / 100;
+                let combinedTax = Math.round((totalTax + shipTax + exchangeTax) * 100) / 100;
 
                 // Adjust small precision rounding against grand total
-                if (grandVal > 0 && Math.abs((combinedTaxable + combinedTax) - grandVal) > 0 && Math.abs((combinedTaxable + combinedTax) - grandVal) <= 0.05) {
-                  combinedTaxable = Math.round((grandVal - combinedTax) * 100) / 100;
+                if (finalGrandTotal > 0 && Math.abs((combinedTaxable + combinedTax) - finalGrandTotal) > 0 && Math.abs((combinedTaxable + combinedTax) - finalGrandTotal) <= 0.05) {
+                  combinedTaxable = Math.round((finalGrandTotal - combinedTax) * 100) / 100;
                 }
 
                 const firstSellerObj = activeOrderModal.items?.[0]?.sellerId;
@@ -2324,7 +2346,7 @@ export default function OrdersTab() {
                       </div>
                     )}
 
-                    {/* 5. Base Taxable Amount (Excl. GST) - after adding delivery charges */}
+                    {/* 5. Base Taxable Amount (Excl. GST) - after adding delivery charges & exchange adjustment */}
                     <div className="flex justify-between text-gray-600 text-[11px] pt-1.5 border-t border-dashed border-teal-200">
                       <span>Base Taxable Amount (Excl. GST):</span>
                       <span className="font-mono font-semibold">₹{combinedTaxable.toFixed(2)}</span>
@@ -2345,13 +2367,48 @@ export default function OrdersTab() {
                       <span className="font-mono font-bold self-center text-teal-950">₹{combinedTax.toFixed(2)}</span>
                     </div>
 
-                    {/* 7. Total Payable Amount */}
+                    {/* 7. Exchange Price Adjustment (if applicable) */}
+                    {isExchangeReq && (
+                      <div className="flex justify-between text-purple-900 bg-purple-100/70 p-2 rounded-lg border border-purple-200 text-[11px]">
+                        <div>
+                          <span className="font-bold flex items-center gap-1.5">
+                            <span>🔄</span> Exchange Adjustment ({activeOrderModal.returnRequest?.itemName || 'Item'}):
+                          </span>
+                          <span className="text-[10px] text-purple-700 block">
+                            Replacement: {activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength} Meter(s)` : (activeOrderModal.returnRequest?.exchangeSize || activeOrderModal.returnRequest?.targetSize || 'Equal Value Variant')}
+                          </span>
+                        </div>
+                        <span className="font-mono font-bold self-center">
+                          {exchangePriceAdjType === 'extra_payment' && exchangePriceDiff !== 0 ? (
+                            <span className="text-amber-800 font-extrabold">+₹{Math.abs(exchangePriceDiff).toFixed(2)} (Extra to Collect)</span>
+                          ) : exchangePriceAdjType === 'partial_refund' && exchangePriceDiff !== 0 ? (
+                            <span className="text-emerald-800 font-extrabold">-₹{Math.abs(exchangePriceDiff).toFixed(2)} (Partial Refund)</span>
+                          ) : (
+                            <span className="text-blue-700">₹0.00 (Equal Value Replacement)</span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* 8. Total Payable / Order Amount */}
                     <div className="pt-2 border-t border-teal-200 flex items-center justify-between">
                       <div>
-                        <div className="font-bold text-teal-950">Total Payable Amount</div>
-                        <div className="text-[10px] text-teal-700">{activeOrderModal.paymentMethod} • {((String(activeOrderModal.status || '').toLowerCase().includes('delivered') || String(activeOrderModal.paymentStatus || '').toLowerCase() === 'paid') ? 'Paid' : (activeOrderModal.paymentStatus || 'Pending'))}</div>
+                        <div className="font-bold text-teal-950">
+                          {isExchangeReq && exchangeAdjustmentVal !== 0 ? 'Total Order Amount (After Exchange)' : 'Total Payable Amount'}
+                        </div>
+                        <div className="text-[10px] text-teal-700">
+                          {isExchangeReq && exchangeAdjustmentVal > 0 ? (
+                            <span>
+                              मूल ऑनलाइन: ₹{grandVal.toFixed(2)} (Paid) • एक्सचेंज कैश: +₹{exchangeAdjustmentVal.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span>
+                              {activeOrderModal.paymentMethod} • {((String(activeOrderModal.status || '').toLowerCase().includes('delivered') || String(activeOrderModal.paymentStatus || '').toLowerCase() === 'paid') ? 'Paid' : (activeOrderModal.paymentStatus || 'Pending'))}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-lg font-extrabold text-teal-900 font-mono">₹{grandVal.toFixed(2)}</div>
+                      <div className="text-lg font-extrabold text-teal-900 font-mono">₹{finalGrandTotal.toFixed(2)}</div>
                     </div>
                   </div>
                 );
@@ -2516,22 +2573,34 @@ export default function OrdersTab() {
                     {/* All Client Rule Points Breakdown */}
                     <div className="space-y-1.5 text-[11px]">
                       <div className="flex justify-between text-gray-800">
-                        <span>• Gross Sale (ग्राहक से प्राप्त कुल बिक्री राशि):</span>
-                        <span className="font-mono font-bold text-gray-950">₹{grossSale.toFixed(2)}</span>
+                        <div>
+                          <span>• Gross Sale (ग्राहक से प्राप्त कुल बिक्री राशि):</span>
+                          {isExchangeReq && exchangeAdjustmentVal !== 0 && (
+                            <span className="text-[10px] text-gray-500 block">
+                              (मूल बिक्री: ₹{baseGross.toFixed(2)} {exchangeAdjustmentVal > 0 ? `+ एक्सचेंज अंतर: ₹${exchangeAdjustmentVal.toFixed(2)}` : `− एक्सचेंज अंतर: ₹${Math.abs(exchangeAdjustmentVal).toFixed(2)}`})
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-mono font-bold text-gray-950 self-center">₹{grossSale.toFixed(2)}</span>
                       </div>
 
                       {isExchangeReq && isMyItemExchanged && (
                         <div className="flex justify-between text-purple-900 bg-purple-100/60 p-1.5 rounded border border-purple-200">
-                          <span className="flex items-center gap-1">
-                            <span>🔄</span> Exchange Adjustment ({activeOrderModal.returnRequest?.itemName || 'Item'}):
-                          </span>
-                          <span className="font-mono font-bold">
+                          <div>
+                            <span className="flex items-center gap-1 font-semibold">
+                              <span>🔄</span> एक्सचेंज रिप्लेसमेंट विवरण ({activeOrderModal.returnRequest?.itemName || 'Item'}):
+                            </span>
+                            <span className="text-[10px] text-purple-700 block">
+                              नया साइज़/वेरिएंट: {activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength} Meter(s)` : (activeOrderModal.returnRequest?.exchangeSize || activeOrderModal.returnRequest?.targetSize || 'Requested Variant')}
+                            </span>
+                          </div>
+                          <span className="font-mono font-bold self-center">
                             {exchangeAdjustmentVal > 0 ? (
-                              <span className="text-amber-800">+₹{exchangeAdjustmentVal.toFixed(2)} (अतिरिक्त कैश)</span>
+                              <span className="text-amber-800 font-extrabold">+₹{exchangeAdjustmentVal.toFixed(2)} (डिलीवरी पर अतिरिक्त कैश)</span>
                             ) : exchangeAdjustmentVal < 0 ? (
-                              <span className="text-emerald-800">−₹{Math.abs(exchangeAdjustmentVal).toFixed(2)} (आंशिक रिफंड)</span>
+                              <span className="text-emerald-800 font-extrabold">−₹{Math.abs(exchangeAdjustmentVal).toFixed(2)} (आंशिक रिफंड)</span>
                             ) : (
-                              <span className="text-blue-800">मूल्य बराबर (₹0 Diff)</span>
+                              <span className="text-blue-800">समान मूल्य (₹0 Diff)</span>
                             )}
                           </span>
                         </div>
@@ -2593,6 +2662,43 @@ export default function OrdersTab() {
                         )}
                       </div>
                     </div>
+
+                    {/* Exchange Cash Handover / Bank Payout Reconciliation */}
+                    {isExchangeReq && exchangeAdjustmentVal > 0 && (
+                      <div className="mt-2 p-2 bg-amber-100/80 rounded-lg border border-amber-300 text-[11px] text-amber-950">
+                        <div className="font-bold flex items-center justify-between pb-1 border-b border-amber-200">
+                          <span className="flex items-center gap-1">
+                            <span>💵</span> एक्सचेंज कैश समाधान (Cash Settlement Reconciliation):
+                          </span>
+                          <span className="font-mono font-bold text-xs">कुल सेलर देय: ₹{finalNet.toFixed(2)}</span>
+                        </div>
+                        <div className="text-[10.5px] mt-1 space-y-1 text-amber-900">
+                          {isSelf ? (
+                            <>
+                              <div className="flex justify-between">
+                                <span>• सेलर/राइडर द्वारा कलेक्ट कैश (सेलर के पास पहले से उपलब्ध):</span>
+                                <span className="font-mono font-bold text-rose-800">−₹{exchangeAdjustmentVal.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between font-bold text-emerald-950 pt-1 border-t border-amber-200">
+                                <span>➔ एडमिन द्वारा शुद्ध बैंक ट्रांसफर (Net Bank Payout):</span>
+                                <span className="font-mono text-emerald-900 text-xs">₹{Math.max(0, Math.round((finalNet - exchangeAdjustmentVal) * 100) / 100).toFixed(2)}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex justify-between">
+                                <span>• कूरियर द्वारा कलेक्ट कैश (कूरियर रेमिटेंस):</span>
+                                <span className="font-mono font-bold text-blue-800">+₹{exchangeAdjustmentVal.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between font-bold text-emerald-950 pt-1 border-t border-amber-200">
+                                <span>➔ एडमिन द्वारा शुद्ध बैंक ट्रांसफर (Full Settlement):</span>
+                                <span className="font-mono text-emerald-900 text-xs">₹{finalNet.toFixed(2)}</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
