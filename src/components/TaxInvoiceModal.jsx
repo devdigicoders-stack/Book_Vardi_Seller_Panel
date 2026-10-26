@@ -1471,7 +1471,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 </span>
               </div>
               <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight">
-                BOOK VARDI PRIVATE LIMITED
+                BOOK VARDI
               </h1>
               <p className="text-[11px] text-gray-500">Lucknow, Uttar Pradesh - 226001 | GSTIN: 09AAACB1234F1Z9</p>
             </div>

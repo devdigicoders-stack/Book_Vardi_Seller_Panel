@@ -241,7 +241,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
                         <ShieldCheck size={14} className="text-emerald-600" /> B2B Institutional Escrow
                       </span>
                     </div>
-                    <h1 className="font-extrabold text-xl text-gray-900 mt-1">BOOK VARDI PRIVATE LIMITED</h1>
+                    <h1 className="font-extrabold text-xl text-gray-900 mt-1">BOOK VARDI</h1>
                     <p className="text-[11px] text-gray-500">Corporate & Institutional Procurement Division</p>
                     <p className="text-[10px] text-gray-400 font-mono">GSTIN: 09AAACB1234F1Z9 • corporate@bookvardi.in</p>
                   </div>
