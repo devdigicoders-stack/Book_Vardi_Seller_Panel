@@ -1614,11 +1614,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                       <p className="font-bold text-gray-900">Delivery &amp; Shipping Charges</p>
                       <p className="text-[10px] text-gray-400">Logistics &amp; Freight Services (SAC 9968)</p>
                     </td>
-                    <td className="py-2.5 px-3">
-                      <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={resolvedSeller.storeName}>
-                        {resolvedSeller.storeName}
-                      </span>
-                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-gray-400">—</td>
                     <td className="py-2.5 px-3 text-center font-bold text-gray-400">NA</td>
                     <td className="py-2.5 px-3 text-right font-mono text-gray-700">₹{shippingCost.toFixed(2)}</td>
                     <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹{shippingTaxable.toFixed(2)}</td>
@@ -1661,11 +1657,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                       </p>
                       <p className="text-[10px] text-emerald-700">Order Policy (Admin Absorbed / Free Shipping Promotion)</p>
                     </td>
-                    <td className="py-2.5 px-3">
-                      <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={resolvedSeller.storeName}>
-                        {resolvedSeller.storeName}
-                      </span>
-                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-gray-400">—</td>
                     <td className="py-2.5 px-3 text-center font-bold text-gray-400">NA</td>
                     <td className="py-2.5 px-3 text-right font-mono text-gray-400 line-through">₹49.00</td>
                     <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹0.00</td>
