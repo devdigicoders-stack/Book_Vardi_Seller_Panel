@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   CreditCard, 
   ArrowDownLeft, 
@@ -15,7 +16,8 @@ import {
   HelpCircle,
   Lock,
   Unlock,
-  Info
+  Info,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import { SERVER_URL } from '../utils/api';
@@ -187,6 +189,7 @@ export default function FinanceTab() {
     showToast
   } = useSellerData();
 
+  const navigate = useNavigate();
   const [payoutRequested, setPayoutRequested] = useState(false);
   const [activeRuleTab, setActiveRuleTab] = useState('rule2');
   const [searchQuery, setSearchQuery] = useState('');
@@ -753,7 +756,17 @@ export default function FinanceTab() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => navigate('/reports')}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl border border-gray-200 transition-colors cursor-pointer"
+            title="Open Detailed Tax & Invoiced Billing Reports"
+          >
+            <FileSpreadsheet size={15} className="text-teal-700" />
+            <span>Billing & Reports</span>
+          </button>
+
           <button
             onClick={handleRequestPayout}
             disabled={payoutRequested || availableBalance <= 0}

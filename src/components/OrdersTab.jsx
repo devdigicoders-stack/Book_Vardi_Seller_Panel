@@ -1099,39 +1099,39 @@ export default function OrdersTab() {
                   );
                 })()}
 
-                {/* Statutory Invoicing: Exchange gets Exchange Tax Invoice ONLY; Returns/Refunds get Credit Note */}
+                {/* Statutory Invoicing: Exchange gets BOTH Credit Note (returned item) & Exchange Tax Invoice (new item); Returns/Refunds get Credit Note ONLY */}
                 {(() => {
                   const retType = String(activeOrderModal.returnRequest?.type || activeOrderModal.returnRequest?.requestType || '').toLowerCase();
                   const isOrderExchange = retType === 'exchange' || String(activeOrderModal.status).toLowerCase().includes('exchange');
                   const retStatus = String(activeOrderModal.returnRequest?.status || activeOrderModal.overallStatus || activeOrderModal.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
                   const acceptedStatuses = [
-                    'approved', 'return_approved', 'pickup_scheduled',
-                    'product_received', 'product_return_received',
+                    'approved', 'return_approved', 'exchange_approved', 'exchange_dispatched', 'exchanged', 'completed',
+                    'pickup_scheduled', 'product_received', 'product_return_received',
                     'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
                   ];
                   const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
                   const isCancelled = String(activeOrderModal.status).toLowerCase() === 'cancelled' || Boolean(activeOrderModal.cancelledAt);
-                  const isReturnOrRefund = !isOrderExchange && (isReturnAccepted || isCancelled);
-                  const isPendingReturnApproval = !isOrderExchange && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
+                  const canShowCreditNote = isOrderExchange ? isReturnAccepted : (isReturnAccepted || isCancelled);
+                  const isPendingApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
 
                   return (
                     <>
-                      {isReturnOrRefund && (
+                      {canShowCreditNote && (
                         <a
                           href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200"
-                          title="Download GST Credit Note under Section 34 of CGST Act"
+                          title="Download GST Credit Note under Section 34 of CGST Act (Original Returned Item)"
                         >
                           <FileText size={14} />
                           <span>GST Credit Note</span>
                         </a>
                       )}
-                      {isPendingReturnApproval && (
+                      {isPendingApproval && (
                         <span
                           className="flex items-center gap-1.5 px-3 py-1.5 font-semibold rounded-xl text-xs bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed shadow-2xs"
-                          title="Credit Note will be generated after Return is Approved / Accepted"
+                          title="Credit Note will be generated after Return/Exchange is Approved / Accepted"
                         >
                           <Lock size={13} className="text-gray-400" />
                           <span>Credit Note (Pending Approval)</span>
@@ -1143,7 +1143,7 @@ export default function OrdersTab() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200"
-                          title="Download GST Replacement / Exchange Tax Invoice"
+                          title="Download GST Replacement / Exchange Tax Invoice under Section 31 of CGST Act (New Item Sold)"
                         >
                           <FileText size={14} />
                           <span>Exchange Tax Invoice</span>
@@ -1444,14 +1444,27 @@ export default function OrdersTab() {
                                     View Credit Note
                                   </a>
                                 ) : (
-                                  <a
-                                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="underline text-indigo-900 ml-1"
-                                  >
-                                    View Exchange Invoice
-                                  </a>
+                                  <div className="flex items-center gap-1.5 ml-1">
+                                    <a
+                                      href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="underline text-rose-800"
+                                      title="Credit Note for returned item"
+                                    >
+                                      Credit Note
+                                    </a>
+                                    <span className="text-gray-400">|</span>
+                                    <a
+                                      href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="underline text-indigo-900"
+                                      title="Tax Invoice for new exchange item"
+                                    >
+                                      Exchange Invoice
+                                    </a>
+                                  </div>
                                 )}
                               </div>
                             )}

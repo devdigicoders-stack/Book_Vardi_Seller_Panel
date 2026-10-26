@@ -19,6 +19,7 @@ const NotificationsTab = lazy(() => import('../components/NotificationsTab'));
 const SettingsTab = lazy(() => import('../components/SettingsTab'));
 const SupportTab = lazy(() => import('../components/SupportTab'));
 const ProfileTab = lazy(() => import('../components/ProfileTab'));
+const BillingReportsTab = lazy(() => import('../components/BillingReportsTab'));
 import { 
   Home, 
   Package, 
@@ -27,7 +28,8 @@ import {
   Box, 
   Building2, 
   Users, 
-  CreditCard, 
+  CreditCard,
+  FileSpreadsheet, 
   Tag, 
   BarChart3, 
   Star, 
@@ -346,6 +348,7 @@ export default function SellerDashboardPage({ onNavigate }) {
       items: [
         { id: 'profile', label: 'Seller Profile', icon: <UserCheck size={17} /> },
         { id: 'finance', label: 'Finance & Payouts', icon: <CreditCard size={17} /> },
+        { id: 'reports', label: 'Billing & Reports', icon: <FileSpreadsheet size={17} /> },
         { id: 'shipping', label: 'Shipping & Logistics', icon: <Truck size={17} /> },
         { id: 'reviews', label: 'Customer Reviews', icon: <Star size={17} /> },
         { id: 'settings', label: 'Account Settings', icon: <Settings size={17} /> },
@@ -376,6 +379,9 @@ export default function SellerDashboardPage({ onNavigate }) {
         return <CustomersTab />;
       case 'finance':
         return <FinanceTab />;
+      case 'reports':
+      case 'billing-reports':
+        return <BillingReportsTab />;
       case 'promotions':
         return <PromotionsTab />;
       case 'analytics':
