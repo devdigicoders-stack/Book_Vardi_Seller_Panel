@@ -440,18 +440,31 @@ export default function BillingReportsTab() {
     }
   };
 
+  // Download Official PDF Financial Statement
+  const handleDownloadPdf = () => {
+    const token = localStorage.getItem('bv_seller_token') || localStorage.getItem('seller_token') || localStorage.getItem('token') || '';
+    const sellerId = sellerUser?._id || sellerUser?.id || settings?._id || '';
+    const phone = sellerUser?.phone || settings?.phone || '';
+    const query = new URLSearchParams({
+      ...(token ? { token } : {}),
+      ...(sellerId ? { sellerId } : {}),
+      ...(phone ? { phone } : {})
+    }).toString();
+    window.open(`${SERVER_URL}/sellers/finance-statement/pdf?${query}`, '_blank');
+  };
+
   // Browser Print Statement
   const handlePrintStatement = () => {
     window.print();
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 print:p-0 print:space-y-4">
       {/* 1. Header & Primary Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs print:border-none print:shadow-none print:p-2">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-50 text-teal-700 border border-teal-200 uppercase tracking-wider">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-50 text-teal-700 border border-teal-200 uppercase tracking-wider print:hidden">
               Accounting & Tax Register
             </span>
             <span className="text-xs text-gray-500 font-medium">
@@ -459,7 +472,7 @@ export default function BillingReportsTab() {
             </span>
           </div>
           <h2 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2.5">
-            <FileSpreadsheet className="text-teal-600" size={26} />
+            <FileSpreadsheet className="text-teal-600 print:hidden" size={26} />
             Seller Billing & Tax Reports
           </h2>
           <p className="text-xs text-gray-500 mt-1 max-w-2xl">
@@ -467,26 +480,39 @@ export default function BillingReportsTab() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap print:hidden">
+          {/* Excel Export Button */}
           <button
             type="button"
             disabled={isExporting || filteredOrders.length === 0}
             onClick={handleExportExcel}
             className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer"
-            title="Download full detailed Excel spreadsheet formatted for CA / Tax Filing"
+            title="Download full detailed Excel spreadsheet formatted for CA / Tax Filing (.xlsx)"
           >
             <Download size={15} />
-            <span>{isExporting ? 'Generating Excel...' : 'Export Excel (CA Ready)'}</span>
+            <span>{isExporting ? 'Generating Excel...' : 'Export Excel (.xlsx)'}</span>
           </button>
 
+          {/* PDF Statement Download Button */}
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            className="flex items-center gap-2 px-4 py-2.5 bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer"
+            title="Download Official PDF Financial & Settlement Statement"
+          >
+            <FileText size={15} />
+            <span>Export PDF Statement</span>
+          </button>
+
+          {/* Print Button */}
           <button
             type="button"
             onClick={handlePrintStatement}
             className="flex items-center gap-2 px-3.5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all cursor-pointer border border-gray-300"
-            title="Print Monthly Billing Statement"
+            title="Print or Save as PDF via Browser"
           >
             <Printer size={15} />
-            <span>Print Statement</span>
+            <span>Print View</span>
           </button>
         </div>
       </div>
