@@ -1103,12 +1103,16 @@ export default function OrdersTab() {
                 {(() => {
                   const retType = String(activeOrderModal.returnRequest?.type || activeOrderModal.returnRequest?.requestType || '').toLowerCase();
                   const isOrderExchange = retType === 'exchange' || String(activeOrderModal.status).toLowerCase().includes('exchange');
-                  const isReturnOrRefund = !isOrderExchange && (
-                    activeOrderModal.paymentStatus?.toLowerCase() === 'refunded' ||
-                    activeOrderModal.status?.toLowerCase().includes('refund') ||
-                    activeOrderModal.returnRequest?.status?.toLowerCase().includes('refund') ||
-                    (activeOrderModal.status === 'product_received' && retType === 'return')
-                  );
+                  const retStatus = String(activeOrderModal.returnRequest?.status || activeOrderModal.overallStatus || activeOrderModal.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                  const acceptedStatuses = [
+                    'approved', 'return_approved', 'pickup_scheduled',
+                    'product_received', 'product_return_received',
+                    'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
+                  ];
+                  const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
+                  const isCancelled = String(activeOrderModal.status).toLowerCase() === 'cancelled' || Boolean(activeOrderModal.cancelledAt);
+                  const isReturnOrRefund = !isOrderExchange && (isReturnAccepted || isCancelled);
+                  const isPendingReturnApproval = !isOrderExchange && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
 
                   return (
                     <>
@@ -1123,6 +1127,15 @@ export default function OrdersTab() {
                           <FileText size={14} />
                           <span>GST Credit Note</span>
                         </a>
+                      )}
+                      {isPendingReturnApproval && (
+                        <span
+                          className="flex items-center gap-1.5 px-3 py-1.5 font-semibold rounded-xl text-xs bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed shadow-2xs"
+                          title="Credit Note will be generated after Return is Approved / Accepted"
+                        >
+                          <Lock size={13} className="text-gray-400" />
+                          <span>Credit Note (Pending Approval)</span>
+                        </span>
                       )}
                       {isOrderExchange && (
                         <a
@@ -2496,14 +2509,21 @@ export default function OrdersTab() {
                 // 3. TDS (0.1% Sec 194-O)
                 const tdsAmt = Math.round(((grossSale * 0.1) / 100) * 100) / 100;
 
-                // 4. GST TCS (0.5% Sec 52): 0% for Rule 3 COD Self or Tax-Free (books)
+                // 4. GST TCS (0.5% Sec 52): Strictly on Taxable Value (Net Value of Taxable Supplies), not gross!
+                // 0% for Rule 3 COD Self or Tax-Free (books)
                 const isTaxFreeOrder = (activeOrderModal.items || []).every(it => {
                   const r = Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
                   const cat = String(it.category || '').toLowerCase();
                   return r === 0 || cat.includes('book');
                 });
                 const tcsRate = (ruleNum === 3 || isTaxFreeOrder) ? 0 : 0.5;
-                const tcsAmt = (ruleNum === 3 || isTaxFreeOrder) ? 0 : Math.round(((grossSale * tcsRate) / 100) * 100) / 100;
+                const orderItemsTaxable = (activeOrderModal.items || []).reduce((sum, it) => {
+                  const itPrice = Number(it.finalPrice || it.price || 0) * Number(it.quantity || 1);
+                  const itGst = Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
+                  return sum + (itGst > 0 ? Math.round((itPrice / (1 + itGst / 100)) * 100) / 100 : itPrice);
+                }, 0);
+                const taxableForTcs = orderItemsTaxable > 0 ? orderItemsTaxable : Math.round((grossSale / 1.05) * 100) / 100;
+                const tcsAmt = (ruleNum === 3 || isTaxFreeOrder) ? 0 : Math.round(((taxableForTcs * tcsRate) / 100) * 100) / 100;
 
                 // 5. Delivery Charges (Rule 2 & Rule 4: Client Norms)
                 const orderThreshold = Number(activeOrderModal.freeDeliveryThreshold ?? activeOrderModal.minOrderFreeShipping ?? 401);
@@ -2622,7 +2642,7 @@ export default function OrdersTab() {
                       </div>
 
                       <div className="flex justify-between text-gray-700">
-                        <span>• GST TCS (जहाँ कानून अनुसार लागू हो 0.5% TCS):</span>
+                        <span>• GST TCS (0.5% on Taxable ₹{taxableForTcs.toFixed(2)}):</span>
                         <span className="font-mono font-semibold text-sky-900">−₹{tcsAmt.toFixed(2)}</span>
                       </div>
 

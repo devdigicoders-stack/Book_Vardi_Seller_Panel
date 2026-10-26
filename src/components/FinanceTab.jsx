@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   CreditCard, 
   ArrowDownLeft, 
@@ -18,6 +18,7 @@ import {
   Info
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
+import { SERVER_URL } from '../utils/api';
 
 // Helper to evaluate settlement maturity for an order:
 // 1. Non-Return / Non-Exchange Orders: Matures strictly after (Return window + 1) days from delivery (e.g. 7d + 1d = 8d, or 0d + 1d = 1d)
@@ -190,6 +191,27 @@ export default function FinanceTab() {
   const [activeRuleTab, setActiveRuleTab] = useState('rule2');
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
+
+  const [platformThreshold, setPlatformThreshold] = useState(401);
+  useEffect(() => {
+    fetch(`${SERVER_URL}/admin/settings/public`)
+      .then(res => res.json())
+      .then(data => {
+        const val = Number(data.freeShippingThreshold ?? data.minOrderFreeShipping ?? data.freeDeliveryThreshold);
+        if (!isNaN(val) && val > 0) {
+          setPlatformThreshold(val);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const resolvedFreeDeliveryThreshold = useMemo(() => {
+    for (const o of orders) {
+      const val = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping);
+      if (!isNaN(val) && val > 0) return val;
+    }
+    return platformThreshold;
+  }, [orders, platformThreshold]);
 
   // Read synchronized 12-step registration & DB state without static fallbacks
   const bankInfo = useMemo(() => {
@@ -369,10 +391,10 @@ export default function FinanceTab() {
         ? 0
         : (o.settlement?.gstTcsAmount !== undefined
             ? Number(o.settlement.gstTcsAmount)
-            : Math.round(((gross * 0.5) / 100) * 100) / 100);
+            : Math.round((((gross / 1.05) * 0.5) / 100) * 100) / 100);
 
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? resolvedFreeDeliveryThreshold);
       const isAbove400 = ordTotalVal >= orderThreshold;
 
       const custShipping = Number(o.shippingAmount ?? o.shippingFee ?? o.shippingCost ?? 0);
@@ -466,9 +488,9 @@ export default function FinanceTab() {
       const isRule4 = isCod && isThirdParty;
       const ruleKey = isRule3 ? 'rule3' : (isRule4 ? 'rule4' : (isThirdParty ? 'rule2' : 'rule1'));
 
-      const gstTcs = isRule3 ? 0 : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
+      const gstTcs = isRule3 ? 0 : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round((((gross / 1.05) * 0.5) / 100) * 100) / 100);
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? resolvedFreeDeliveryThreshold);
       const isAbove400 = ordTotalVal >= orderThreshold;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
@@ -539,11 +561,11 @@ export default function FinanceTab() {
         const commAmount = o.settlement?.commissionAmount !== undefined ? Number(o.settlement.commissionAmount) : Math.round(((gross * commRate) / 100) * 100) / 100;
         const gstComm = o.settlement?.gstOnCommissionAmount !== undefined ? Number(o.settlement.gstOnCommissionAmount) : Math.round(((commAmount * 18) / 100) * 100) / 100;
         const tds = o.settlement?.tdsAmount !== undefined ? Number(o.settlement.tdsAmount) : Math.round(((gross * 0.1) / 100) * 100) / 100;
-        const gstTcs = o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100;
+        const gstTcs = o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round((((gross / 1.05) * 0.5) / 100) * 100) / 100;
 
         const isThirdParty = checkOrderIsThirdParty(o);
         const ordTotalVal = Number(o.totalAmount || o.total || gross);
-        const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+        const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? resolvedFreeDeliveryThreshold);
         const isAbove400 = ordTotalVal >= orderThreshold;
 
         let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
@@ -600,10 +622,10 @@ export default function FinanceTab() {
       // Rule 3: 0% GST TCS when portal does not collect customer cash
       const gstTcs = isRule3
         ? 0
-        : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round(((gross * 0.5) / 100) * 100) / 100);
+        : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round((((gross / 1.05) * 0.5) / 100) * 100) / 100);
 
       const ordTotalVal = Number(o.totalAmount || o.total || gross);
-      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? 401);
+      const orderThreshold = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? resolvedFreeDeliveryThreshold);
       const isAbove400 = ordTotalVal >= orderThreshold;
 
       let deliveryChargeBorneBy = o.deliveryChargeBorneBy;
@@ -888,7 +910,7 @@ export default function FinanceTab() {
                 <span><strong>Delivery Charges (कूरियर डिलीवरी खर्च - GST सहित):</strong> डिलीवरी का खर्च (GST सहित) तभी काटें, जब यह खर्च सेलर के जिम्मे हो।</span>
               </div>
               <div className="flex items-start gap-1.5 md:col-span-2 bg-amber-100 p-2.5 rounded-lg border border-amber-300 text-amber-950 font-medium">
-                <span className="font-extrabold text-amber-900 shrink-0">✨ ₹301 या अधिक के ऑर्डर पर:</span>
+                <span className="font-extrabold text-amber-900 shrink-0">✨ ₹{resolvedFreeDeliveryThreshold} या अधिक के ऑर्डर पर:</span>
                 <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (सेलर से ₹0 डिलीवरी कटौती)।</span>
               </div>
               <div className="flex items-start gap-1.5 md:col-span-2">
@@ -945,14 +967,14 @@ export default function FinanceTab() {
               <h5 className="font-extrabold text-purple-950">4. COD + Third-Party Delivery (कैश ऑन डिलीवरी + कूरियर से डिलीवरी)</h5>
               <span className="text-[10px] bg-purple-200 text-purple-950 font-bold px-2 py-0.5 rounded-full">Rule 4 ({ruleMetrics.rule4.count} Orders)</span>
             </div>
-            <p className="text-[11px]">• कूरियर कैश कलेक्ट कर पोर्टल को देगा। {commissionRate}% Comm + 18% GST + 0.1% TDS + 0.5% TCS कटेगा। ₹301+ पर डिलीवरी ₹0, बची राशि सेलर को।</p>
+            <p className="text-[11px]">• कूरियर कैश कलेक्ट कर पोर्टल को देगा। {commissionRate}% Comm + 18% GST + 0.1% TDS + 0.5% TCS कटेगा। ₹{resolvedFreeDeliveryThreshold}+ पर डिलीवरी ₹0, बची राशि सेलर को।</p>
           </div>
         )}
 
         {activeRuleTab === 'all' && (
           <div className="pt-2 border-t border-white/15 text-[11px] space-y-1.5 text-teal-100/90">
             <div className="flex items-start gap-1.5">
-              <span className="font-bold text-amber-300 shrink-0">₹301 या अधिक के ऑर्डर पर:</span>
+              <span className="font-bold text-amber-300 shrink-0">₹{resolvedFreeDeliveryThreshold} या अधिक के ऑर्डर पर:</span>
               <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (₹0 डिलीवरी कटौती)।</span>
             </div>
             <div className="flex items-start gap-1.5">
@@ -965,7 +987,7 @@ export default function FinanceTab() {
             </div>
             <div className="flex items-start gap-1.5">
               <span className="font-bold text-purple-300 shrink-0">COD + कूरियर डिलीवरी (Rule 4):</span>
-              <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल {commissionRate}% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹301+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
+              <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल {commissionRate}% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹{resolvedFreeDeliveryThreshold}+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
             </div>
           </div>
         )}

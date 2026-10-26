@@ -1107,15 +1107,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   // Statutory Tax:
   // Rule 3 (COD Self): GST TCS is 0% when portal does not collect customer payment
-  // Rule 1, 2, 4: GST TCS is 0.5% (Sec 52)
+  // Rule 1, 2, 4: GST TCS is 0.5% (Sec 52 of CGST Act - strictly on Taxable Value)
   // For 0% GST / Books: TCS = 0
   const isTaxFreeOrder = (items || []).every(it => {
     const r = Number(it.rate ?? it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
     const cat = String(it.category || '').toLowerCase();
     return r === 0 || cat.includes('book');
   });
+  const itemsTaxableSum = (itemBreakdowns || []).reduce((sum, it) => sum + (Number(it.taxableVal) || 0), 0);
+  const settlementTaxable = itemsTaxableSum > 0 ? itemsTaxableSum : settlementGross;
   const tcsRate = (isSettlementReversed || isRule3CodSelf || isTaxFreeOrder) ? 0 : 0.5;
-  const gstTcsAmount = (isSettlementReversed || isRule3CodSelf || isTaxFreeOrder) ? 0 : Math.round(((settlementGross * tcsRate) / 100) * 100) / 100;
+  const gstTcsAmount = (isSettlementReversed || isRule3CodSelf || isTaxFreeOrder) ? 0 : Math.round(((settlementTaxable * tcsRate) / 100) * 100) / 100;
 
   // Delivery Charges + 18% GST (Rule 2 & Rule 4: Third-Party Delivery)
   const orderThreshold = Number(order.freeDeliveryThreshold ?? order.minOrderFreeShipping ?? 401);
@@ -1782,7 +1784,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   ) : isTaxFreeOrder ? (
                     <span className="text-[9px] text-emerald-700 font-bold ml-1">₹0.00 (0% GST / Books Tax-Free)</span>
                   ) : (
-                    <span className="text-[9px] text-sky-700 font-normal ml-1">0.5% (TCS)</span>
+                    <span className="text-[9px] text-sky-700 font-normal ml-1">0.5% (on Taxable ₹{settlementTaxable.toFixed(2)})</span>
                   )}
                 </span>
                 <span className="font-mono">{isSettlementReversed ? '₹0.00 (Reversed)' : (gstTcsAmount > 0 ? `-₹${gstTcsAmount.toFixed(2)}` : '₹0.00')}</span>

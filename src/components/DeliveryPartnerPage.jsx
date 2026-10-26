@@ -804,7 +804,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     </span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    ✅ <strong>Do NOT collect any money from customer.</strong> The full refund of ₹{order?.totalAmount || returnReq.refundAmount || 0} is transferred directly to the customer's account after pickup verification.
+                    ✅ <strong>Do NOT collect any money from customer.</strong> The product refund of ₹{returnReq.refundAmount != null ? returnReq.refundAmount : Math.max(0, Number(order?.totalAmount || 0) - Number(order?.shippingFee || order?.shippingCost || 0))} (excluding delivery charges) is transferred directly to the customer's account after pickup verification.
                   </p>
                 </div>
               </div>

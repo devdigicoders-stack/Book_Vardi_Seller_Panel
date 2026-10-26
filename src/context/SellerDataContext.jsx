@@ -1153,13 +1153,41 @@ export const SellerDataProvider = ({ children }) => {
           }));
         }
 
-        const raw = localStorage.getItem('bv_sync_school_orders') || localStorage.getItem('admin_school_orders') || localStorage.getItem('bv_customer_bulk_orders');
+        const raw = localStorage.getItem('bv_sync_school_orders');
         if (raw) {
           const list = JSON.parse(raw);
           if (Array.isArray(list) && list.length > 0) {
             setSchoolOrders(prev => {
-              const merged = [...prev];
-              list.forEach(item => {
+              const currentSellerId = sellerUser?.id || sellerUser?._id;
+              const isVisibleToSeller = (item) => {
+                if (!item) return false;
+                if (item.assignmentMode === 'unassigned' || item.status === 'pending' || item.status === 'under_review' || item.assignmentMode === 'admin_direct') {
+                  return false;
+                }
+                const sId = item.sellerId ? (typeof item.sellerId === 'object' ? (item.sellerId._id || item.sellerId.id) : item.sellerId) : null;
+                if (sId && currentSellerId && String(sId) === String(currentSellerId)) return true;
+                if (Array.isArray(item.invitedSellerIds) && currentSellerId) {
+                  const isInvited = item.invitedSellerIds.some(inv => {
+                    const invId = typeof inv === 'object' ? (inv?._id || inv?.id) : inv;
+                    return String(invId) === String(currentSellerId);
+                  });
+                  if (isInvited) return true;
+                }
+                if (Array.isArray(item.quotations) && currentSellerId) {
+                  const hasQuoted = item.quotations.some(q => {
+                    const qSellerId = typeof q.sellerId === 'object' ? (q.sellerId?._id || q.sellerId?.id) : q.sellerId;
+                    return String(qSellerId) === String(currentSellerId);
+                  });
+                  if (hasQuoted) return true;
+                }
+                if (item.assignmentMode === 'broadcast' && (item.status === 'published' || item.status === 'assigned')) {
+                  return true;
+                }
+                return false;
+              };
+
+              const merged = prev.filter(o => isVisibleToSeller(o));
+              list.filter(isVisibleToSeller).forEach(item => {
                 const idx = merged.findIndex(m => String(m.id || m._id || m.referenceId) === String(item.id || item._id || item.referenceId));
                 if (idx === -1) {
                   merged.push(item);
