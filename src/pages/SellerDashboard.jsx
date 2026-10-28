@@ -89,6 +89,50 @@ export default function SellerDashboardPage({ onNavigate }) {
     isLoadingSellerData
   } = useSellerData();
 
+  const lastBackPressRef = React.useRef(0);
+  const activeTabRef = React.useRef(activeTab);
+  React.useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
+  // Back button trap & double-back exit protection for Seller Panel
+  React.useEffect(() => {
+    if (!window.history.state || !window.history.state.sellerPanel) {
+      try {
+        window.history.replaceState({ sellerPanel: true, tab: activeTab }, '', window.location.href);
+        if (activeTab === 'dashboard') {
+          window.history.pushState({ sellerPanel: true, tab: 'dashboard' }, '', window.location.href);
+        }
+      } catch {}
+    }
+
+    const handleSellerPopState = (e) => {
+      // If an open modal handled popstate, don't navigate tab
+      if (e.state && e.state.sellerModalOpen) return;
+
+      const current = activeTabRef.current;
+      if (current !== 'dashboard') {
+        // Return to main dashboard tab
+        navigate('/dashboard');
+      } else {
+        // Double-back to exit on main Dashboard
+        const now = Date.now();
+        if (now - lastBackPressRef.current < 2000) {
+          window.history.back();
+        } else {
+          lastBackPressRef.current = now;
+          if (showToast) {
+            showToast('Press BACK again to exit Seller Panel 👋');
+          }
+          try {
+            window.history.pushState({ sellerPanel: true, tab: 'dashboard' }, '', window.location.href);
+          } catch {}
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handleSellerPopState);
+    return () => window.removeEventListener('popstate', handleSellerPopState);
+  }, [navigate, showToast]);
+
   const handleCheckApprovalStatus = async () => {
     setIsRefreshingStatus(true);
     try {

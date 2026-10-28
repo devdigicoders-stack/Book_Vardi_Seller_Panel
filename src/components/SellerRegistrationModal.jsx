@@ -1,3 +1,4 @@
+import useModalBackTrap from '../hooks/useModalBackTrap';
 import React, { useState, useEffect } from 'react';
 import {
   Store,
@@ -137,6 +138,7 @@ export const INITIAL_FORM_STATE = {
 };
 
 export default function SellerRegistrationModal({ isOpen, onClose, isPage = false }) {
+  useModalBackTrap(isOpen && !isPage, onClose);
   const { 
     submitSellerApplication, 
     showToast,

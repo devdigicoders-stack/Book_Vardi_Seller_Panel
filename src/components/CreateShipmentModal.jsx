@@ -1,8 +1,10 @@
+import useModalBackTrap from '../hooks/useModalBackTrap';
 import React, { useState, useEffect } from 'react';
 import { Truck, X, Package, ShieldCheck, CheckCircle2, Download, ExternalLink, Loader2, Sparkles } from 'lucide-react';
 import { checkServiceabilityApi, createShipmentApi } from '../utils/api';
 
 export default function CreateShipmentModal({ isOpen, onClose, order, onShipmentCreated }) {
+  useModalBackTrap(isOpen, onClose);
   if (!isOpen || !order) return null;
 
   const orderId = order.id || order._id || order.orderId;

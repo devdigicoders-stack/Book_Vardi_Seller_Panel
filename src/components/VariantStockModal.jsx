@@ -1,9 +1,11 @@
+import useModalBackTrap from '../hooks/useModalBackTrap';
 import React, { useState, useEffect } from 'react';
 import { X, Layers, Save, Plus, Minus, Package } from 'lucide-react';
 import { resolveImageUrl, parseSizeVariants } from '../utils/mediaUrl';
 import { getProductStockUnit } from '../utils/stockUnitHelper';
 
 export default function VariantStockModal({ product, isOpen, onClose, onSave }) {
+  useModalBackTrap(isOpen, onClose);
   const [variants, setVariants] = useState([]);
   const [simpleStock, setSimpleStock] = useState(0);
 
