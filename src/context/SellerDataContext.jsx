@@ -1454,19 +1454,52 @@ export const SellerDataProvider = ({ children }) => {
     }, 50);
   };
 
-  const updateSellerProfile = (updates) => {
+  const updateSellerProfile = async (updates) => {
+    const isCriticalChange = Boolean(
+      updates.bankDetails ||
+      updates.bankAccountNumber ||
+      updates.bankIfscCode ||
+      updates.bankAccountHolder ||
+      updates.passbookDoc ||
+      (updates.documents && updates.documents.passbookDoc)
+    );
+
     setSellerUser(prev => {
       const activeProf = readActiveSellerProfile();
-      const next = { ...activeProf, ...prev, ...updates };
+      const next = { 
+        ...activeProf, 
+        ...prev, 
+        ...updates,
+        ...(isCriticalChange ? { status: 'pending', submissionStatus: 'pending' } : {})
+      };
       try {
         localStorage.setItem('seller_user_profile', JSON.stringify(next));
+        if (isCriticalChange) {
+          localStorage.setItem('bv_seller_status', 'pending');
+          window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: 'pending' }));
+        }
         const savedReg = localStorage.getItem('bv_seller_reg_data');
         const regObj = savedReg ? JSON.parse(savedReg) : {};
-        localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...regObj, ...updates }));
+        localStorage.setItem('bv_seller_reg_data', JSON.stringify({ 
+          ...regObj, 
+          ...updates,
+          ...(isCriticalChange ? { status: 'pending', submissionStatus: 'pending' } : {})
+        }));
       } catch (e) {}
       return next;
     });
-    updateSellerProfileApi(updates).catch(() => {});
+
+    try {
+      const res = await updateSellerProfileApi(updates);
+      if (res?.requiresAdminApproval || res?.seller?.status === 'pending') {
+        setSellerUser(prev => ({ ...prev, status: 'pending', submissionStatus: 'pending' }));
+        localStorage.setItem('bv_seller_status', 'pending');
+        window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: 'pending' }));
+      }
+      return res;
+    } catch (err) {
+      console.warn('updateSellerProfile API notice:', err);
+    }
   };
 
   // Product Actions

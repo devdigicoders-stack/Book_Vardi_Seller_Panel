@@ -38,6 +38,7 @@ import {
   Settings, 
   HelpCircle,
   ArrowLeft,
+  ExternalLink,
   ShieldCheck,
   ChevronRight,
   UserCheck,
@@ -622,7 +623,7 @@ export default function SellerDashboardPage({ onNavigate }) {
                   </div>
                 ))}
 
-                {/* Bottom Action: Exit to Customer Store */}
+                {/* Bottom Action: View Storefront Website */}
                 <div className="pt-3 mt-2 border-t border-gray-100">
                   <button
                     type="button"
@@ -631,17 +632,17 @@ export default function SellerDashboardPage({ onNavigate }) {
                         onNavigate('home');
                       } else {
                         const websiteUrl = import.meta.env.VITE_WEBSITE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://book-vardi-website.vercel.app');
-                        window.location.href = websiteUrl;
+                        window.open(websiteUrl, '_blank', 'noopener,noreferrer');
                       }
                     }}
                     className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-teal-900 bg-teal-50 hover:bg-brand-yellow hover:text-brand-teal-dark border border-teal-200/80 transition-all duration-200 cursor-pointer shadow-2xs group"
-                    title="Return to the customer shopping storefront"
+                    title="Open the customer shopping storefront website in a new tab"
                   >
                     <span className="flex items-center gap-2.5">
                       <ShoppingBag size={16} className="text-teal-700 group-hover:text-brand-teal-dark transition-colors" />
-                      <span>Exit to Customer Store</span>
+                      <span>View Storefront Website</span>
                     </span>
-                    <ArrowLeft size={14} className="opacity-70 group-hover:opacity-100 group-hover:-translate-x-0.5 transition-transform" />
+                    <ExternalLink size={14} className="opacity-70 group-hover:opacity-100 transition-transform" />
                   </button>
                 </div>
 

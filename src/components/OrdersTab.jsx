@@ -11,6 +11,7 @@ import {
   Package, 
   Plus, 
   Minus,
+  ArrowLeft,
   ArrowRight, 
   X, 
   MapPin, 
@@ -36,6 +37,7 @@ import TaxInvoiceModal, { parseStateInfo } from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
 import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
 import { SERVER_URL } from '../utils/api';
+import { getSellerInvoiceNumber } from '../utils/invoiceHelper';
 
 // Helper to generate absolute Storefront Website Delivery Partner portal link
 export const getDriverWebsiteUrl = (tokenVal) => {
@@ -127,6 +129,27 @@ export default function OrdersTab() {
   const [modalDriverPhone, setModalDriverPhone] = useState('');
   const [modalVehicleNumber, setModalVehicleNumber] = useState('');
   const [modalSelfDeliveryToken, setModalSelfDeliveryToken] = useState('');
+
+  // Intercept browser back button when activeOrderModal is open so user isn't kicked out of the portal
+  useEffect(() => {
+    if (!activeOrderModal) return;
+
+    const modalId = 'seller_order_detail_modal_' + Date.now();
+    window.history.pushState({ sellerOrderModalOpen: true, modalId }, '');
+
+    const handlePopState = () => {
+      setActiveOrderModal(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (window.history.state?.modalId === modalId) {
+        window.history.back();
+      }
+    };
+  }, [Boolean(activeOrderModal)]);
 
   // Automated WhatsApp dispatch tracking state
   const [isSavingDelivery, setIsSavingDelivery] = useState(false);
@@ -1063,14 +1086,31 @@ export default function OrdersTab() {
             
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-gray-900 text-base">Order ID: {formatDisplayOrderId(activeOrderModal.orderId || activeOrderModal.id)}</h3>
-                  <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${STATUS_CONFIG[activeOrderModal.status]?.bg || 'bg-gray-100'} ${STATUS_CONFIG[activeOrderModal.status]?.text || 'text-gray-800'} ${STATUS_CONFIG[activeOrderModal.status]?.border || 'border-gray-200'}`}>
-                    {activeOrderModal.status}
-                  </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveOrderModal(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-xl transition-all cursor-pointer border border-gray-200"
+                  title="Back to Orders List"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-gray-900 text-base">Order ID: {formatDisplayOrderId(activeOrderModal.orderId || activeOrderModal.id)}</h3>
+                    <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${STATUS_CONFIG[activeOrderModal.status]?.bg || 'bg-gray-100'} ${STATUS_CONFIG[activeOrderModal.status]?.text || 'text-gray-800'} ${STATUS_CONFIG[activeOrderModal.status]?.border || 'border-gray-200'}`}>
+                      {activeOrderModal.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-0.5">
+                    <span>Placed on {activeOrderModal.date}</span>
+                    <span>•</span>
+                    <span className="font-bold text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                      Invoice: {getSellerInvoiceNumber(activeOrderModal, sellerUser, orders)}
+                    </span>
+                  </div>
                 </div>
-                <p className="text-[11px] text-gray-500 mt-0.5">Placed on {activeOrderModal.date}</p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -2518,30 +2558,47 @@ export default function OrdersTab() {
                 // In Self Delivery, delivery fee collected from customer belongs to the seller
                 const selfDeliveryAmount = isSelf ? customerShippingPaid : 0;
                 const grossSale = Math.max(0, Math.round((itemsGrossSale + selfDeliveryAmount) * 100) / 100);
-                const commRate = Number(activeOrderModal.commissionRate ?? activeOrderModal.sellerCommissionRate ?? mySellerItems[0]?.commissionRate ?? activeOrderModal.items?.[0]?.commissionRate ?? 10);
-                
-                // 1. Portal Commission (calculated on product sales)
-                const portalComm = Math.round(((itemsGrossSale * commRate) / 100) * 100) / 100;
-                // 2. GST on Commission (18%)
-                const gstOnComm = Math.round(((portalComm * 18) / 100) * 100) / 100;
-                // 3. TDS (0.1% Sec 194-O): Strictly on Gross Sale / Total Transaction Value
-                const tdsAmt = Math.round(((grossSale * 0.1) / 100) * 100) / 100;
+                // Check if seller qualifies for Statutory Exemption (0% Comm, 0% GST, 0% TDS, 0% TCS for 09BLMPK2840L2ZN)
+                const candidateGstList = [
+                  sellerUser?.gstNumber,
+                  sellerUser?.gstin,
+                  activeOrderModal.sellerDetails?.gstNumber,
+                  activeOrderModal.sellerDetails?.gstin,
+                  activeOrderModal.sellerId?.gstNumber,
+                  activeOrderModal.sellerGstNumber,
+                  ...(activeOrderModal.items || []).map(it => it.sellerDetails?.gstNumber || it.sellerId?.gstNumber || it.sellerGstNumber)
+                ].filter(Boolean).map(g => String(g).trim().toUpperCase().replace(/[^A-Z0-9]/g, ''));
 
-                // 4. GST TCS (0.5% Sec 52): Strictly on Taxable Value (Net Value of Taxable Supplies), not gross!
-                // 0% for Rule 3 COD Self or Tax-Free (books)
+                const isExemptedSeller = candidateGstList.includes('09BLMPK2840L2ZN') ||
+                  String(sellerUser?.storeName || '').toLowerCase().includes('national school dress') ||
+                  String(activeOrderModal.sellerStoreName || activeOrderModal.storeName || '').toLowerCase().includes('national school dress');
+
+                const commRate = isExemptedSeller
+                  ? 0
+                  : Number(activeOrderModal.commissionRate ?? activeOrderModal.sellerCommissionRate ?? mySellerItems[0]?.commissionRate ?? activeOrderModal.items?.[0]?.commissionRate ?? 10);
+                
+                // 1. Portal Commission (calculated on product sales, 0% if exempted)
+                const portalComm = isExemptedSeller ? 0 : Math.round(((itemsGrossSale * commRate) / 100) * 100) / 100;
+                // 2. GST on Commission (18%, 0% if exempted)
+                const gstOnComm = isExemptedSeller ? 0 : Math.round(((portalComm * 18) / 100) * 100) / 100;
+                // 3. TDS (0.1% Sec 194-O, strictly 0% if exempted)
+                const tdsAmt = isExemptedSeller ? 0 : Math.round(((grossSale * 0.1) / 100) * 100) / 100;
+
+                // 4. GST TCS (0.5% Sec 52, strictly 0% if exempted)
+                // 0% for Rule 3 COD Self or Tax-Free (books) or Exempted Seller
                 const isTaxFreeOrder = (activeOrderModal.items || []).every(it => {
                   const r = Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
                   const cat = String(it.category || '').toLowerCase();
                   return r === 0 || cat.includes('book');
                 });
-                const tcsRate = (ruleNum === 3 || isTaxFreeOrder) ? 0 : 0.5;
+                const tcsRate = (ruleNum === 3 || isTaxFreeOrder || isExemptedSeller) ? 0 : 0.5;
                 const orderItemsTaxable = (activeOrderModal.items || []).reduce((sum, it) => {
                   const itPrice = Number(it.finalPrice || it.price || 0) * Number(it.quantity || 1);
                   const itGst = Number(it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
                   return sum + (itGst > 0 ? Math.round((itPrice / (1 + itGst / 100)) * 100) / 100 : itPrice);
                 }, 0);
                 const taxableForTcs = orderItemsTaxable > 0 ? orderItemsTaxable : Math.round((itemsGrossSale / 1.05) * 100) / 100;
-                const tcsAmt = (ruleNum === 3 || isTaxFreeOrder) ? 0 : Math.round(((taxableForTcs * tcsRate) / 100) * 100) / 100;
+                const tcsAmt = (ruleNum === 3 || isTaxFreeOrder || isExemptedSeller) ? 0 : Math.round(((taxableForTcs * tcsRate) / 100) * 100) / 100;
 
                 // 5. Delivery Charges (Rule 2 & Rule 4: Client Norms)
                 const orderThreshold = Number(activeOrderModal.freeDeliveryThreshold ?? activeOrderModal.minOrderFreeShipping ?? 401);
@@ -2650,22 +2707,22 @@ export default function OrdersTab() {
                       )}
 
                       <div className="flex justify-between text-gray-700">
-                        <span>• Portal Commission ({commRate}% पोर्टल कमीशन):</span>
+                        <span>• Portal Commission ({isExemptedSeller ? '0% विशेष छूट GST 09BLMPK2840L2ZN' : `${commRate}% पोर्टल कमीशन`}):</span>
                         <span className="font-mono font-semibold text-amber-900">−₹{portalComm.toFixed(2)}</span>
                       </div>
 
                       <div className="flex justify-between text-gray-700">
-                        <span>• GST on Commission (कमीशन पर 18% GST):</span>
+                        <span>• GST on Commission ({isExemptedSeller ? '0% विशेष छूट' : 'कमीशन पर 18% GST'}):</span>
                         <span className="font-mono font-semibold text-indigo-900">−₹{gstOnComm.toFixed(2)}</span>
                       </div>
 
                       <div className="flex justify-between text-gray-700">
-                        <span>• TDS (आयकर Sec 194-O लागू 0.1% TDS on Gross ₹{grossSale.toFixed(2)}):</span>
+                        <span>• TDS ({isExemptedSeller ? '0% विशेष छूट GST 09BLMPK2840L2ZN' : `आयकर Sec 194-O लागू 0.1% TDS on Gross ₹${grossSale.toFixed(2)}`}):</span>
                         <span className="font-mono font-semibold text-purple-900">−₹{tdsAmt.toFixed(2)}</span>
                       </div>
 
                       <div className="flex justify-between text-gray-700">
-                        <span>• GST TCS (0.5% on Taxable ₹{taxableForTcs.toFixed(2)}):</span>
+                        <span>• GST TCS ({isExemptedSeller ? '0% विशेष छूट GST 09BLMPK2840L2ZN' : `0.5% on Taxable ₹${taxableForTcs.toFixed(2)}`}):</span>
                         <span className="font-mono font-semibold text-sky-900">−₹{tcsAmt.toFixed(2)}</span>
                       </div>
 

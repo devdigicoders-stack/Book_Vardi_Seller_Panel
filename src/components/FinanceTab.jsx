@@ -320,7 +320,9 @@ export default function FinanceTab() {
 
     if (updateSellerProfile) {
       updateSellerProfile({
-        bankDetails: updatedBankDetails
+        bankDetails: updatedBankDetails,
+        bankVerificationStatus: 'pending',
+        status: 'pending'
       });
     }
 
@@ -333,13 +335,16 @@ export default function FinanceTab() {
         bankAccountHolder: bankForm.accountHolder,
         bankAccountNumber: bankForm.accountNumber,
         bankIfscCode: bankForm.ifsc,
-        bankBranch: bankForm.branch
+        bankBranch: bankForm.branch,
+        bankVerificationStatus: 'pending',
+        status: 'pending'
       };
       localStorage.setItem('bv_seller_reg_data', JSON.stringify(regObj));
+      localStorage.setItem('bv_seller_status', 'pending');
     } catch {}
 
     setIsEditBankModalOpen(false);
-    if (showToast) showToast('✅ Linked Settlement Bank Account updated and synchronized with database!');
+    if (showToast) showToast('📋 Bank account details updated! Application submitted for Admin approval before payouts are activated.');
   };
 
   // Pure DB metrics computation
@@ -1087,7 +1092,11 @@ export default function FinanceTab() {
               <Building className="text-teal-700" size={18} /> Linked Settlement Bank Account
             </div>
             <div className="flex items-center gap-2">
-              {bankInfo.accountNumber ? (
+              {sellerUser?.bankVerificationStatus === 'pending' || sellerUser?.status === 'pending' ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  <Clock size={12} /> Pending Admin Approval
+                </span>
+              ) : bankInfo.accountNumber ? (
                 <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                   <ShieldCheck size={12} /> Verified Account
                 </span>
@@ -1106,6 +1115,13 @@ export default function FinanceTab() {
               </button>
             </div>
           </div>
+
+          {(sellerUser?.bankVerificationStatus === 'pending' || sellerUser?.status === 'pending') && bankInfo.accountNumber && (
+            <div className="p-3 bg-amber-50/90 rounded-xl border border-amber-200 text-amber-800 text-xs flex items-center gap-2 mb-3">
+              <Clock size={16} className="text-amber-600 shrink-0" />
+              <span>Your updated bank account details have been submitted and are <strong>pending Admin verification</strong>. Payouts will resume once approved.</span>
+            </div>
+          )}
 
           <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 space-y-2 text-xs">
             <div className="flex justify-between">
@@ -1308,6 +1324,14 @@ export default function FinanceTab() {
             </div>
 
             <form onSubmit={handleSaveBankDetails} className="p-5 space-y-3 text-xs">
+              <div className="p-3 bg-amber-50 border border-amber-200/90 rounded-xl text-amber-900 text-xs flex items-start gap-2">
+                <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold">Admin Verification Required</strong>
+                  Changing payout bank details will set your account to <strong>Pending Review</strong> until verified by the platform admin.
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <label className="font-bold text-gray-700">Bank Name *</label>
                 <input

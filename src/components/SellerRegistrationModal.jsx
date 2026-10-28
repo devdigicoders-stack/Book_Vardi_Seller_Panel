@@ -727,6 +727,36 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       }
     }
 
+    if (step === 7) {
+      if (!formData.bankAccountHolder?.trim()) {
+        if (showToast) showToast('⚠️ Please enter the Beneficiary Account Holder Name.');
+        return;
+      }
+      if (!formData.bankAccountNumber?.trim()) {
+        if (showToast) showToast('⚠️ Please enter the Bank Account Number.');
+        return;
+      }
+      if (formData.confirmBankAccountNumber && formData.bankAccountNumber !== formData.confirmBankAccountNumber) {
+        if (showToast) showToast('⚠️ Bank Account Number and Confirm Account Number do not match!');
+        return;
+      }
+      if (!formData.bankIfscCode?.trim()) {
+        if (showToast) showToast('⚠️ Please enter the Bank IFSC Code.');
+        return;
+      }
+      if (!formData.passbookDoc && !formData.passbookFileName) {
+        if (showToast) showToast('⚠️ Please upload Bank Passbook or Cancelled Cheque document before continuing.');
+        return;
+      }
+    }
+
+    if (step === 10) {
+      if (!formData.acceptedTerms || !formData.acceptedCommissionRate || (formData.acceptedDirectContactPenalty === false) || (formData.acceptedOrderPenalty === false)) {
+        if (showToast) showToast('⚠️ Please mark and accept all mandatory agreements before continuing!');
+        return;
+      }
+    }
+
     if (step < 12) {
       const newStep = step + 1;
       setStep(newStep);
@@ -745,6 +775,18 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       setStep(1);
       setShowOtpPopup(true);
       if (showToast) showToast('⚠️ Mobile OTP verification is required to complete seller registration!');
+      return;
+    }
+
+    if (!formData.passbookDoc && !formData.passbookFileName) {
+      setStep(7);
+      if (showToast) showToast('⚠️ Bank Passbook or Cancelled Cheque document is mandatory! Please upload before submitting.');
+      return;
+    }
+
+    if (!formData.acceptedTerms || !formData.acceptedCommissionRate || (formData.acceptedDirectContactPenalty === false) || (formData.acceptedOrderPenalty === false)) {
+      setStep(10);
+      if (showToast) showToast('⚠️ Please mark and accept all agreement checkboxes before submitting!');
       return;
     }
 
@@ -844,11 +886,21 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                       setShowOtpPopup(true);
                       return;
                     }
-                    if (isReached || isPast || s.id <= step + 1) {
+                    if (s.id > step) {
+                      if (step >= 7 && !formData.passbookDoc && !formData.passbookFileName) {
+                        if (showToast) showToast('⚠️ Please upload Bank Passbook or Cancelled Cheque document before proceeding.');
+                        return;
+                      }
+                      if (s.id > 10 && (!formData.acceptedTerms || !formData.acceptedCommissionRate)) {
+                        if (showToast) showToast('⚠️ Please check all mandatory agreement checkboxes before proceeding.');
+                        return;
+                      }
+                    }
+                    if (s.id <= step || isReached) {
                       setStep(s.id);
                     }
                   }}
-                  disabled={!isReached && s.id > step + 1}
+                  disabled={!isReached && s.id > step}
                   className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                     isCurrent
                       ? 'bg-brand-teal text-white shadow-xs'
@@ -2229,8 +2281,12 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
               <button
                 type="button"
                 onClick={handleFinalSubmit}
-                disabled={isSubmitting}
-                className="px-6 py-2.5 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
+                disabled={isSubmitting || !formData.acceptedTerms || !formData.acceptedCommissionRate}
+                className={`px-6 py-2.5 font-black text-xs rounded-xl shadow-md flex items-center gap-2 transition-all ${
+                  !formData.acceptedTerms || !formData.acceptedCommissionRate
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                    : 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark cursor-pointer'
+                }`}
               >
                 {isSubmitting ? (
                   <>

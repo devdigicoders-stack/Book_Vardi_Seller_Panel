@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
+  ArrowLeft,
   Printer, 
   Download,
   ShieldCheck, 
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useSellerData, readActiveSellerSettings, readActiveSellerProfile, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 import { SERVER_URL } from '../utils/api';
+import { getSellerInvoiceNumber } from '../utils/invoiceHelper';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
 
@@ -222,10 +224,33 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const [selectedSellerKey, setSelectedSellerKey] = useState(null);
 
   let contextSellerUser = null;
+  let contextOrders = [];
   try {
     const dataContext = useSellerData?.();
     contextSellerUser = dataContext?.sellerUser || null;
+    contextOrders = dataContext?.orders || [];
   } catch (e) {}
+
+  // Handle browser back button (popstate) safely so user never gets kicked out of the portal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const modalId = 'seller_invoice_modal_' + Date.now();
+    window.history.pushState({ modalOpen: true, modalId }, '');
+
+    const handlePopState = () => {
+      onClose();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (window.history.state?.modalId === modalId) {
+        window.history.back();
+      }
+    };
+  }, [isOpen, onClose]);
 
   const activeSellerUser = passedSellerUser || contextSellerUser || null;
 
@@ -894,6 +919,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   const resolvedSeller = resolveSeller();
 
+  const resolvedInvoiceNumber = useMemo(() => {
+    return getSellerInvoiceNumber(order, resolvedSeller, contextOrders);
+  }, [order, resolvedSeller, contextOrders]);
+
   // Dynamic Intra-State vs Inter-State detection
   const sellerStateInfo = parseStateInfo(resolvedSeller, `${resolvedSeller.city} ${resolvedSeller.state}`);
   const customerStateInfo = parseStateInfo(shippingAddr, `${formattedAddressStr} ${shippingAddr?.state || ''}`);
@@ -1096,19 +1125,31 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const isRule2OnlineCourier = !isCod && isThirdParty;
   const isRule1OnlineSelf = !isCod && !isThirdParty;
 
+  // Dynamic Exemption for specific GSTIN (e.g. 09BLMPK2840L2ZN)
+  const candidateSellerGst = String(
+    resolvedSeller?.gstNumber ||
+    resolvedSeller?.gstin ||
+    order.sellerDetails?.gstNumber ||
+    order.sellerDetails?.gstin ||
+    items[0]?.sellerDetails?.gstNumber ||
+    order.sellerGstNumber ||
+    ''
+  ).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const isExemptedSeller = candidateSellerGst === '09BLMPK2840L2ZN';
+
   // Dynamic Marketplace Commission Rate (Resolved per seller schedule)
-  const marketplaceCommissionRate = getSellerCommissionRate();
+  const marketplaceCommissionRate = isExemptedSeller ? 0 : getSellerCommissionRate();
 
   const settlementGross = Math.max(0, Math.round((subtotal - totalDiscounts) * 100) / 100);
 
-  const marketplaceCommission = isSettlementReversed ? 0 : Math.round((settlementGross * (marketplaceCommissionRate / 100)) * 100) / 100;
-  const gstOnCommission = isSettlementReversed ? 0 : Math.round((marketplaceCommission * 0.18) * 100) / 100;
-  const tdsAmount = isSettlementReversed ? 0 : Math.round((settlementGross * 0.001) * 100) / 100;
+  const marketplaceCommission = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((settlementGross * (marketplaceCommissionRate / 100)) * 100) / 100;
+  const gstOnCommission = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((marketplaceCommission * 0.18) * 100) / 100;
+  const tdsAmount = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((settlementGross * 0.001) * 100) / 100;
 
   // Statutory Tax:
   // Rule 3 (COD Self): GST TCS is 0% when portal does not collect customer payment
   // Rule 1, 2, 4: GST TCS is 0.5% (Sec 52 of CGST Act - strictly on Taxable Value)
-  // For 0% GST / Books: TCS = 0
+  // For 0% GST / Books / Exempted GST: TCS = 0
   const isTaxFreeOrder = (items || []).every(it => {
     const r = Number(it.rate ?? it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
     const cat = String(it.category || '').toLowerCase();
@@ -1116,8 +1157,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   });
   const itemsTaxableSum = (itemBreakdowns || []).reduce((sum, it) => sum + (Number(it.taxableVal) || 0), 0);
   const settlementTaxable = itemsTaxableSum > 0 ? itemsTaxableSum : settlementGross;
-  const tcsRate = (isSettlementReversed || isRule3CodSelf || isTaxFreeOrder) ? 0 : 0.5;
-  const gstTcsAmount = (isSettlementReversed || isRule3CodSelf || isTaxFreeOrder) ? 0 : Math.round(((settlementTaxable * tcsRate) / 100) * 100) / 100;
+  const tcsRate = (isSettlementReversed || isExemptedSeller || isRule3CodSelf || isTaxFreeOrder) ? 0 : 0.5;
+  const gstTcsAmount = (isSettlementReversed || isExemptedSeller || isRule3CodSelf || isTaxFreeOrder) ? 0 : Math.round(((settlementTaxable * tcsRate) / 100) * 100) / 100;
 
   // Delivery Charges + 18% GST (Rule 2 & Rule 4: Third-Party Delivery)
   const orderThreshold = Number(order.freeDeliveryThreshold ?? order.minOrderFreeShipping ?? 401);
@@ -1136,7 +1177,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   let gstOnDeliveryAmount = 0;
   let totalDeliveryDeduction = 0;
 
-  if (!isSettlementReversed && isThirdParty && delivBorneBy === 'seller' && !isAbove400) {
+  if (!isSettlementReversed && !isExemptedSeller && isThirdParty && delivBorneBy === 'seller' && !isAbove400) {
     const rawDeliveryFee = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? order.shippingFee ?? 49);
     // Delivery charges are GST INCLUSIVE (no extra GST added on top)
     totalDeliveryDeduction = Math.round(rawDeliveryFee * 100) / 100;
@@ -1144,15 +1185,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     gstOnDeliveryAmount = Math.round((totalDeliveryDeduction - deliveryChargeAmount) * 100) / 100;
   }
 
-  const statutoryDeductions = isSettlementReversed ? 0 : Math.round((marketplaceCommission + gstOnCommission + tdsAmount + gstTcsAmount) * 100) / 100;
-  const totalDeductions = isSettlementReversed ? 0 : Math.round((statutoryDeductions + totalDeliveryDeduction) * 100) / 100;
+  const statutoryDeductions = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((marketplaceCommission + gstOnCommission + tdsAmount + gstTcsAmount) * 100) / 100;
+  const totalDeductions = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((statutoryDeductions + totalDeliveryDeduction) * 100) / 100;
 
   // Final Settlement:
   const sellerSettlement = isSettlementReversed
     ? 0
-    : (isRule3CodSelf
-      ? -totalDeductions
-      : Math.max(0, Math.round((settlementGross - totalDeductions) * 100) / 100));
+    : (isExemptedSeller
+      ? settlementGross
+      : (isRule3CodSelf
+        ? -totalDeductions
+        : Math.max(0, Math.round((settlementGross - totalDeductions) * 100) / 100)));
 
   const sellerPayout = sellerSettlement;
 
@@ -1173,6 +1216,20 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const trackingLinkDisplay = isThirdParty
     ? (order.trackingUrl || order.thirdPartyDetails?.trackingUrl || '')
     : (order.selfDeliveryDetails?.trackingUrl || order.trackingUrl || '');
+
+  const platformSettings = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('bookvardi_platform_settings');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  }, []);
+
+  const companyName = platformSettings.companyName || 'BOOK VARDI';
+  const companyAddress = platformSettings.companyAddress || 'Lucknow, Uttar Pradesh - 226001';
+  const companyGstin = platformSettings.companyGstin || '09AAACB1234F1Z9';
+  const companySupportEmail = platformSettings.customerCareEmail || platformSettings.supportEmail || 'support@bookvardi.in';
 
   const handleDownloadPDF = async () => {
     if (!confirmed) {
@@ -1257,7 +1314,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       .join('\n');
 
     const rawId = order.id || order.orderId || order._id || 'ORDER';
-    const cleanId = String(rawId).replace(/^#/, '').trim();
+    const cleanId = resolvedInvoiceNumber || String(rawId).replace(/^#/, '').trim();
 
     doc.write(`
       <!DOCTYPE html>
@@ -1339,6 +1396,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
         {/* Top Control Bar */}
         <div className="bg-gray-950 text-white px-5 py-3 flex items-center justify-between shrink-0 print:hidden border-b border-gray-800">
           <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs border border-gray-700 shrink-0"
+              title="Return to Orders"
+            >
+              <ArrowLeft size={14} />
+              <span>Back to Orders</span>
+            </button>
             <div className="w-8 h-8 rounded-lg bg-emerald-500 text-gray-950 flex items-center justify-center font-bold">
               <FileText size={16} />
             </div>
@@ -1470,17 +1536,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <ShieldCheck size={14} /> Official Verified Invoice
                 </span>
               </div>
-              <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight">
-                BOOK VARDI
+              <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight uppercase">
+                {companyName}
               </h1>
-              <p className="text-[11px] text-gray-500">Lucknow, Uttar Pradesh - 226001 | GSTIN: 09AAACB1234F1Z9</p>
+              <p className="text-[11px] text-gray-500">{companyAddress} | GSTIN: {companyGstin}</p>
             </div>
 
             <div className="sm:text-right border-l-2 sm:border-l-0 sm:border-r-0 border-brand-teal pl-3 sm:pl-0">
               <h2 className="font-display font-black text-lg text-gray-900 uppercase tracking-wider">
                 TAX INVOICE
               </h2>
-              <p className="text-xs font-bold text-gray-700">Invoice No: <strong className="font-mono text-brand-teal">INV-{order.id}</strong></p>
+              <p className="text-xs font-bold text-gray-700">Invoice No: <strong className="font-mono text-brand-teal">{resolvedInvoiceNumber}</strong></p>
               <p className="text-[11px] text-gray-500">Invoice Date: {order.date || new Date().toLocaleDateString('en-GB')}</p>
             </div>
           </div>
@@ -1493,7 +1559,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-gray-50 p-4 rounded-xl border border-gray-200">
                 <div>
-                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Sold By (Merchant / Seller Store)</span>
+                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">
+                    {isCancelled ? 'Issued By (Merchant / Seller Store)' : 'Sold By (Merchant / Seller Store)'}
+                  </span>
                   <p className="font-extrabold text-gray-900 text-sm">{primarySellerName}</p>
                   <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-sm border border-emerald-200">
                     <ShieldCheck size={12} className="shrink-0" /> Verified Seller Partner
@@ -1502,7 +1570,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <p className="text-gray-700 font-mono font-bold mt-0.5">GSTIN: {primarySellerGst}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">Billed To (Customer / Institution)</span>
+                  <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">
+                    {isCancelled ? 'Issued To (Customer / Institution)' : 'Billed To (Customer / Institution)'}
+                  </span>
                   <p className="font-extrabold text-gray-900 text-sm">{stripCustomerPhoneFromAddress(order.schoolName || (typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || order.contactPerson || 'School Representative')))}</p>
                   <p className="text-gray-600 mt-0.5">{stripCustomerPhoneFromAddress(order.deliveryLocation || order.location || formattedAddressStr)}</p>
                   <p className="text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
@@ -1883,7 +1953,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
           <div className="border-t border-gray-200 pt-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-gray-500">
             <div>
               <p className="font-semibold text-gray-700">Book Vardi Seller Fulfillment Desk</p>
-              <p className="text-[10px] text-gray-400">Official Partner Merchant Tax Invoice • support@bookvardi.com</p>
+              <p className="text-[10px] text-gray-400">Official Partner Merchant Tax Invoice • {companySupportEmail}</p>
             </div>
             <div className="text-right shrink-0">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider block">Authorized Signatory</span>
