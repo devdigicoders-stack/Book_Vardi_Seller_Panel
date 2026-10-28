@@ -2184,22 +2184,27 @@ export default function BulkOrderPreviewModal({
                         {/* Descriptive Item Breakdown Table */}
                         {hasItemPrices ? (
                           <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-2xs">
-                            <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-200 flex items-center justify-between text-[11px] font-extrabold text-gray-700">
-                              <span className="flex items-center gap-1.5">
+                            <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between gap-2 text-[11px] font-extrabold text-gray-700 flex-wrap">
+                              <span className="flex items-center gap-1.5 shrink-0">
                                 <Package size={13} className="text-teal-700" /> Itemized Pricing & Scale Breakdown
                               </span>
-                              <span className="text-[10px] text-gray-400 font-medium">{quote.itemPrices.length} Items</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 sm:hidden font-semibold">
+                                  ↔ Swipe to scroll
+                                </span>
+                                <span className="text-[10px] text-gray-400 font-medium">{quote.itemPrices.length} Items</span>
+                              </div>
                             </div>
                             <div className="overflow-x-auto">
-                              <table className="w-full text-left border-collapse text-xs">
+                              <table className="min-w-[560px] w-full text-left border-collapse text-xs">
                                 <thead>
-                                  <tr className="bg-gray-50/50 text-[10px] uppercase font-bold text-gray-500 border-b border-gray-200">
-                                    <th className="py-2 px-3">Product Demand</th>
-                                    <th className="py-2 px-2 text-center">Qty</th>
-                                    <th className="py-2 px-2 text-right">User Budget/Unit</th>
-                                    <th className="py-2 px-2 text-right bg-emerald-50 text-emerald-950">Seller Price/Unit</th>
-                                    <th className="py-2 px-3 text-right">Line Total</th>
-                                    <th className="py-2 px-3">Scale / Volume Note</th>
+                                  <tr className="bg-gray-50/70 text-[10px] uppercase font-bold text-gray-500 border-b border-gray-200">
+                                    <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap">Product Demand</th>
+                                    <th className="py-2.5 px-2.5 text-center min-w-[50px] whitespace-nowrap">Qty</th>
+                                    <th className="py-2.5 px-2.5 text-right min-w-[85px] whitespace-nowrap">User Budget/Unit</th>
+                                    <th className="py-2.5 px-2.5 text-right min-w-[95px] whitespace-nowrap bg-emerald-50 text-emerald-950 font-black">Seller Price/Unit</th>
+                                    <th className="py-2.5 px-3 text-right min-w-[95px] whitespace-nowrap">Line Total</th>
+                                    <th className="py-2.5 px-3 min-w-[130px] whitespace-nowrap">Scale / Volume Note</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -2209,22 +2214,22 @@ export default function BulkOrderPreviewModal({
                                     const lineTotal = Number(item.totalPrice) || ((Number(item.quantity) || 1) * sellerPrice);
 
                                     return (
-                                      <tr key={ipIdx} className="hover:bg-teal-50/20">
-                                        <td className="py-2 px-3">
-                                          <div className="font-bold text-gray-900 line-clamp-1">{item.itemName}</div>
-                                          <div className="text-[10px] text-gray-400">{item.category}</div>
+                                      <tr key={ipIdx} className="hover:bg-teal-50/20 transition-colors">
+                                        <td className="py-2.5 px-3">
+                                          <div className="font-bold text-gray-900 leading-snug">{item.itemName}</div>
+                                          <div className="text-[10px] text-gray-400 mt-0.5">{item.category}</div>
                                         </td>
-                                        <td className="py-2 px-2 text-center font-bold text-gray-700">{item.quantity}</td>
-                                        <td className="py-2 px-2 text-right font-medium text-gray-600">
+                                        <td className="py-2.5 px-2.5 text-center font-bold text-gray-700 whitespace-nowrap">{item.quantity}</td>
+                                        <td className="py-2.5 px-2.5 text-right font-medium text-gray-600 font-mono whitespace-nowrap">
                                           {custBudget > 0 ? `₹${custBudget.toLocaleString()}` : 'N/A'}
                                         </td>
-                                        <td className="py-2 px-2 text-right font-black bg-emerald-50/70 text-emerald-900 font-mono">
+                                        <td className="py-2.5 px-2.5 text-right font-black bg-emerald-50/70 text-emerald-900 font-mono whitespace-nowrap">
                                           ₹{sellerPrice.toLocaleString()}
                                         </td>
-                                        <td className="py-2 px-3 text-right font-black text-gray-900 font-mono">
+                                        <td className="py-2.5 px-3 text-right font-black text-gray-900 font-mono whitespace-nowrap">
                                           ₹{lineTotal.toLocaleString()}
                                         </td>
-                                        <td className="py-2 px-3">
+                                        <td className="py-2.5 px-3">
                                           {item.discountTierNote ? (
                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-bold">
                                               💡 {item.discountTierNote}
