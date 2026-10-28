@@ -359,7 +359,7 @@ export default function BillingReportsTab() {
         return {
           'S.No': idx + 1,
           'Invoice / Doc No': isReturnOrCancel ? o.creditNoteNo : (o.isExchange ? o.exchangeInvoiceNo : o.invoiceNo),
-          'Document Type': isReturnOrCancel ? 'Credit Note (Sec 34)' : (o.isExchange ? 'Exchange Invoice (Sec 31)' : 'Tax Invoice (Sec 31)'),
+          'Document Type': isReturnOrCancel ? 'Credit Note (Sec 34)' : (o.isExchange ? 'Replacement Tax Invoice (Sec 31)' : 'Tax Invoice (Sec 31)'),
           'Date': o.orderDate.toLocaleDateString('en-IN'),
           'Order ID': o.orderIdStr,
           'Customer Name': o.customerName,

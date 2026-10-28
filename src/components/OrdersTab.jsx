@@ -1499,10 +1499,10 @@ export default function OrdersTab() {
                                       href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="underline text-indigo-900"
-                                      title="Tax Invoice for new exchange item"
+                                      className="underline text-teal-900 font-bold"
+                                      title="Tax Invoice for new exchange replacement item"
                                     >
-                                      Exchange Invoice
+                                      Replacement Tax Invoice
                                     </a>
                                   </div>
                                 )}
@@ -2106,7 +2106,46 @@ export default function OrdersTab() {
                 <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
                   {activeOrderModal.items?.map((item, idx) => {
                     const isMyItem = isItemBelongingToCurrentSeller(item);
-                    const itemStat = item.status || activeOrderModal.status || 'Pending';
+                    
+                    // Accurately determine if THIS specific item is under active return or exchange
+                    const reqTargetId = String(activeOrderModal.returnRequest?.itemId || activeOrderModal.returnRequest?.productId || '').trim();
+                    const reqTargetName = String(activeOrderModal.returnRequest?.itemName || '').trim().toLowerCase();
+                    const hasActiveReturnRequest = Boolean(
+                      activeOrderModal.returnRequest &&
+                      activeOrderModal.returnRequest.status &&
+                      !['none', 'no_request', ''].includes(String(activeOrderModal.returnRequest.status).toLowerCase())
+                    );
+                    
+                    const hasExplicitTarget = Boolean(reqTargetId || reqTargetName);
+                    const isTargetMatch = Boolean(
+                      (reqTargetId && (String(item._id || '') === reqTargetId || String(item.id || '') === reqTargetId || String(item.productId || '') === reqTargetId)) ||
+                      (reqTargetName && String(item.name || '').trim().toLowerCase() === reqTargetName)
+                    );
+
+                    const isThisItemExchangedOrReturned = hasActiveReturnRequest && (
+                      hasExplicitTarget
+                        ? isTargetMatch
+                        : (
+                            (activeOrderModal.items?.length === 1) ||
+                            String(item.status || '').toLowerCase().includes('exchange') ||
+                            String(item.status || '').toLowerCase().includes('return')
+                          )
+                    );
+
+                    // If order was delivered and THIS item was NOT returned/exchanged, it remains Delivered!
+                    let itemStat = item.status;
+                    if (!isThisItemExchangedOrReturned) {
+                      if (itemStat && (itemStat.toLowerCase().includes('exchange') || itemStat.toLowerCase().includes('return') || itemStat.toLowerCase().includes('pickup'))) {
+                        itemStat = 'Delivered';
+                      } else if (!itemStat) {
+                        itemStat = activeOrderModal.status && !activeOrderModal.status.toLowerCase().includes('exchange') && !activeOrderModal.status.toLowerCase().includes('return') && !activeOrderModal.status.toLowerCase().includes('pickup')
+                          ? activeOrderModal.status
+                          : 'Delivered';
+                      }
+                    } else {
+                      itemStat = itemStat || activeOrderModal.returnRequest?.status || activeOrderModal.status || 'Exchange Requested';
+                    }
+
                     const storeNameAttribution = item.storeName || item.sellerStoreName || item.sellerName || item.sellerDetails?.storeName || 'Other Verified Seller';
 
                     return (
@@ -2165,13 +2204,18 @@ export default function OrdersTab() {
                               itemStat === 'Packed' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
                               itemStat === 'Confirmed' ? 'bg-blue-50 text-blue-800 border-blue-200' :
                               itemStat === 'Cancelled' ? 'bg-rose-50 text-rose-800 border-rose-200' :
+                              (itemStat.toLowerCase().includes('exchange') || itemStat.toLowerCase().includes('pickup') || itemStat.toLowerCase().includes('return')) ? 'bg-purple-100 text-purple-950 border-purple-300' :
                               'bg-amber-50 text-amber-800 border-amber-200'
                             }`}>
                               {itemStat}
                             </span>
-                            {isMyItem ? (
+                            {isThisItemExchangedOrReturned ? (
+                              <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-50 text-purple-900 border border-purple-200 text-[10px] font-extrabold" title="Fulfillment managed via 2-way Return / Exchange workflow">
+                                <span>🔄 2-Way Exchange Active</span>
+                              </div>
+                            ) : isMyItem ? (
                               <select
-                                value={itemStat}
+                                value={['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(itemStat) ? itemStat : 'Delivered'}
                                 onChange={async (e) => {
                                   const newStatus = e.target.value;
                                   const itemIdToUpdate = item._id || item.id || idx;
