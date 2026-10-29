@@ -3184,18 +3184,19 @@ export default function OrdersTab() {
       {/* Automated Delivery Partner AWB & Dispatch Modal */}
       {isCreateShipmentModalOpen && (
         <CreateShipmentModal
-        isOpen={isCreateShipmentModalOpen}
-        onClose={() => setIsCreateShipmentModalOpen(false)}
-        order={activeOrderModal}
-        onShipmentCreated={(result) => {
-          if (activeOrderModal && result?.awbNumber) {
-            updateOrderStatus(activeOrderModal.id || activeOrderModal._id, 'Shipped', {
-              trackingNumber: result.awbNumber,
-              courierName: result.order?.shipmentDetails?.courierPartnerName || 'Shiprocket Courier'
-            });
-          }
-        }}
-      />
+          isOpen={isCreateShipmentModalOpen}
+          onClose={() => setIsCreateShipmentModalOpen(false)}
+          order={activeOrderModal}
+          onShipmentCreated={(result) => {
+            if (activeOrderModal && result?.awbNumber) {
+              updateOrderStatus(activeOrderModal.id || activeOrderModal._id, 'Shipped', {
+                trackingNumber: result.awbNumber,
+                courierName: result.order?.shipmentDetails?.courierPartnerName || 'Shiprocket Courier'
+              });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
