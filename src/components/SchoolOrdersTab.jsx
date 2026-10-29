@@ -602,25 +602,35 @@ export default function SchoolOrdersTab() {
                         <Truck size={15} className="text-teal-700" />
                         <span>Order Processing Stepper (Store Self-Delivery Only)</span>
                       </div>
-                      <span className="text-[10px] font-extrabold text-teal-900 bg-white px-2.5 py-0.5 rounded-full border border-teal-200 shadow-2xs uppercase tracking-wider">
-                        Status: {isReceived ? 'Delivered' : isOutForDelivery ? 'Out for Delivery' : isPacked ? 'Packed' : (req.status || 'Accepted').replace(/_/g, ' ')}
+                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border shadow-2xs uppercase tracking-wider ${
+                        isPrepaymentPending
+                          ? 'bg-amber-100 text-amber-950 border-amber-300 font-black'
+                          : 'bg-white text-teal-900 border-teal-200'
+                      }`}>
+                        Status: {isPrepaymentPending ? 'Prepayment Pending' : isReceived ? 'Delivered' : isOutForDelivery ? 'Out for Delivery' : isPacked ? 'Packed' : (req.status || 'Accepted').replace(/_/g, ' ')}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2 pt-1">
                       {[
-                        { step: 1, key: 'accepted', label: '1. Accepted', done: true },
+                        { 
+                          step: 1, 
+                          key: 'accepted', 
+                          label: isPrepaymentPending ? '1. Pitch Selected' : '1. Accepted', 
+                          done: true,
+                          isPending: isPrepaymentPending
+                        },
                         { step: 2, key: 'packed', label: '2. Packed', done: isPacked || isOutForDelivery || isReceived },
                         { step: 3, key: 'out for delivery', label: '3. Out for Delivery', done: isOutForDelivery || isReceived },
                         { step: 4, key: 'received', label: '4. Received', done: isReceived }
                       ].map((st) => (
                         <div key={st.step} className="flex flex-col items-center text-center">
                           <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-2xs ${
-                            st.done ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-500'
+                            st.done ? (st.isPending ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white') : 'bg-gray-200 text-gray-500'
                           }`}>
-                            {st.done ? '✓' : st.step}
+                            {st.done ? (st.isPending ? '⏳' : '✓') : st.step}
                           </div>
-                          <span className={`text-[10px] mt-1 font-bold ${st.done ? 'text-teal-950' : 'text-gray-400'}`}>
+                          <span className={`text-[10px] mt-1 font-bold ${st.done ? (st.isPending ? 'text-amber-950 font-extrabold' : 'text-teal-950') : 'text-gray-400'}`}>
                             {st.label}
                           </span>
                         </div>
@@ -719,46 +729,73 @@ export default function SchoolOrdersTab() {
                     )}
 
                     {/* Financial & Settlement Breakdown for Accepted / Dispatched / Fulfilled orders */}
-                    {myQuote && (isAssignedToMe || isWinningSeller) && !isOutbidOrRejected && (
-                      <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-2">
-                        <div>
-                          <span className="text-[10px] font-bold uppercase text-gray-500 block">Total Quotation Value</span>
-                          <span className="text-sm font-black text-gray-900">₹{Number(myQuote.quoteAmount || req.overallBudget || 0).toLocaleString()}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-bold uppercase text-emerald-800 block">Advance Prepayment (Paid)</span>
-                          <span className="text-sm font-black text-emerald-900 flex items-center gap-1">
-                            <CheckCircle2 size={13} className="text-emerald-700" />
-                            ₹{Number(req.advancePaidAmount || myQuote.prepaymentAmount || 0).toLocaleString()}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-bold uppercase text-teal-800 block">Remaining Balance</span>
-                          {(() => {
-                            const tot = Number(myQuote.quoteAmount || req.overallBudget || 0);
-                            const adv = Number(req.advancePaidAmount || myQuote.prepaymentAmount || 0);
-                            const rem = Math.max(0, tot - adv);
-                            const isPaid = req.remainingPaymentStatus === 'paid' || req.status === 'completed';
-                            return (
-                              <div className="flex items-center gap-1.5">
-                                <span className={`text-sm font-black ${isPaid ? 'text-emerald-900 line-through' : 'text-amber-900'}`}>
-                                  ₹{rem.toLocaleString()}
+                    {myQuote && (isAssignedToMe || isWinningSeller) && !isOutbidOrRejected && (() => {
+                      const tot = Number(myQuote.quoteAmount || req.overallBudget || 0);
+                      const advDemanded = Number(req.sellerAdvanceAmount || myQuote.prepaymentAmount || req.prepaymentAmount || 0);
+                      const isAdvActuallyPaid = isPrepaymentActuallyPaid;
+                      const actualAdvPaid = isAdvActuallyPaid ? (Number(req.advancePaidAmount) || advDemanded) : 0;
+                      const isAdvPending = advDemanded > 0 && !isAdvActuallyPaid;
+                      const remDue = Math.max(0, tot - actualAdvPaid);
+                      const isFullPaid = req.remainingPaymentStatus === 'paid' || req.status === 'completed';
+
+                      return (
+                        <div className={`${isAdvPending ? 'bg-amber-50/80 border-amber-300' : 'bg-emerald-50/60 border-emerald-200'} border rounded-xl p-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-2 transition-all`}>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-gray-500 block">Total Quotation Value</span>
+                            <span className="text-sm font-black text-gray-900">₹{tot.toLocaleString()}</span>
+                          </div>
+                          <div>
+                            <span className={`text-[10px] font-bold uppercase block ${isAdvPending ? 'text-amber-900' : 'text-emerald-800'}`}>
+                              {isAdvPending ? 'Advance Prepayment (Pending)' : 'Advance Prepayment (Paid)'}
+                            </span>
+                            {isAdvPending ? (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-sm font-black text-amber-950 flex items-center gap-1 font-mono">
+                                  <Clock size={13} className="text-amber-600" />
+                                  ₹{advDemanded.toLocaleString()}
                                 </span>
-                                {isPaid ? (
-                                  <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 font-extrabold text-[10px] rounded-full uppercase">
-                                    Paid Online (UPI)
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 bg-amber-200 text-amber-950 font-extrabold text-[10px] rounded-full uppercase">
-                                    Due on Delivery
-                                  </span>
-                                )}
+                                <span className="px-1.5 py-0.5 bg-amber-200 text-amber-950 text-[9px] font-extrabold rounded uppercase">
+                                  Unpaid / Due from Buyer
+                                </span>
                               </div>
-                            );
-                          })()}
+                            ) : (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-sm font-black text-emerald-900 flex items-center gap-1 font-mono">
+                                  <CheckCircle2 size={13} className="text-emerald-700" />
+                                  ₹{actualAdvPaid.toLocaleString()}
+                                </span>
+                                <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-900 text-[9px] font-extrabold rounded uppercase">
+                                  Paid Online
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-teal-800 block">
+                              {isAdvPending ? 'Current Balance Due' : 'Remaining Balance'}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={`text-sm font-black font-mono ${isFullPaid ? 'text-emerald-900 line-through' : isAdvPending ? 'text-amber-950' : 'text-gray-900'}`}>
+                                ₹{remDue.toLocaleString()}
+                              </span>
+                              {isFullPaid ? (
+                                <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 font-extrabold text-[10px] rounded-full uppercase">
+                                  Paid Online (UPI)
+                                </span>
+                              ) : isAdvPending ? (
+                                <span className="px-2 py-0.5 bg-amber-200/90 text-amber-950 font-extrabold text-[10px] rounded-full uppercase border border-amber-300">
+                                  Due on Delivery: ₹{(tot - advDemanded).toLocaleString()}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-amber-200 text-amber-950 font-extrabold text-[10px] rounded-full uppercase">
+                                  Due on Delivery
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                     {isOutbidOrRejected && myQuote && (
                       <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs mt-2 text-rose-950">
                         <div className="flex items-center gap-2">
@@ -1040,21 +1077,15 @@ export default function SchoolOrdersTab() {
                       Prepayment Pending
                     </span>
                   </div>
-                ) : (isPrepaymentPaid && isAssignedToMe && !isOutbidOrRejected) ? (
+                ) : (isPrepaymentActuallyPaid && isAssignedToMe && !isOutbidOrRejected) ? (
                   <div className="bg-emerald-50/70 border border-emerald-200/80 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
                       <DollarSign size={14} className="text-emerald-700 shrink-0" />
                       <div>
                         <span className="font-extrabold text-emerald-950 block">
-                          {isPrepaymentPaid ? (
-                            <span className="text-emerald-800">✅ Online Prepayment Confirmed: ₹{Number(req.advancePaidAmount || req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()}</span>
-                          ) : req.buyerAdvancePercentage ? (
-                            <span>Buyer Offered Advance: <strong className="text-emerald-900">{req.buyerAdvancePercentage}%</strong>{req.buyerAdvanceAmount ? ` (₹${Number(req.buyerAdvanceAmount).toLocaleString()})` : ''}</span>
-                          ) : (
-                            <span>Advance Terms Specified</span>
-                          )}
+                          <span className="text-emerald-800">✅ Online Prepayment Confirmed: ₹{Number(req.advancePaidAmount || req.sellerAdvanceAmount || myQuote?.prepaymentAmount || 0).toLocaleString()}</span>
                         </span>
-                        {isPrepaymentPaid && req.advanceTransactionId && (
+                        {req.advanceTransactionId && (
                           <span className="text-emerald-800 font-mono text-[10px]">
                             Razorpay TXN: <strong>{req.advanceTransactionId}</strong>
                           </span>
