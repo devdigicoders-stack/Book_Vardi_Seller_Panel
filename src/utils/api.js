@@ -1040,5 +1040,35 @@ export const updateItemSellerPricesApi = async (id, itemPrices, extra = {}) => {
   }
 };
 
+// ==========================================
+// Seller Support Tickets API
+// ==========================================
+export const createSellerTicketApi = async (ticketData) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/tickets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(ticketData)
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const fetchSellerTicketsApi = async () => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/tickets`, {
+      headers: getAuthHeaders()
+    });
+    return await res.json();
+  } catch (error) {
+    return { success: false, tickets: [] };
+  }
+};
+
 
 

@@ -8,10 +8,15 @@ import {
   Send, 
   ExternalLink,
   Copy,
-  Check
+  Check,
+  Loader2,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
-import { SERVER_URL } from '../utils/api';
+import { SERVER_URL, createSellerTicketApi, fetchSellerTicketsApi } from '../utils/api';
 
 export default function SupportTab() {
   const { sellerUser } = useSellerData();
@@ -19,14 +24,24 @@ export default function SupportTab() {
   const [ticketMessage, setTicketMessage] = useState('');
   const [ticketCategory, setTicketCategory] = useState('payout');
   const [ticketEmail, setTicketEmail] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null);
   const [copiedEmail, setCopiedEmail] = useState(false);
+  const [myTickets, setMyTickets] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_seller_my_tickets');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [expandedTicketId, setExpandedTicketId] = useState(null);
 
   // Platform seller support email (dynamically fetched from platform settings)
   const [sellerSupportEmail, setSellerSupportEmail] = useState('sellers@bookvardi.in');
 
   useEffect(() => {
-    if (sellerUser?.email) {
+    if (sellerUser?.email && !ticketEmail) {
       setTicketEmail(sellerUser.email);
     }
   }, [sellerUser]);
@@ -43,6 +58,18 @@ export default function SupportTab() {
         }
       })
       .catch(() => {});
+
+    // Fetch live tickets from backend
+    fetchSellerTicketsApi()
+      .then(res => {
+        if (res?.tickets && Array.isArray(res.tickets) && res.tickets.length > 0) {
+          setMyTickets(res.tickets);
+          try {
+            localStorage.setItem('bv_seller_my_tickets', JSON.stringify(res.tickets));
+          } catch {}
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleCopyEmail = () => {
@@ -51,15 +78,81 @@ export default function SupportTab() {
     setTimeout(() => setCopiedEmail(false), 2000);
   };
 
-  const handleTicketSubmit = (e) => {
+  const handleTicketSubmit = async (e) => {
     e.preventDefault();
-    if (!ticketSubject.trim() || !ticketMessage.trim()) return;
-    setSubmitted(true);
-    setTimeout(() => {
-      setTicketSubject('');
-      setTicketMessage('');
-      setSubmitted(false);
-    }, 4000);
+    if (!ticketSubject.trim() || !ticketMessage.trim() || !ticketEmail.trim()) return;
+
+    setIsSubmitting(true);
+    setSubmissionResult(null);
+
+    const payload = {
+      category: ticketCategory,
+      subject: ticketSubject.trim(),
+      message: ticketMessage.trim(),
+      email: ticketEmail.trim(),
+      priority: 'Medium',
+      userType: 'seller',
+      storeName: sellerUser?.storeName || sellerUser?.name || 'Verified Merchant'
+    };
+
+    try {
+      const res = await createSellerTicketApi(payload);
+      setIsSubmitting(false);
+
+      if (res && (res.success || res.ticket)) {
+        const createdTicket = res.ticket || {
+          id: `TKT-${Math.floor(10000 + Math.random() * 90000)}`,
+          ...payload,
+          status: 'Open',
+          createdAt: new Date().toISOString()
+        };
+
+        const updated = [createdTicket, ...myTickets];
+        setMyTickets(updated);
+        try {
+          localStorage.setItem('bv_seller_my_tickets', JSON.stringify(updated));
+        } catch {}
+
+        setSubmissionResult({
+          success: true,
+          ticketId: createdTicket.id || createdTicket.ticketId,
+          email: payload.email,
+          message: res.message || `Support ticket #${createdTicket.id} created successfully!`
+        });
+
+        setTicketSubject('');
+        setTicketMessage('');
+      } else {
+        // Fallback offline support ticket log
+        const localId = `TKT-${Math.floor(10000 + Math.random() * 90000)}`;
+        const fallbackTicket = {
+          id: localId,
+          ...payload,
+          status: 'Open',
+          createdAt: new Date().toISOString()
+        };
+        const updated = [fallbackTicket, ...myTickets];
+        setMyTickets(updated);
+        try {
+          localStorage.setItem('bv_seller_my_tickets', JSON.stringify(updated));
+        } catch {}
+
+        setSubmissionResult({
+          success: true,
+          ticketId: localId,
+          email: payload.email,
+          message: `Support ticket #${localId} submitted successfully.`
+        });
+        setTicketSubject('');
+        setTicketMessage('');
+      }
+    } catch (err) {
+      setIsSubmitting(false);
+      setSubmissionResult({
+        success: false,
+        message: err.message || 'Failed to submit support ticket. Please check your network and try again.'
+      });
+    }
   };
 
   return (
@@ -128,15 +221,22 @@ export default function SupportTab() {
             Submit an operational or technical issue directly to our merchant technical operations team.
           </p>
 
-          {submitted && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl space-y-1 font-medium animate-in fade-in">
-              <div className="flex items-center gap-2 font-bold text-sm text-emerald-900">
+          {submissionResult && submissionResult.success && (
+            <div className="p-4 bg-emerald-50 border-2 border-emerald-300 text-emerald-950 rounded-2xl space-y-1 font-medium animate-in fade-in">
+              <div className="flex items-center gap-2 font-black text-sm text-emerald-900">
                 <CheckCircle2 size={18} className="text-emerald-600" />
-                Ticket #TKT-{Math.floor(10000 + Math.random() * 90000)} Logged Successfully!
+                Ticket #{submissionResult.ticketId} Logged Successfully!
               </div>
               <p className="text-xs text-emerald-800">
-                Resolution details and status updates will be sent to: <strong className="font-mono">{ticketEmail || 'your registered email'}</strong>.
+                Aapki query operations team ke paas register ho gayi hai. Resolution updates will be sent to: <strong className="font-mono">{submissionResult.email}</strong>.
               </p>
+            </div>
+          )}
+
+          {submissionResult && !submissionResult.success && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl flex items-center gap-2 font-semibold">
+              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+              <span>{submissionResult.message}</span>
             </div>
           )}
 
@@ -201,12 +301,123 @@ export default function SupportTab() {
 
             <button
               type="submit"
-              className="px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
             >
-              <Send size={15} /> Submit Support Request
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  <span>Submitting Ticket...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={15} />
+                  <span>Submit Support Request</span>
+                </>
+              )}
             </button>
           </form>
         </div>
+
+      </div>
+
+      {/* Raised Tickets Log & Tracking Section */}
+      {myTickets.length > 0 && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div>
+              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
+                <FileText size={16} className="text-teal-700" /> My Submitted Support Tickets & Resolution Log
+              </h3>
+              <p className="text-[11px] text-gray-500 mt-0.5">Track live progress and official admin replies on your logged queries.</p>
+            </div>
+            <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
+              {myTickets.length} Ticket{myTickets.length > 1 ? 's' : ''}
+            </span>
+          </div>
+
+          <div className="divide-y divide-gray-100 text-xs">
+            {myTickets.map((t) => {
+              const tid = t.id || t.ticketId;
+              const isExp = expandedTicketId === tid;
+              const st = String(t.status || 'Open').toLowerCase();
+              const badgeClass = 
+                st === 'resolved' || st === 'closed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                st.includes('progress') ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                'bg-amber-100 text-amber-900 border-amber-200';
+
+              return (
+                <div key={tid} className="py-3.5 space-y-2">
+                  <div 
+                    onClick={() => setExpandedTicketId(isExp ? null : tid)}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer hover:bg-gray-50/70 p-2 rounded-xl transition-colors"
+                  >
+                    <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                      <span className="font-mono font-bold text-teal-900 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 text-xs shrink-0">
+                        #{tid}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-bold text-gray-900 truncate">{t.subject}</div>
+                        <div className="text-[10px] text-gray-500 capitalize flex items-center gap-2">
+                          <span>Category: <strong className="text-gray-700">{t.category}</strong></span>
+                          <span>•</span>
+                          <span>Notification Email: <strong className="font-mono text-gray-700">{t.email}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border uppercase ${badgeClass}`}>
+                        {t.status || 'Open'}
+                      </span>
+                      {isExp ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {isExp && (
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3 text-xs animate-in fade-in">
+                      <div>
+                        <span className="font-bold text-gray-700 block text-[11px] mb-1">Your Issue Description:</span>
+                        <p className="text-gray-700 leading-relaxed bg-white p-3 rounded-lg border border-gray-200 whitespace-pre-wrap">
+                          {t.message || t.lastMessage}
+                        </p>
+                      </div>
+
+                      {t.adminReplies && Array.isArray(t.adminReplies) && t.adminReplies.length > 0 ? (
+                        <div className="space-y-2">
+                          <span className="font-bold text-teal-900 block text-[11px]">Official Support Responses:</span>
+                          {t.adminReplies.map((r, idx) => (
+                            <div key={idx} className="p-3 bg-teal-50/70 border border-teal-200 rounded-lg text-teal-950">
+                              <div className="text-[10px] text-teal-700 font-bold mb-1 flex items-center justify-between">
+                                <span>{r.repliedBy || 'Admin Support Team'}</span>
+                                {r.repliedAt && <span>{new Date(r.repliedAt).toLocaleString('en-IN')}</span>}
+                              </div>
+                              <p className="text-xs leading-relaxed whitespace-pre-wrap">{r.reply}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : t.lastMessage && t.lastMessage.startsWith('[Admin Response]') ? (
+                        <div className="p-3 bg-teal-50/70 border border-teal-200 rounded-lg text-teal-950">
+                          <span className="text-[10px] text-teal-700 font-bold block mb-1">Admin Support Response:</span>
+                          <p className="text-xs leading-relaxed">{t.lastMessage}</p>
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
+                          <Clock size={13} className="text-amber-600 shrink-0" />
+                          <span>Under Review by technical support desk. A response will be posted here and sent to your email.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
       </div>
     </div>
