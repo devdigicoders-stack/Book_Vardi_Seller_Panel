@@ -334,7 +334,7 @@ export default function ProfileTab() {
     accountType: sellerUser?.bankDetails?.accountType || sellerUser?.accountType || stepData.accountType || 'Current Account'
   });
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (stepData) {
       setFormData(prev => ({
         ...prev,
