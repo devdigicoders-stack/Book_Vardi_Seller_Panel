@@ -418,8 +418,3 @@ export default function SupportTab() {
     </div>
   );
 }
-
-      </div>
-    </div>
-  );
-}
