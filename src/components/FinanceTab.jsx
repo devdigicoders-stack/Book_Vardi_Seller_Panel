@@ -52,6 +52,16 @@ const checkOrderIsThirdParty = (o) => {
   return isExplicitThirdParty || !isExplicitSelf;
 };
 
+export const EXEMPTED_GST_NUMBERS = [
+  "09BLMPK2840L2ZN"
+];
+
+export function isGstExempted(gst) {
+  if (!gst) return false;
+  const clean = String(gst).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return EXEMPTED_GST_NUMBERS.some(item => clean === item.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""));
+}
+
 // 3. Returned / Refunded Orders: Settlement reversed, Credit note auto-recognized under Sec 34
 const evaluateOrderMaturity = (order) => {
   const normStatus = String(order.status || order.overallStatus || '').toLowerCase().trim();
@@ -432,7 +442,27 @@ export default function FinanceTab() {
         delivDeduction = Math.round(rawDeliveryFee * 100) / 100;
       }
 
-      const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
+      // COD Charges Policy:
+      // Self Delivery: COD charge belongs to Seller (₹0 portal deduction)
+      // Courier Delivery: COD charge belongs to Portal
+      // Exemption: 09BLMPK2840L2ZN is exempt - no COD charge deduction in courier delivery
+      const isSellerExemptGst = isGstExempted(sellerUser?.gstNumber || sellerUser?.gstin || o.sellerDetails?.gstNumber) ||
+        String(sellerUser?.storeName || sellerUser?.sellerStoreName || o.sellerStoreName || '').toLowerCase().includes('national school dress');
+      const rawCodFee = Number(o.codFee ?? o.codCharges ?? o.settlement?.codChargeAmount ?? 0);
+      let codDeduction = 0;
+      if (isCod && rawCodFee > 0) {
+        if (!isThirdParty) {
+          codDeduction = 0; // Self delivery: Seller retains COD charge
+        } else if (isSellerExemptGst || o.settlement?.isCodExempted) {
+          codDeduction = 0; // 09BLMPK2840L2ZN: Exempt from COD charge deduction
+        } else if (o.settlement?.codChargeDeduction !== undefined) {
+          codDeduction = Number(o.settlement.codChargeDeduction);
+        } else {
+          codDeduction = rawCodFee;
+        }
+      }
+
+      const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction + codDeduction) * 100) / 100;
 
       // Rule 3: Cash collected by seller. Seller owes portal (-deductions).
       // Rule 1, 2 & 4: Portal collected cash (online or courier) and pays seller (gross - deductions).
@@ -976,6 +1006,9 @@ export default function FinanceTab() {
               <span className="text-[10px] bg-rose-200 text-rose-950 font-bold px-2 py-0.5 rounded-full">Rule 3 ({ruleMetrics.rule3.count} Orders)</span>
             </div>
             <p className="text-[11px]">• ग्राहक पूरा पैसा सेलर को कैश देता है। पोर्टल {commissionRate}% Comm + 18% GST + 0.1% TDS (0% TCS) लेगा। सेटलमेंट माइनस (−Deductions) दिखेगा।</p>
+            <p className="text-[11px] font-semibold text-rose-950 bg-rose-100/70 p-1.5 rounded-md border border-rose-200">
+              💵 <strong>COD Charges:</strong> सेलर डिलीवरी में COD चार्ज <strong>सेलर के पास रहेगा</strong> (सेलर स्वयं कलेक्ट करेगा और रखेगा, पोर्टल से कोई कटौती नहीं होगी)।
+            </p>
           </div>
         )}
 
@@ -986,6 +1019,9 @@ export default function FinanceTab() {
               <span className="text-[10px] bg-purple-200 text-purple-950 font-bold px-2 py-0.5 rounded-full">Rule 4 ({ruleMetrics.rule4.count} Orders)</span>
             </div>
             <p className="text-[11px]">• कूरियर कैश कलेक्ट कर पोर्टल को देगा। {commissionRate}% Comm + 18% GST + 0.1% TDS + 0.5% TCS कटेगा। ₹{resolvedFreeDeliveryThreshold}+ पर डिलीवरी ₹0, बची राशि सेलर को।</p>
+            <p className="text-[11px] font-semibold text-purple-950 bg-purple-100/70 p-1.5 rounded-md border border-purple-200">
+              🏢 <strong>COD Charges:</strong> कूरियर डिलीवरी में COD चार्ज <strong>पोर्टल के पास रहेगा</strong>। (<strong>विशेष छूट:</strong> 09BLMPK2840L2ZN को छूट मिलेगी — कूरियर डिलीवरी में भी इससे COD चार्ज नहीं काटे जाएंगे)।
+            </p>
           </div>
         )}
 
@@ -1001,11 +1037,11 @@ export default function FinanceTab() {
             </div>
             <div className="flex items-start gap-1.5">
               <span className="font-bold text-rose-300 shrink-0">COD + सेलर डिलीवरी (Rule 3):</span>
-              <span>ग्राहक पूरा पैसा सीधे सेलर को देगा। {commissionRate}% कमीशन + 18% GST + 0.1% TDS (0% TCS) पोर्टल में देय (-) होगा और सेलर का सेटलमेंट माइनस (-) में दिखेगा।</span>
+              <span>ग्राहक पूरा पैसा सीधे सेलर को देगा। COD चार्ज सेलर के पास रहेगा। पोर्टल कमीशन + GST + TDS पोर्टल में देय (-) होगा।</span>
             </div>
             <div className="flex items-start gap-1.5">
               <span className="font-bold text-purple-300 shrink-0">COD + कूरियर डिलीवरी (Rule 4):</span>
-              <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। पोर्टल {commissionRate}% कमीशन + 18% GST + 0.1% TDS + 0.5% TCS काटेगा। ₹{resolvedFreeDeliveryThreshold}+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
+              <span>कूरियर ग्राहक से कैश लेकर पोर्टल को देगा। COD चार्ज पोर्टल के पास रहेगा (GST 09BLMPK2840L2ZN को विशेष छूट — कूरियर में भी COD चार्ज नहीं कटेगा)। ₹{resolvedFreeDeliveryThreshold}+ पर डिलीवरी फ्री, बची राशि सेलर को मिलेगी।</span>
             </div>
           </div>
         )}

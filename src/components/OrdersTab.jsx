@@ -2448,12 +2448,39 @@ export default function OrdersTab() {
                     )}
 
                     {/* 4. COD / Convenience Fee */}
-                    {codFeeVal > 0 && (
-                      <div className="flex justify-between text-gray-700">
-                        <span>COD / Convenience Fee:</span>
-                        <span className="font-mono font-bold text-teal-800">+₹{codFeeVal.toFixed(2)}</span>
-                      </div>
-                    )}
+                    {codFeeVal > 0 && (() => {
+                      const isSelfDeliv = activeOrderModal.deliveryMode === 'self_delivery' ||
+                        Boolean(activeOrderModal.selfDeliveryDetails?.deliveryPartnerToken || activeOrderModal.selfDeliveryDetails?.deliveryPersonName) ||
+                        (!activeOrderModal.deliveryMode && !activeOrderModal.courierName);
+                      const isExemptedSeller = (activeOrderModal.sellerGstNumber === '09BLMPK2840L2ZN') ||
+                        (activeOrderModal.sellerGstin === '09BLMPK2840L2ZN') ||
+                        (activeOrderModal.gstNumber === '09BLMPK2840L2ZN') ||
+                        (sellerUser?.gstNumber === '09BLMPK2840L2ZN') ||
+                        activeOrderModal.isCodExempted ||
+                        String(sellerUser?.storeName || activeOrderModal.sellerStoreName || '').toLowerCase().includes('national school dress');
+
+                      return (
+                        <div className="flex justify-between items-center text-gray-700 flex-wrap gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>COD Fee:</span>
+                            {isSelfDeliv ? (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-300">
+                                Retained by Seller (₹0 Portal Deduction)
+                              </span>
+                            ) : isExemptedSeller ? (
+                              <span className="text-[10px] bg-teal-100 text-teal-800 font-bold px-1.5 py-0.2 rounded border border-teal-300">
+                                09BLMPK2840L2ZN Exempt (Not Deducted)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-300">
+                                Retained by Portal
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-mono font-bold text-teal-800">+₹{codFeeVal.toFixed(2)}</span>
+                        </div>
+                      );
+                    })()}
 
                     {/* 5. Base Taxable Amount (Excl. GST) - after adding delivery charges & exchange adjustment */}
                     <div className="flex justify-between text-gray-600 text-[11px] pt-1.5 border-t border-dashed border-teal-200">
