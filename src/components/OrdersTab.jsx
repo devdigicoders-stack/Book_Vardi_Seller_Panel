@@ -3172,15 +3172,18 @@ export default function OrdersTab() {
       )}
 
       {/* GST Tax Invoice & Dispatch Packing Slip Modal */}
-      <TaxInvoiceModal
+      {isInvoiceModalOpen && activeOrderModal && (
+        <TaxInvoiceModal
         isOpen={isInvoiceModalOpen}
         onClose={() => setIsInvoiceModalOpen(false)}
         order={activeOrderModal}
         sellerUser={sellerUser}
       />
+      )}
 
       {/* Automated Delivery Partner AWB & Dispatch Modal */}
-      <CreateShipmentModal
+      {isCreateShipmentModalOpen && (
+        <CreateShipmentModal
         isOpen={isCreateShipmentModalOpen}
         onClose={() => setIsCreateShipmentModalOpen(false)}
         order={activeOrderModal}
