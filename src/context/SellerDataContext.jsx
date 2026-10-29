@@ -156,7 +156,11 @@ export const readActiveSellerProfile = () => {
       ownerDesignation: pickFirst(sellerUser.ownerDesignation, sellerUser.ownerDetails?.ownerDesignation, sellerProf.ownerDesignation, regData.ownerDesignation, 'Proprietor'),
       ownerPan: pickFirst(sellerUser.ownerPan, sellerUser.ownerDetails?.ownerPan, sellerUser.pan, sellerProf.ownerPan, regData.ownerPan, ''),
       businessPan: pickFirst(sellerUser.businessPan, sellerUser.documents?.businessPan, sellerUser.documents?.panNumber, sellerUser.pan, sellerProf.businessPan, regData.businessPan, ''),
-      ownerAadhaarLast4: pickFirst(sellerUser.ownerAadhaarLast4, sellerUser.ownerDetails?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : undefined), sellerProf.ownerAadhaarLast4, regData.ownerAadhaarLast4),
+      ownerAadhaarLast4: (() => {
+        const raw = pickFirst(sellerUser.ownerAadhaarLast4, sellerUser.ownerDetails?.ownerAadhaarLast4, sellerUser?.documents?.aadhaarNumber, sellerProf.ownerAadhaarLast4, regData.ownerAadhaarLast4);
+        const digits = String(raw || '').replace(/\D/g, '');
+        return digits ? digits.slice(-4) : '';
+      })(),
       gstin: pickFirst(sellerUser.gstin, sellerUser.gstNumber, sellerProf.gstin, sellerProf.gstNumber, regData.gstin, regData.gstNumber, ''),
       msmeRegistrationNumber: pickFirst(sellerUser.msmeRegistrationNumber, sellerUser.documents?.msmeRegistrationNumber, sellerProf.msmeRegistrationNumber, regData.msmeRegistrationNumber, ''),
       cinNumber: pickFirst(sellerUser.cinNumber, sellerUser.documents?.cinNumber, sellerProf.cinNumber, regData.cinNumber, ''),
@@ -1069,7 +1073,11 @@ export const SellerDataProvider = ({ children }) => {
             ownerDesignation: val.ownerDetails?.ownerDesignation || val.ownerDesignation || val.designation,
             ownerPan: val.ownerDetails?.ownerPan || val.documents?.panNumber || val.pan,
             businessPan: val.businessPan || val.documents?.businessPan || val.documents?.panNumber || val.pan,
-            ownerAadhaarLast4: val.ownerDetails?.ownerAadhaarLast4 || (val.documents?.aadhaarNumber ? String(val.documents.aadhaarNumber).slice(-4) : undefined),
+            ownerAadhaarLast4: (() => {
+              const raw = val.ownerDetails?.ownerAadhaarLast4 || val.documents?.aadhaarNumber || val.ownerAadhaarLast4;
+              const digits = String(raw || '').replace(/\D/g, '');
+              return digits ? digits.slice(-4) : undefined;
+            })(),
             gstin: val.gstNumber || val.gstin,
             hasGstExemption: val.hasGstExemption || val.documents?.hasGstExemption,
             msmeRegistrationNumber: val.msmeRegistrationNumber || val.documents?.msmeRegistrationNumber,

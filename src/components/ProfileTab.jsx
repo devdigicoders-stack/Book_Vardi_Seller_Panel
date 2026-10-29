@@ -161,7 +161,11 @@ export default function ProfileTab() {
       annualTurnoverEstimate: pickFirst(sellerUser?.annualTurnoverEstimate, rawSaved?.annualTurnoverEstimate, ''),
       ownerPan: pickFirst(sellerUser?.ownerDetails?.ownerPan, sellerUser?.ownerPan, sellerUser?.documents?.panNumber, sellerUser?.pan, rawSaved?.ownerPan, rawSaved?.businessPan, ''),
       businessPan: pickFirst(sellerUser?.businessPan, sellerUser?.documents?.businessPan, sellerUser?.documents?.panNumber, sellerUser?.pan, rawSaved?.businessPan, rawSaved?.ownerPan, ''),
-      ownerAadhaarLast4: pickFirst(sellerUser?.ownerDetails?.ownerAadhaarLast4, sellerUser?.ownerAadhaarLast4, (sellerUser?.documents?.aadhaarNumber ? String(sellerUser.documents.aadhaarNumber).slice(-4) : ''), rawSaved?.ownerAadhaarLast4),
+      ownerAadhaarLast4: (() => {
+        const raw = pickFirst(sellerUser?.ownerDetails?.ownerAadhaarLast4, sellerUser?.ownerAadhaarLast4, sellerUser?.documents?.aadhaarNumber, rawSaved?.ownerAadhaarLast4, '');
+        const digits = String(raw || '').replace(/\D/g, '');
+        return digits.length >= 4 ? digits.slice(-4) : digits;
+      })(),
       aadhaarDoc: rawAadhaarDoc,
       ownerAadhaarDoc: rawAadhaarDoc,
       shopDoc: rawShopDoc,
@@ -639,14 +643,21 @@ export default function ProfileTab() {
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Aadhaar (Last 4)</span>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="font-bold text-gray-800 font-mono">{stepData.ownerAadhaarLast4 ? `•••• •••• ${stepData.ownerAadhaarLast4}` : 'N/A'}</span>
+                    <span className="font-bold text-gray-800 font-mono">
+                      {(() => {
+                        const raw = stepData.ownerAadhaarLast4 || sellerUser?.ownerDetails?.ownerAadhaarLast4 || sellerUser?.documents?.aadhaarNumber || rawSaved?.ownerAadhaarLast4 || '';
+                        const digits = String(raw).replace(/\D/g, '');
+                        if (!digits) return 'N/A';
+                        return `•••• •••• ${digits.slice(-4)}`;
+                      })()}
+                    </span>
                     {(stepData.aadhaarDoc || stepData.ownerAadhaarDoc || sellerUser?.documents?.aadhaarDoc || rawSaved?.aadhaarDoc) && (
                       <button
                         type="button"
                         onClick={() => setPreviewDocModal({
                           title: 'Owner Aadhaar Card Document',
                           url: stepData.aadhaarDoc || stepData.ownerAadhaarDoc || sellerUser?.documents?.aadhaarDoc || rawSaved?.aadhaarDoc,
-                          fileName: `Aadhaar_${stepData.ownerAadhaarLast4 || 'Document'}.pdf`
+                          fileName: `Aadhaar_${(String(stepData.ownerAadhaarLast4 || '').replace(/\D/g, '').slice(-4)) || 'Document'}.pdf`
                         })}
                         className="px-1.5 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-md text-[10px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer"
                       >

@@ -794,9 +794,14 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
     setIsSubmitting(true);
 
+    const rawAadhaar = String(formData.ownerAadhaarLast4 || '').replace(/\D/g, '');
+    const cleanLast4 = rawAadhaar.length >= 4 ? rawAadhaar.slice(-4) : rawAadhaar;
+
     if (submitSellerApplication) {
       submitSellerApplication({
         ...formData,
+        ownerAadhaarLast4: cleanLast4,
+        aadhaarNumber: rawAadhaar || formData.aadhaarNumber || cleanLast4,
         status: 'pending',
         submissionStatus: 'pending',
         submittedAt: new Date().toLocaleDateString()
