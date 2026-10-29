@@ -180,7 +180,7 @@ export const readActiveSellerProfile = () => {
       bankIfscCode: pickFirst(sellerUser.bankIfscCode, sellerUser.bankDetails?.ifscCode, sellerProf.bankIfscCode, regData.bankIfscCode, ''),
       bankName: pickFirst(sellerUser.bankName, sellerUser.bankDetails?.bankName, sellerProf.bankName, regData.bankName, ''),
       bankBranch: pickFirst(sellerUser.bankBranch, sellerUser.bankDetails?.branchName, sellerUser.bankDetails?.bankBranch, sellerProf.bankBranch, regData.bankBranch, ''),
-      accountType: pickFirst(sellerUser.accountType, sellerUser.bankDetails?.accountType, sellerProf.accountType, regData.accountType, 'Savings Account'),
+      accountType: pickFirst(sellerUser.accountType, sellerUser.bankDetails?.accountType, sellerProf.accountType, regData.accountType, 'Current Account'),
       legalBusinessName: pickFirst(sellerUser.legalBusinessName, sellerUser.storeName, sellerProf.legalBusinessName, regData.legalBusinessName, ''),
       tradeName: pickFirst(sellerUser.tradeName, sellerUser.storeName, sellerProf.tradeName, regData.tradeName, ''),
       storeName: pickFirst(sellerUser.storeName, regData.storeName, ''),
@@ -1096,7 +1096,7 @@ export const SellerDataProvider = ({ children }) => {
             bankIfscCode: val.bankDetails?.ifscCode || val.bankIfscCode,
             bankName: val.bankDetails?.bankName || val.bankName,
             bankBranch: val.bankDetails?.branchName || val.bankDetails?.bankBranch || val.bankBranch,
-            accountType: val.bankDetails?.accountType || val.accountType,
+            accountType: val.bankDetails?.accountType || val.accountType || 'Current Account',
             storeTagline: val.storeDetails?.storeTagline || val.storeTagline,
             storeDescription: val.storeDescription || val.storeDetails?.storeDescription,
             commissionRate: (val.commissionRate !== undefined && val.commissionRate !== null && !isNaN(Number(val.commissionRate))) 

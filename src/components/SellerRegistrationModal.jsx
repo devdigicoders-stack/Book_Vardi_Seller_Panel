@@ -108,7 +108,7 @@ export const INITIAL_FORM_STATE = {
   bankIfscCode: '',
   bankName: '',
   bankBranch: '',
-  accountType: 'Savings Account',
+  accountType: 'Current Account',
   passbookDoc: '',
   passbookFileName: '',
 

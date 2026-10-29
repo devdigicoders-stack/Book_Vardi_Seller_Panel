@@ -23,7 +23,8 @@ import {
   UploadCloud,
   Crosshair,
   Navigation,
-  Loader2
+  Loader2,
+  Edit3
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import DocumentPreviewModal from './DocumentPreviewModal';
@@ -187,6 +188,7 @@ export default function ProfileTab() {
       bankIfscCode: pickFirst(rawSaved?.bankIfscCode, sellerUser?.bankDetails?.ifscCode, sellerUser?.bankIfscCode, ''),
       bankName: pickFirst(rawSaved?.bankName, sellerUser?.bankDetails?.bankName, sellerUser?.bankName, ''),
       bankBranch: pickFirst(rawSaved?.bankBranch, rawSaved?.branchName, sellerUser?.bankDetails?.branchName, sellerUser?.bankDetails?.bankBranch, sellerUser?.bankBranch, ''),
+      accountType: pickFirst(sellerUser?.bankDetails?.accountType, sellerUser?.accountType, rawSaved?.accountType, rawSaved?.bankDetails?.accountType, 'Current Account'),
       addressProofDoc: rawAddressDoc,
       addressProofFileName: getFileNameOnly(rawSaved?.addressProofFileName || rawAddressDoc) || 'addressProofDoc-1789380245540-84981246.pdf',
       profilePhoto: rawPhoto,
@@ -323,8 +325,28 @@ export default function ProfileTab() {
     landmark: sellerUser?.addressDetails?.landmark || sellerUser?.landmark || stepData.landmark || '',
     city: sellerUser?.city || stepData.city || 'Lucknow',
     state: sellerUser?.state || stepData.state || 'Uttar Pradesh',
-    pincode: sellerUser?.pincode || stepData.pincode || ''
+    pincode: sellerUser?.pincode || stepData.pincode || '',
+    bankAccountHolder: sellerUser?.bankDetails?.accountHolderName || sellerUser?.bankAccountHolder || stepData.bankAccountHolder || '',
+    bankAccountNumber: sellerUser?.bankDetails?.accountNumber || sellerUser?.bankAccountNumber || stepData.bankAccountNumber || '',
+    bankIfscCode: sellerUser?.bankDetails?.ifscCode || sellerUser?.bankIfscCode || stepData.bankIfscCode || '',
+    bankName: sellerUser?.bankDetails?.bankName || sellerUser?.bankName || stepData.bankName || '',
+    bankBranch: sellerUser?.bankDetails?.branchName || sellerUser?.bankBranch || stepData.bankBranch || '',
+    accountType: sellerUser?.bankDetails?.accountType || sellerUser?.accountType || stepData.accountType || 'Current Account'
   });
+
+  useEffect(() => {
+    if (stepData) {
+      setFormData(prev => ({
+        ...prev,
+        bankAccountHolder: prev.bankAccountHolder || stepData.bankAccountHolder || '',
+        bankAccountNumber: prev.bankAccountNumber || stepData.bankAccountNumber || '',
+        bankIfscCode: prev.bankIfscCode || stepData.bankIfscCode || '',
+        bankName: prev.bankName || stepData.bankName || '',
+        bankBranch: prev.bankBranch || stepData.bankBranch || '',
+        accountType: stepData.accountType || prev.accountType || 'Current Account'
+      }));
+    }
+  }, [stepData]);
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [securityForm, setSecurityForm] = useState({
@@ -357,11 +379,28 @@ export default function ProfileTab() {
 
   const handleProfileSubmit = (e) => {
     e.preventDefault();
-    updateSellerProfile(formData);
+    const payload = {
+      ...formData,
+      bankAccountHolder: formData.bankAccountHolder,
+      bankAccountNumber: formData.bankAccountNumber,
+      bankIfscCode: formData.bankIfscCode,
+      bankName: formData.bankName,
+      bankBranch: formData.bankBranch,
+      accountType: formData.accountType || 'Current Account',
+      bankDetails: {
+        accountHolderName: formData.bankAccountHolder,
+        accountNumber: formData.bankAccountNumber,
+        ifscCode: formData.bankIfscCode,
+        bankName: formData.bankName,
+        branchName: formData.bankBranch,
+        accountType: formData.accountType || 'Current Account'
+      }
+    };
+    updateSellerProfile(payload);
     try {
       const saved = localStorage.getItem('bv_seller_reg_data');
       let parsed = saved ? JSON.parse(saved) : {};
-      localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...parsed, ...formData }));
+      localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...parsed, ...payload }));
     } catch {}
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
@@ -936,25 +975,40 @@ export default function ProfileTab() {
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">IFSC & Account Type</span>
                   <span className="font-bold text-gray-800 font-mono mt-0.5 block">
-                    {stepData.bankIfscCode || 'N/A'} ({stepData.accountType || 'Current'})
+                    {stepData.bankIfscCode || 'N/A'} ({stepData.accountType || 'Current Account'})
                   </span>
                 </div>
-                {(stepData.passbookDoc || sellerUser?.documents?.passbookDoc) && (
-                  <div className="col-span-full pt-1">
-                    <span className="block text-gray-400 font-medium text-[11px] mb-1">Bank Passbook / Cancelled Cheque (`passbookDoc`)</span>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewDocModal({
-                        title: 'Bank Passbook / Cancelled Cheque Document',
-                        url: stepData.passbookDoc || sellerUser?.documents?.passbookDoc,
-                        fileName: 'bank_passbook_cancelled_cheque.pdf'
-                      })}
-                      className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1.5 cursor-pointer shrink-0"
-                    >
-                      <Eye size={12} /> Preview Bank Passbook Document
-                    </button>
-                  </div>
-                )}
+                <div className="col-span-full pt-1 flex items-center justify-between flex-wrap gap-2">
+                  {(stepData.passbookDoc || sellerUser?.documents?.passbookDoc) ? (
+                    <div>
+                      <span className="block text-gray-400 font-medium text-[11px] mb-1">Bank Passbook / Cancelled Cheque</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          title: 'Bank Passbook / Cancelled Cheque Document',
+                          url: stepData.passbookDoc || sellerUser?.documents?.passbookDoc,
+                          fileName: 'bank_passbook_cancelled_cheque.pdf'
+                        })}
+                        className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1.5 cursor-pointer shrink-0"
+                      >
+                        <Eye size={12} /> Preview Bank Passbook Document
+                      </button>
+                    </div>
+                  ) : <div />}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('edit');
+                      setTimeout(() => {
+                        const el = document.getElementById('quick-edit-bank-section');
+                        if (el) el.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }}
+                    className="px-3 py-1.5 bg-brand-teal/10 hover:bg-brand-teal/20 text-brand-teal rounded-xl text-xs font-bold border border-brand-teal/20 flex items-center gap-1.5 cursor-pointer mt-auto"
+                  >
+                    <Edit3 size={13} /> Edit Account Type / Bank Details
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1378,6 +1432,77 @@ export default function ProfileTab() {
                 </div>
               </div>
 
+              {/* Bank & Settlement Details Quick Edit Section */}
+              <div id="quick-edit-bank-section" className="pt-3 border-t border-gray-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <CreditCard size={15} className="text-teal-700" /> Bank & Settlement Account Details
+                  </label>
+                  <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-semibold">
+                    Payout Destination
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Account Holder Name *</label>
+                    <input
+                      type="text"
+                      value={formData.bankAccountHolder || ''}
+                      onChange={(e) => setFormData({ ...formData, bankAccountHolder: e.target.value })}
+                      placeholder="Beneficiary Account Name"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Account Number *</label>
+                    <input
+                      type="text"
+                      value={formData.bankAccountNumber || ''}
+                      onChange={(e) => setFormData({ ...formData, bankAccountNumber: e.target.value })}
+                      placeholder="Bank Account Number"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Bank IFSC Code *</label>
+                    <input
+                      type="text"
+                      value={formData.bankIfscCode || ''}
+                      onChange={(e) => setFormData({ ...formData, bankIfscCode: e.target.value.toUpperCase() })}
+                      placeholder="e.g. BKID0007808"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono uppercase focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-gray-700">Bank Name & Branch</label>
+                    <input
+                      type="text"
+                      value={formData.bankName || ''}
+                      onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
+                      placeholder="e.g. BANK OF INDIA (behat)"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="font-bold text-gray-700">Bank Account Type *</label>
+                    <select
+                      value={formData.accountType || 'Current Account'}
+                      onChange={(e) => setFormData({ ...formData, accountType: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-teal-700 bg-white cursor-pointer font-medium"
+                    >
+                      <option value="Current Account">Current Account</option>
+                      <option value="Savings Account">Savings Account</option>
+                      <option value="Overdraft Account">Overdraft Account (OD)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
@@ -1484,7 +1609,9 @@ export default function ProfileTab() {
 
               <div className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
                 <span className="text-gray-700 font-medium">Bank Settlement IFSC</span>
-                <span className="font-bold text-teal-900">HDFC0000240</span>
+                <span className="font-bold text-teal-900 font-mono">
+                  {stepData.bankIfscCode || sellerUser?.bankDetails?.ifscCode || sellerUser?.bankIfscCode || 'N/A'}
+                </span>
               </div>
 
               <div className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
