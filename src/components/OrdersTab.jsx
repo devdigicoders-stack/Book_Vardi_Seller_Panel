@@ -38,6 +38,7 @@ import CreateShipmentModal from './CreateShipmentModal';
 import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
 import { SERVER_URL } from '../utils/api';
 import { getSellerInvoiceNumber } from '../utils/invoiceHelper';
+import useModalBackTrap from '../hooks/useModalBackTrap';
 
 // Helper to generate absolute Storefront Website Delivery Partner portal link
 export const getDriverWebsiteUrl = (tokenVal) => {
@@ -131,25 +132,7 @@ export default function OrdersTab() {
   const [modalSelfDeliveryToken, setModalSelfDeliveryToken] = useState('');
 
   // Intercept browser back button when activeOrderModal is open so user isn't kicked out of the portal
-  useEffect(() => {
-    if (!activeOrderModal) return;
-
-    const modalId = 'seller_order_detail_modal_' + Date.now();
-    window.history.pushState({ sellerOrderModalOpen: true, modalId }, '');
-
-    const handlePopState = () => {
-      setActiveOrderModal(null);
-    };
-
-    window.addEventListener('popstate', handlePopState);
-
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      if (window.history.state?.modalId === modalId) {
-        window.history.back();
-      }
-    };
-  }, [Boolean(activeOrderModal)]);
+  useModalBackTrap(Boolean(activeOrderModal), () => setActiveOrderModal(null));
 
   // Automated WhatsApp dispatch tracking state
   const [isSavingDelivery, setIsSavingDelivery] = useState(false);
@@ -1298,13 +1281,23 @@ export default function OrdersTab() {
                           );
                         })()}
 
-                        <div className="text-[11px] rounded-lg p-2 bg-white/80 border border-purple-100 font-semibold text-purple-950">
+                        <div className="text-[11px] rounded-lg p-2.5 bg-white/90 border border-purple-200 font-semibold text-purple-950 space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold text-indigo-950">
+                            <span>🔄 1-Round Doorstep Swap:</span>
+                            <span className="font-normal text-gray-700">Rider delivers replacement unit & collects original return item in a single trip.</span>
+                          </div>
                           {activeOrderModal.returnRequest?.priceAdjustmentType === 'extra_payment' ? (
-                            <span>⚠️ <strong>Delivery Boy Instruction:</strong> Rider must collect <strong>₹{activeOrderModal.returnRequest.priceDifference} in cash or UPI</strong> from the customer before completing exchange delivery.</span>
+                            <div className="text-amber-900 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                              ⚠️ <strong>Delivery Boy Instruction:</strong> Rider must collect <strong>₹{activeOrderModal.returnRequest.priceDifference} in cash or UPI</strong> from the customer before completing exchange delivery.
+                            </div>
                           ) : activeOrderModal.returnRequest?.priceAdjustmentType === 'partial_refund' ? (
-                            <span>✅ <strong>Delivery Boy Instruction:</strong> Rider collects <strong>₹0</strong>. Partial refund of ₹{Math.abs(activeOrderModal.returnRequest.priceDifference)} is paid directly to customer's account.</span>
+                            <div className="text-emerald-900 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                              ✅ <strong>Delivery Boy Instruction:</strong> Rider collects <strong>₹0</strong>. Partial refund of ₹{Math.abs(activeOrderModal.returnRequest.priceDifference)} is paid directly to customer's account.
+                            </div>
                           ) : (
-                            <span>✅ <strong>Delivery Boy Instruction:</strong> Rider collects <strong>₹0</strong> (Equal price exchange).</span>
+                            <div className="text-emerald-900 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                              ✅ <strong>Delivery Boy Instruction:</strong> Rider collects <strong>₹0</strong> (Equal price exchange).
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1415,18 +1408,32 @@ export default function OrdersTab() {
                               </>
                             )}
 
-                            {isApproved && (
+                            {/* For Returns: Schedule pickup */}
+                            {isApproved && isReturn && (
                               <button
                                 type="button"
                                 disabled={isUpdatingReturnStatus}
                                 onClick={() => setReturnActionState(prev => ({ ...prev, showPickupInput: !prev.showPickupInput }))}
                                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                               >
-                                📦 Schedule Pickup
+                                📦 Schedule Return Pickup
                               </button>
                             )}
 
-                            {isPickupScheduled && (
+                            {/* For Exchanges: Direct 1-Round Doorstep Swap (Delivers Replacement & Picks Up Return simultaneously) */}
+                            {(isApproved || isPickupScheduled || isProductReceived) && isExchange && !isExchangeDispatched && (
+                              <button
+                                type="button"
+                                disabled={isUpdatingReturnStatus}
+                                onClick={() => setReturnActionState(prev => ({ ...prev, showDispatchInput: !prev.showDispatchInput }))}
+                                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                              >
+                                🚀 Dispatch Replacement & Doorstep Swap
+                              </button>
+                            )}
+
+                            {/* For Returns: Mark product received and restore stock */}
+                            {isPickupScheduled && isReturn && (
                               <button
                                 type="button"
                                 disabled={isUpdatingReturnStatus}
@@ -1438,6 +1445,7 @@ export default function OrdersTab() {
                               </button>
                             )}
 
+                            {/* For Returns: Process Refund */}
                             {isProductReceived && isReturn && (
                               <button
                                 type="button"
@@ -1449,25 +1457,15 @@ export default function OrdersTab() {
                               </button>
                             )}
 
-                            {isProductReceived && isExchange && (
-                              <button
-                                type="button"
-                                disabled={isUpdatingReturnStatus}
-                                onClick={() => setReturnActionState(prev => ({ ...prev, showDispatchInput: !prev.showDispatchInput }))}
-                                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                              >
-                                🚀 Dispatch Replacement Unit
-                              </button>
-                            )}
-
-                            {isExchangeDispatched && (
+                            {/* For Exchanges: Complete Doorstep Swap (Replacement Delivered & Returned Unit Restocked in 1 round) */}
+                            {(isExchangeDispatched || (isProductReceived && isExchange)) && (
                               <button
                                 type="button"
                                 disabled={isUpdatingReturnStatus}
                                 onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'exchanged')}
                                 className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                               >
-                                {isUpdatingReturnStatus ? '⏳ Completing...' : '✓ Complete Exchange'}
+                                {isUpdatingReturnStatus ? '⏳ Completing...' : '✓ Complete Doorstep Swap (Delivered & Old Item Restocked)'}
                               </button>
                             )}
 
