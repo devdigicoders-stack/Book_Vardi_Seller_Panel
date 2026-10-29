@@ -1528,17 +1528,24 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
           
           {/* Company & Certificate Header */}
           <div className="flex flex-col sm:flex-row justify-between items-start border-b-2 border-gray-900 pb-5 gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="bg-brand-teal text-white font-black text-xs px-2 py-0.5 rounded tracking-wider uppercase">Book Vardi</span>
-                <span className="text-xs font-extrabold text-emerald-700 flex items-center gap-1">
-                  <ShieldCheck size={14} /> Official Verified Invoice
-                </span>
+            <div className="flex items-start gap-3.5">
+              <img
+                src="/logo.png"
+                alt="Book Vardi"
+                className="h-14 sm:h-16 w-auto max-w-[120px] object-contain shrink-0"
+              />
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="bg-brand-teal text-white font-black text-xs px-2 py-0.5 rounded tracking-wider uppercase">Book Vardi</span>
+                  <span className="text-xs font-extrabold text-emerald-700 flex items-center gap-1">
+                    <ShieldCheck size={14} /> Official Verified Invoice
+                  </span>
+                </div>
+                <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight uppercase">
+                  {companyName}
+                </h1>
+                <p className="text-[11px] text-gray-500">{companyAddress} | GSTIN: {companyGstin}</p>
               </div>
-              <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight uppercase">
-                {companyName}
-              </h1>
-              <p className="text-[11px] text-gray-500">{companyAddress} | GSTIN: {companyGstin}</p>
             </div>
 
             <div className="sm:text-right border-l-2 sm:border-l-0 sm:border-r-0 border-brand-teal pl-3 sm:pl-0">
