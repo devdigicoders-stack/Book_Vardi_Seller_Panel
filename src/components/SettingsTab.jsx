@@ -8,7 +8,11 @@ import {
   MapPin, 
   Phone, 
   Mail, 
-  FileText 
+  FileText,
+  AlertTriangle,
+  Clock,
+  Loader2,
+  X
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 
@@ -16,16 +20,64 @@ export default function SettingsTab() {
   const { settings, updateSettings, clearAllSellerData, isApproved } = useSellerData();
   const [formData, setFormData] = useState({ ...settings });
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionNotice, setSubmissionNotice] = useState(null);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    updateSettings(formData);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    setIsSubmitting(true);
+    setSubmissionNotice(null);
+    try {
+      const res = await updateSettings(formData);
+      setIsSubmitting(false);
+      if (res?.requiresApproval || isApproved) {
+        setSubmissionNotice({
+          type: 'pending_approval',
+          title: 'Badlav Admin Approval Ke Liye Submit Ho Gaye Hain',
+          message: 'Aapki profile update request submit ho gayi hai aur approval ke liye Admin Portal par bhej di gayi hai. Admin dwara verify aur approve hone ke baad ye changes live ho jayenge.'
+        });
+      } else {
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 3000);
+      }
+    } catch (err) {
+      setIsSubmitting(false);
+      setSubmissionNotice({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Settings update karne me samasya aayi.'
+      });
+    }
   };
 
   return (
     <div className="space-y-6">
+      {/* Submission Success / Pending Approval Modal Dialog */}
+      {submissionNotice && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 space-y-4 text-center animate-in zoom-in-95">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center shadow-xs">
+              <Clock size={28} />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-gray-900">{submissionNotice.title}</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">{submissionNotice.message}</p>
+            </div>
+            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-[11px] text-amber-900 text-left leading-relaxed">
+              ℹ️ <strong>Admin Review Policy:</strong> Store Name, GSTIN, Helpline Phone aur Warehouse Address jaise credentials admin verification ke baad hi update hote hain taaki tax compliance aur customer safety bani rahe.
+            </div>
+            <button
+              type="button"
+              onClick={() => setSubmissionNotice(null)}
+              className="w-full py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-extrabold rounded-xl text-xs cursor-pointer shadow-xs transition-colors"
+            >
+              Theek Hai, Samajh Gaya (OK)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top Header */}
       <div className="flex items-center justify-between bg-white p-5 rounded-2xl shadow-xs border border-gray-100">
         <div>
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -40,6 +92,29 @@ export default function SettingsTab() {
           <ShieldCheck size={14} /> Approved Verified Seller
         </div>
       </div>
+
+      {/* Prominent Pending Admin Review Alert Banner */}
+      {settings?.pendingUpdates && (
+        <div className="bg-amber-50 border-2 border-amber-300 p-4 rounded-2xl flex items-start gap-3.5 text-amber-950 shadow-xs animate-in fade-in">
+          <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0 text-amber-700">
+            <Clock size={20} />
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="font-extrabold text-sm flex items-center gap-2">
+              <span>Profile Badlav Admin Approval Ke Liye Pending Hain</span>
+              <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2 py-0.5 rounded-full uppercase">Pending Review</span>
+            </div>
+            <p className="text-amber-800 leading-relaxed">
+              Aapke dwara submit kiye gaye profile aur store details Admin Portal par verification ke liye bhej diye gaye hain. Admin verify karke jaise hi approve karenge, ye badlav turant live store par reflect ho jayenge.
+            </p>
+            {settings.pendingUpdates?.submittedAt && (
+              <div className="text-[11px] text-amber-700 font-mono mt-1">
+                Submitted on: {new Date(settings.pendingUpdates.submittedAt).toLocaleString('en-IN')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         
@@ -198,20 +273,37 @@ export default function SettingsTab() {
         </div>
 
         {/* Save Bar */}
-        <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
           {savedSuccess ? (
             <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 animate-in fade-in">
               <CheckCircle2 size={16} /> Store settings updated and persisted successfully!
             </span>
+          ) : settings?.pendingUpdates ? (
+            <span className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+              <Clock size={15} className="text-amber-600" /> Previous update request is currently under review by Admin.
+            </span>
           ) : (
-            <span className="text-xs text-gray-400">All changes will reflect across your official storefront.</span>
+            <span className="text-xs text-gray-500">
+              Note: Changes to Store Name, GSTIN, Phone & Address will be submitted to Admin for approval.
+            </span>
           )}
 
           <button
             type="submit"
-            className="flex items-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer ml-auto"
           >
-            <Save size={16} /> Save Changes
+            {isSubmitting ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Submitting for Review...</span>
+              </>
+            ) : (
+              <>
+                <Save size={16} />
+                <span>Save & Submit for Approval</span>
+              </>
+            )}
           </button>
         </div>
 

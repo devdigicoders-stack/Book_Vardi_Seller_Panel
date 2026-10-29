@@ -2820,10 +2820,27 @@ export const SellerDataProvider = ({ children }) => {
   };
 
   // Settings Actions
-  const updateSettings = (updates) => {
+  const updateSettings = async (updates) => {
     checkPermission();
-    setSettings(prev => ({ ...prev, ...updates }));
-    updateSellerSettingsApi(updates).catch(() => {});
+    try {
+      const res = await updateSellerSettingsApi(updates);
+      if (res?.requiresApproval || res?.pendingUpdates) {
+        setSettings(prev => ({
+          ...prev,
+          pendingUpdates: res.pendingUpdates || updates,
+          pendingUpdatesStatus: 'pending_review'
+        }));
+        return res;
+      } else if (res?.seller) {
+        setSettings(prev => ({ ...prev, ...updates, ...res.seller }));
+        return res;
+      }
+      setSettings(prev => ({ ...prev, ...updates }));
+      return res;
+    } catch (e) {
+      setSettings(prev => ({ ...prev, ...updates }));
+      return { success: false, error: e.message };
+    }
   };
 
   // Shipping Actions
