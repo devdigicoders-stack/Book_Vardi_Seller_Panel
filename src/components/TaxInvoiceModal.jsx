@@ -1282,115 +1282,84 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       return;
     }
 
-    let iframe = document.getElementById('seller-invoice-print-iframe');
-    if (iframe) {
-      iframe.remove();
-    }
-    iframe = document.createElement('iframe');
-    iframe.id = 'seller-invoice-print-iframe';
-    // Position offscreen with full opacity and size so Chromium compositor fully layouts and paints it
-    iframe.style.position = 'fixed';
-    iframe.style.left = '-9999px';
-    iframe.style.top = '0';
-    iframe.style.width = '1024px';
-    iframe.style.height = '1400px';
-    iframe.style.border = '0';
-    iframe.style.opacity = '1';
-    iframe.style.zIndex = '9999';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
-
-    const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-      .map(el => {
-        if (el.tagName === 'STYLE' && el.innerHTML.includes('body * { visibility: hidden')) {
-          const cleaned = el.innerHTML.replace(/body\s*\*\s*\{\s*visibility:\s*hidden\s*!important;\s*\}/g, '');
-          return `<style>${cleaned}</style>`;
-        }
-        return el.outerHTML;
-      })
-      .join('\n');
-
     const rawId = order.id || order.orderId || order._id || 'ORDER';
     const cleanId = resolvedInvoiceNumber || String(rawId).replace(/^#/, '').trim();
+    const docTitle = `Tax_Invoice_${cleanId}`;
 
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Invoice_${cleanId}</title>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          ${styleSheets}
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 6mm 8mm;
-            }
-            * {
-              box-sizing: border-box !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              background: #ffffff !important;
-              color: #0f172a !important;
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-            }
-            #printableTaxInvoiceArea {
-              width: 100% !important;
-              max-width: 100% !important;
-              margin: 0 auto !important;
-              padding: 4mm 6mm !important;
-              background: #ffffff !important;
-              display: block !important;
-              visibility: visible !important;
-            }
-            #printableTaxInvoiceArea, #printableTaxInvoiceArea * {
-              visibility: visible !important;
-              opacity: 1 !important;
-            }
-            table {
-              width: 100% !important;
-              border-collapse: collapse !important;
-            }
-            @media print {
-              body {
-                background: #ffffff !important;
-              }
-              #printableTaxInvoiceArea {
-                padding: 0 !important;
-                margin: 0 !important;
-              }
-            }
-          </style>
-        </head>
-        <body class="p-2 sm:p-4 bg-white">
-          <div id="printableTaxInvoiceArea">
-            ${printContent.innerHTML}
-          </div>
-        </body>
-      </html>
-    `);
-    doc.close();
+    const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(el => el.outerHTML)
+      .join('\n');
 
-    setTimeout(() => {
-      try {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-      } catch (e) {
-        console.error('Print iframe error:', e);
-        window.print();
+    // Open an isolated, clean print window containing ONLY the invoice
+    const printWin = window.open('', '_blank', 'width=900,height=1100');
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>${docTitle}</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    ${styleSheets}
+    <style>
+      @page {
+        size: A4 portrait;
+        margin: 6mm 8mm;
       }
-    }, 400);
+      * {
+        box-sizing: border-box !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+      }
+      #printableTaxInvoiceArea {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 auto !important;
+        padding: 4mm 6mm !important;
+        background: #ffffff !important;
+        display: block !important;
+      }
+      table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+      }
+      .print\\:hidden, .no-print {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body class="bg-white">
+    <div id="printableTaxInvoiceArea">
+      ${printContent.innerHTML}
+    </div>
+    <script>
+      window.onload = function() {
+        setTimeout(function() {
+          window.focus();
+          window.print();
+          setTimeout(function() { window.close(); }, 750);
+        }, 300);
+      };
+    </script>
+  </body>
+</html>`);
+      printWin.document.close();
+    } else {
+      // Fallback: If popups blocked, native in-page window.print() uses @media print rules
+      window.print();
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static print:inset-auto">
-      <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-transparent print:static print:inset-auto print:overflow-visible print:block">
+      <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:h-auto print:w-full print:shadow-none print:border-none print:rounded-none print:overflow-visible">
         
         {/* Top Control Bar */}
         <div className="bg-gray-950 text-white px-5 py-3 flex items-center justify-between shrink-0 print:hidden border-b border-gray-800">
