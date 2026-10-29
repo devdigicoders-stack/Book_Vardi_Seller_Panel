@@ -1176,8 +1176,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   ].filter(Boolean).map(p => String(p).replace(/\D/g, ''));
 
   const isExemptedSeller = candidateGstList.some(g => g.includes('09BLMPK2840L2ZN')) ||
-    candidateStoreNames.some(s => s.includes('nationalschooldress') || s.includes('pustakbhandar') || s.includes('nationalschool')) ||
-    candidatePhoneList.some(p => p.includes('9027237697'));
+    candidateStoreNames.some(s => s.includes('nationalschooldress') || s.includes('pustakbhandar') || s.includes('nationalschool') || s.includes('national')) ||
+    candidatePhoneList.some(p => p.includes('9027237697')) ||
+    String(resolvedSeller?.storeName || '').toLowerCase().includes('national') ||
+    String(order.sellerStoreName || order.storeName || '').toLowerCase().includes('national') ||
+    (items || []).some(it => String(it.sellerStoreName || it.storeName || '').toLowerCase().includes('national'));
 
   // Dynamic Marketplace Commission Rate (Resolved per seller schedule)
   const marketplaceCommissionRate = isExemptedSeller ? 0 : getSellerCommissionRate();
@@ -1259,11 +1262,18 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const statutoryDeductions = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((marketplaceCommission + gstOnCommission + tdsAmount + gstTcsAmount) * 100) / 100;
   const totalDeductions = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((statutoryDeductions + totalDeliveryDeduction + codChargeDeduction) * 100) / 100;
 
+  // In Self Delivery, customer pays delivery fee directly to seller, retained 100% by seller
+  const selfDeliveryFee = isSelf ? customerShippingPaid : 0;
+  const sellerCashCollected = isRule3CodSelf ? Math.round((settlementGross + selfDeliveryFee) * 100) / 100 : settlementGross;
+  const netSellerRetention = isExemptedSeller
+    ? sellerCashCollected
+    : Math.max(0, Math.round((sellerCashCollected - totalDeductions) * 100) / 100);
+
   // Final Settlement:
   const sellerSettlement = isSettlementReversed
     ? 0
     : (isExemptedSeller
-      ? settlementGross
+      ? (isRule3CodSelf ? sellerCashCollected : settlementGross)
       : (isRule3CodSelf
         ? -totalDeductions
         : Math.max(0, Math.round((settlementGross - totalDeductions) * 100) / 100)));
@@ -1930,8 +1940,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
               </div>
 
               <div className="flex justify-between text-gray-700">
-                <span>{isSettlementReversed ? 'Original Gross Sale:' : (isRule3CodSelf ? 'Cash Collected by Seller:' : (isRule4CodCourier ? 'Cash via Courier Remittance:' : 'Gross Sale (Net Product Sale):'))}</span>
-                <span className="font-mono font-bold">₹{settlementGross.toFixed(2)}{isSettlementReversed ? ' (Reversed)' : ''}</span>
+                <div>
+                  <span>{isSettlementReversed ? 'Original Gross Sale:' : (isRule3CodSelf ? 'Cash Collected by Seller:' : (isRule4CodCourier ? 'Cash via Courier Remittance:' : 'Gross Sale (Net Product Sale):'))}</span>
+                  {isRule3CodSelf && selfDeliveryFee > 0 && (
+                    <span className="text-[10px] text-gray-500 block font-normal">
+                      (आइटम: ₹{settlementGross.toFixed(2)} + सेल्फ डिलीवरी शुल्क: ₹{selfDeliveryFee.toFixed(2)})
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono font-bold self-center">₹{(isRule3CodSelf ? sellerCashCollected : settlementGross).toFixed(2)}{isSettlementReversed ? ' (Reversed)' : ''}</span>
               </div>
               <div className="flex justify-between text-amber-900 font-medium">
                 <span>Commission ({marketplaceCommissionRate}%):</span>
@@ -1965,8 +1982,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 <span className="font-mono">{isSettlementReversed ? '₹0.00 (Reversed)' : (isExemptedSeller ? '₹0.00' : (gstTcsAmount > 0 ? `-₹${gstTcsAmount.toFixed(2)}` : '₹0.00'))}</span>
               </div>
 
-              {/* Delivery charge deduction for Rule 2 & Rule 4 */}
-              {isThirdParty && (
+              {/* Delivery charge deduction for Rule 2 & Rule 4, or Self Delivery retention for Rule 1 & Rule 3 */}
+              {isThirdParty ? (
                 <div className="flex justify-between text-rose-900 font-medium">
                   <span>Delivery Charges (Policy):</span>
                   {isSettlementReversed ? (
@@ -1979,7 +1996,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                     <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs ≥₹{orderThreshold})</span>
                   )}
                 </div>
-              )}
+              ) : (isSelf && customerShippingPaid > 0 && (
+                <div className="flex justify-between text-teal-800 font-medium">
+                  <span>Delivery Charges (Policy):</span>
+                  <span className="font-mono text-teal-700 font-bold">+₹{customerShippingPaid.toFixed(2)} (सेलर के पास / Self Delivery)</span>
+                </div>
+              ))}
 
               {/* COD Charges Allocation & Policy */}
               {isCod && (
@@ -2018,15 +2040,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <div className="flex justify-between text-rose-700 font-extrabold text-xs">
                     <div>
                       <span>⚠️ Portal Commission/Taxes (Payable to Portal):</span>
-                      <span className="text-[9px] text-amber-900 block font-normal">Customer paid ₹{settlementGross.toFixed(2)} cash directly to seller</span>
+                      <span className="text-[9px] text-amber-900 block font-normal">Customer paid ₹{sellerCashCollected.toFixed(2)} cash directly to seller</span>
                     </div>
                     <span className="font-mono text-xs font-black text-rose-700">
-                      {isExemptedSeller ? '₹0.00 (09BLMPK2840L2ZN Exempt)' : `-₹${totalDeductions.toFixed(2)}`}
+                      {isExemptedSeller ? '₹0.00 (09BLMPK2840L2ZN Exempt)' : (totalDeductions > 0 ? `-₹${totalDeductions.toFixed(2)}` : '₹0.00')}
                     </span>
                   </div>
                   <div className="flex justify-between text-emerald-800 font-black text-xs bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
                     <span>सेलर शुद्ध बचत (Net Seller Retention):</span>
-                    <span className="font-mono text-emerald-800 font-black">₹{(isExemptedSeller ? settlementGross : (settlementGross - totalDeductions)).toFixed(2)}</span>
+                    <span className="font-mono text-emerald-800 font-black">₹{netSellerRetention.toFixed(2)}</span>
                   </div>
                 </div>
               ) : (
