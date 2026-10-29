@@ -559,6 +559,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         ownerAadhaarDoc: finalUrl,
         aadhaarFileName: file.name
       }));
+      setAadhaarError('');
       if (showToast) showToast(`📄 Aadhaar document (${file.name}) uploaded successfully!`);
     };
     reader.readAsDataURL(file);
@@ -601,6 +602,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         ownerPanDoc: finalUrl,
         panFileName: file.name
       }));
+      setPanError('');
       if (showToast) showToast(`📄 PAN Card document (${file.name}) uploaded successfully!`);
     };
     reader.readAsDataURL(file);
@@ -711,9 +713,19 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         if (showToast) showToast('⚠️ Please click "Verify PAN" and verify your PAN Card to move to the next step.');
         return;
       }
+      if (!formData.panDoc && !formData.panFileName) {
+        setPanError('Please upload PAN card document before proceeding');
+        if (showToast) showToast('⚠️ Please upload your PAN Card document file before moving forward.');
+        return;
+      }
       if (!formData.ownerAadhaarLast4 || !isAadhaarVerified) {
         setAadhaarError(!formData.ownerAadhaarLast4 ? 'Aadhaar number is required' : 'Verification required before moving forward');
         if (showToast) showToast('⚠️ Please click "Verify Aadhaar" and verify your Aadhaar Card to move to the next step.');
+        return;
+      }
+      if (!formData.aadhaarDoc && !formData.aadhaarFileName) {
+        setAadhaarError('Please upload Aadhaar card document before proceeding');
+        if (showToast) showToast('⚠️ Please upload your Aadhaar Card document file before moving forward.');
         return;
       }
     }
@@ -894,6 +906,10 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                       return;
                     }
                     if (s.id > step) {
+                      if (step === 3 && (!isPanVerified || !isAadhaarVerified || (!formData.panDoc && !formData.panFileName) || (!formData.aadhaarDoc && !formData.aadhaarFileName))) {
+                        if (showToast) showToast('⚠️ Please verify and upload both PAN Card and Aadhaar Card documents before proceeding.');
+                        return;
+                      }
                       if (step >= 7 && !formData.passbookDoc && !formData.passbookFileName) {
                         if (showToast) showToast('⚠️ Please upload Bank Passbook or Cancelled Cheque document before proceeding.');
                         return;
@@ -1257,10 +1273,16 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2 pt-1.5">
-                    <label className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                    <label className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 cursor-pointer shrink-0 transition-colors ${
+                      formData.panDoc || formData.panFileName
+                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                        : panError && !formData.panDoc
+                          ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 ring-2 ring-rose-400'
+                          : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border-teal-200'
+                    }`}>
                       <UploadCloud size={13} />
-                      <span>{formData.panDoc ? 'Change PAN Doc' : 'Upload PAN Card'}</span>
+                      <span>{formData.panDoc ? 'Change PAN Doc' : 'Upload PAN Card * (Mandatory)'}</span>
                       <input
                         type="file"
                         accept="image/*,application/pdf"
@@ -1268,18 +1290,28 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                         className="hidden"
                       />
                     </label>
-                    {formData.panDoc && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewDocModal({
-                          title: 'Owner PAN Card Document',
-                          src: formData.panDoc,
-                          fileName: formData.panFileName || 'pan_card.pdf'
-                        })}
-                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <Eye size={13} /> Preview PAN
-                      </button>
+                    {formData.panDoc ? (
+                      <>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 max-w-[200px] truncate">
+                          <CheckCircle2 size={12} className="shrink-0" />
+                          <span className="truncate">{formData.panFileName || 'PAN Uploaded'}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDocModal({
+                            title: 'Owner PAN Card Document',
+                            src: formData.panDoc,
+                            fileName: formData.panFileName || 'pan_card.pdf'
+                          })}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <Eye size={13} /> Preview PAN
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        * Upload Mandatory
+                      </span>
                     )}
                   </div>
 
@@ -1350,10 +1382,16 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     </button>
                   </div>
                   
-                  <div className="flex items-center gap-2 pt-1.5">
-                    <label className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg text-[11px] font-bold border border-teal-200 flex items-center gap-1 cursor-pointer shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                    <label className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 cursor-pointer shrink-0 transition-colors ${
+                      formData.aadhaarDoc || formData.aadhaarFileName
+                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                        : aadhaarError && !formData.aadhaarDoc
+                          ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 ring-2 ring-rose-400'
+                          : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border-teal-200'
+                    }`}>
                       <UploadCloud size={13} />
-                      <span>{formData.aadhaarDoc ? 'Change Aadhaar Doc' : 'Upload Aadhaar Card'}</span>
+                      <span>{formData.aadhaarDoc ? 'Change Aadhaar Doc' : 'Upload Aadhaar Card * (Mandatory)'}</span>
                       <input
                         type="file"
                         accept="image/*,application/pdf"
@@ -1361,18 +1399,28 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                         className="hidden"
                       />
                     </label>
-                    {formData.aadhaarDoc && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewDocModal({
-                          title: 'Owner Aadhaar Card Document',
-                          src: formData.aadhaarDoc,
-                          fileName: formData.aadhaarFileName || 'aadhaar_card.pdf'
-                        })}
-                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <Eye size={13} /> Preview Aadhaar
-                      </button>
+                    {formData.aadhaarDoc ? (
+                      <>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 max-w-[200px] truncate">
+                          <CheckCircle2 size={12} className="shrink-0" />
+                          <span className="truncate">{formData.aadhaarFileName || 'Aadhaar Uploaded'}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDocModal({
+                            title: 'Owner Aadhaar Card Document',
+                            src: formData.aadhaarDoc,
+                            fileName: formData.aadhaarFileName || 'aadhaar_card.pdf'
+                          })}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <Eye size={13} /> Preview Aadhaar
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        * Upload Mandatory
+                      </span>
                     )}
                   </div>
 
@@ -2272,14 +2320,39 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
               <button
                 type="button"
                 onClick={nextStep}
-                title={step === 3 && (!isPanVerified || !isAadhaarVerified) ? "Verify both PAN and Aadhaar before continuing" : "Proceed to next step"}
-                className={`px-5 py-2.5 font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all ${
-                  step === 3 && (!isPanVerified || !isAadhaarVerified)
-                    ? 'bg-amber-600 hover:bg-amber-700 text-white animate-pulse'
-                    : 'bg-brand-teal hover:bg-brand-teal-light text-white'
+                disabled={
+                  step === 3 && (
+                    !isPanVerified || 
+                    !isAadhaarVerified || 
+                    (!formData.panDoc && !formData.panFileName) || 
+                    (!formData.aadhaarDoc && !formData.aadhaarFileName)
+                  )
+                }
+                title={
+                  step === 3 && (!isPanVerified || !isAadhaarVerified) 
+                    ? "Verify both PAN and Aadhaar before continuing" 
+                    : step === 3 && ((!formData.panDoc && !formData.panFileName) || (!formData.aadhaarDoc && !formData.aadhaarFileName))
+                      ? "Upload both PAN and Aadhaar card files before continuing"
+                      : "Proceed to next step"
+                }
+                className={`px-5 py-2.5 font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all ${
+                  step === 3 && (
+                    !isPanVerified || 
+                    !isAadhaarVerified || 
+                    (!formData.panDoc && !formData.panFileName) || 
+                    (!formData.aadhaarDoc && !formData.aadhaarFileName)
+                  )
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-75'
+                    : 'bg-brand-teal hover:bg-brand-teal-light text-white cursor-pointer'
                 }`}
               >
-                <span>{step === 3 && (!isPanVerified || !isAadhaarVerified) ? 'Verify to Continue' : 'Continue'}</span>
+                <span>
+                  {step === 3 && (!isPanVerified || !isAadhaarVerified)
+                    ? 'Verify PAN & Aadhaar to Continue'
+                    : step === 3 && ((!formData.panDoc && !formData.panFileName) || (!formData.aadhaarDoc && !formData.aadhaarFileName))
+                      ? 'Upload PAN & Aadhaar to Continue'
+                      : 'Continue'}
+                </span>
                 <ArrowRight size={14} />
               </button>
             )}
