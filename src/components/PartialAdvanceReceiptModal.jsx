@@ -14,8 +14,22 @@ import {
   Clock
 } from 'lucide-react';
 import { SERVER_URL } from '../utils/api';
+import useModalBackTrap from '../hooks/useModalBackTrap';
 
 export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
+  useModalBackTrap(isOpen, onClose);
+
+  const platformSettings = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('bookvardi_platform_settings') || localStorage.getItem('admin_settings');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  }, []);
+  const companyGstin = platformSettings.companyGstin || '09AAACB1234F1Z9';
+  const companySupportEmail = platformSettings.supportEmail || platformSettings.customerCareEmail || 'corporate@bookvardi.in';
+
   if (!isOpen || !order) return null;
 
   const refId = order.referenceId || order.id || 'BULK-2026';
@@ -243,7 +257,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
                     </div>
                     <h1 className="font-extrabold text-xl text-gray-900 mt-1">BOOK VARDI</h1>
                     <p className="text-[11px] text-gray-500">Corporate & Institutional Procurement Division</p>
-                    <p className="text-[10px] text-gray-400 font-mono">GSTIN: 09AAACB1234F1Z9 • corporate@bookvardi.in</p>
+                    <p className="text-[10px] text-gray-400 font-mono">GSTIN: {companyGstin} • {companySupportEmail}</p>
                   </div>
 
                   <div className="text-left sm:text-right space-y-0.5">

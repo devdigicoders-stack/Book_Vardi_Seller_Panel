@@ -814,6 +814,18 @@ export const SellerDataProvider = ({ children }) => {
       return;
     }
 
+    // Sync official platform settings (GSTIN, company address, support) from backend
+    fetch(`${SERVER_URL}/admin/settings/public`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          try {
+            localStorage.setItem('bookvardi_platform_settings', JSON.stringify(data));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+
     // Fast-path independent product sync: finishes in ~100-200ms without being blocked by 10 other APIs
     const syncProductsFast = async () => {
       try {

@@ -17,6 +17,7 @@ import {
 import { useSellerData, readActiveSellerSettings, readActiveSellerProfile, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 import { SERVER_URL } from '../utils/api';
 import { getSellerInvoiceNumber } from '../utils/invoiceHelper';
+import useModalBackTrap from '../hooks/useModalBackTrap';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
 
@@ -231,26 +232,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     contextOrders = dataContext?.orders || [];
   } catch (e) {}
 
-  // Handle browser back button (popstate) safely so user never gets kicked out of the portal
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const modalId = 'seller_invoice_modal_' + Date.now();
-    window.history.pushState({ modalOpen: true, modalId }, '');
-
-    const handlePopState = () => {
-      onClose();
-    };
-
-    window.addEventListener('popstate', handlePopState);
-
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      if (window.history.state?.modalId === modalId) {
-        window.history.back();
-      }
-    };
-  }, [isOpen, onClose]);
+  // Intercept browser back button safely so user never gets kicked out of the portal
+  useModalBackTrap(isOpen, onClose);
 
   const activeSellerUser = passedSellerUser || contextSellerUser || null;
 
@@ -1217,13 +1200,29 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     ? (order.trackingUrl || order.thirdPartyDetails?.trackingUrl || '')
     : (order.selfDeliveryDetails?.trackingUrl || order.trackingUrl || '');
 
-  const platformSettings = useMemo(() => {
+  const [platformSettings, setPlatformSettings] = useState(() => {
     try {
-      const saved = localStorage.getItem('bookvardi_platform_settings');
+      const saved = localStorage.getItem('bookvardi_platform_settings') || localStorage.getItem('admin_settings') || localStorage.getItem('platform_settings');
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch(`${SERVER_URL}/admin/settings/public`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (isMounted && data) {
+          setPlatformSettings(prev => ({ ...prev, ...data }));
+          try {
+            localStorage.setItem('bookvardi_platform_settings', JSON.stringify(data));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
   }, []);
 
   const companyName = platformSettings.companyName || 'BOOK VARDI';
