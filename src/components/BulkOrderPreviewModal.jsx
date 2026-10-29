@@ -664,8 +664,9 @@ export default function BulkOrderPreviewModal({
 
   const deliveryPartnerDisplay = riderName ? `Direct Self-Delivery (Rider: ${riderName})` : 'Direct Self-Delivery (Store Fleet)';
   const trackingNumberDisplay = tokenVal;
-  const websiteOrigin = (import.meta.env.VITE_WEBSITE_URL || `${window.location.protocol}//${window.location.hostname}:5173`).replace(/\/+$/, '');
-  const trackingLinkDisplay = order?.deliveryDetails?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || order?.trackingUrl || `${websiteOrigin}/#delivery-partner?token=${tokenVal}`;
+  const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1');
+  const websiteOrigin = (import.meta.env.VITE_WEBSITE_URL || (isProd ? 'https://www.bookvardi.in' : `${window.location.protocol}//${window.location.hostname}:5173`)).replace(/\/+$/, '');
+  const trackingLinkDisplay = order?.deliveryDetails?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || order?.trackingUrl || `${websiteOrigin}/delivery-partner?token=${tokenVal}`;
 
   // Transform bulk order into TaxInvoice-compatible object
   const taxInvoiceOrder = useMemo(() => {

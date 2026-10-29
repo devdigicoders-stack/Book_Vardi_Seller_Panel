@@ -42,12 +42,13 @@ import useModalBackTrap from '../hooks/useModalBackTrap';
 
 // Helper to generate absolute Storefront Website Delivery Partner portal link
 export const getDriverWebsiteUrl = (tokenVal) => {
+  const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1');
   const origin = (
     import.meta.env.VITE_WEBSITE_URL ||
     import.meta.env.VITE_CLIENT_URL ||
-    (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:5173` : 'http://localhost:5173')
+    (isProd ? 'https://www.bookvardi.in' : `${window.location.protocol}//${window.location.hostname}:5173`)
   ).replace(/\/+$/, '');
-  return `${origin}/#delivery-partner?token=${encodeURIComponent(tokenVal || '')}`;
+  return `${origin}/delivery-partner?token=${encodeURIComponent(tokenVal || '')}`;
 };
 
 // Helper to generate dynamic tracking ID based on courier name
