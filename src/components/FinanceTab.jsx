@@ -205,7 +205,14 @@ export default function FinanceTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditBankModalOpen, setIsEditBankModalOpen] = useState(false);
 
-  const [platformThreshold, setPlatformThreshold] = useState(401);
+  const [platformThreshold, setPlatformThreshold] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('bookvardi_platform_settings') || localStorage.getItem('admin_settings') || '{}');
+      return Number(s?.freeShippingThreshold || s?.minOrderFreeShipping || s?.freeDeliveryThreshold) || 1000;
+    } catch {
+      return 1000;
+    }
+  });
   useEffect(() => {
     fetch(`${SERVER_URL}/admin/settings/public`)
       .then(res => res.json())
@@ -220,10 +227,10 @@ export default function FinanceTab() {
 
   const resolvedFreeDeliveryThreshold = useMemo(() => {
     for (const o of orders) {
-      const val = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping);
-      if (!isNaN(val) && val > 0) return val;
+      const val = Number(o.freeDeliveryThreshold ?? o.minOrderFreeShipping ?? o.freeShippingThreshold);
+      if (!isNaN(val) && val > 0 && val !== 401) return val;
     }
-    return platformThreshold;
+    return platformThreshold || 1000;
   }, [orders, platformThreshold]);
 
   // Read synchronized 12-step registration & DB state without static fallbacks
@@ -1280,7 +1287,7 @@ export default function FinanceTab() {
                           </span>
                           {txn.isThirdParty && txn.isAbove400 && (
                             <span className="text-teal-800 font-semibold bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200">
-                              ≥₹{txn.freeDeliveryThreshold || 401} Free Deliv.
+                              ≥₹{(txn.freeDeliveryThreshold && txn.freeDeliveryThreshold !== 401 ? txn.freeDeliveryThreshold : resolvedFreeDeliveryThreshold) || 1000} Free Deliv.
                             </span>
                           )}
                           {txn.deliveryDeduction > 0 && (

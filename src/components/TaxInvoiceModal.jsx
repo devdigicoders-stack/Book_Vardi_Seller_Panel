@@ -224,6 +224,32 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedSellerKey, setSelectedSellerKey] = useState(null);
 
+  const [platformSettings, setPlatformSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bookvardi_platform_settings') || localStorage.getItem('admin_settings') || localStorage.getItem('platform_settings');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch(`${SERVER_URL}/admin/settings/public`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (isMounted && data) {
+          setPlatformSettings(prev => ({ ...prev, ...data }));
+          try {
+            localStorage.setItem('bookvardi_platform_settings', JSON.stringify(data));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
+
+
   let contextSellerUser = null;
   let contextOrders = [];
   try {
@@ -1177,7 +1203,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const gstTcsAmount = (isSettlementReversed || isExemptedSeller || isRule3CodSelf || isTaxFreeOrder) ? 0 : Math.round(((settlementTaxable * tcsRate) / 100) * 100) / 100;
 
   // Delivery Charges + 18% GST (Rule 2 & Rule 4: Third-Party Delivery)
-  const orderThreshold = Number(order.freeDeliveryThreshold ?? order.minOrderFreeShipping ?? 401);
+  const dynamicGlobalThreshold = Number(
+    platformSettings?.freeShippingThreshold ?? 
+    platformSettings?.minOrderFreeShipping ?? 
+    platformSettings?.freeDeliveryThreshold ?? 
+    (() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('bookvardi_platform_settings') || localStorage.getItem('admin_settings') || localStorage.getItem('platform_settings') || '{}');
+        return saved?.freeShippingThreshold ?? saved?.minOrderFreeShipping ?? saved?.freeDeliveryThreshold;
+      } catch (e) { return null; }
+    })() ?? 
+    1000
+  );
+  const rawOrderThreshold = Number(order.freeDeliveryThreshold ?? order.minOrderFreeShipping ?? order.freeShippingThreshold);
+  const orderThreshold = (!isNaN(rawOrderThreshold) && rawOrderThreshold > 0 && rawOrderThreshold !== 401)
+    ? rawOrderThreshold
+    : dynamicGlobalThreshold;
   const isAboveThreshold = (settlementGross >= orderThreshold || grandTotal >= orderThreshold || Number(order.total || order.totalAmount || 0) >= orderThreshold || Number(order.subtotal || 0) >= orderThreshold);
   const isAbove400 = isAboveThreshold;
   const customerShippingPaid = Number(shippingCost || order.shippingFee || order.shippingCost || order.shippingAmount || 0);
@@ -1247,30 +1288,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     ? (order.trackingUrl || order.thirdPartyDetails?.trackingUrl || '')
     : (order.selfDeliveryDetails?.trackingUrl || order.trackingUrl || '');
 
-  const [platformSettings, setPlatformSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem('bookvardi_platform_settings') || localStorage.getItem('admin_settings') || localStorage.getItem('platform_settings');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    let isMounted = true;
-    fetch(`${SERVER_URL}/admin/settings/public`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (isMounted && data) {
-          setPlatformSettings(prev => ({ ...prev, ...data }));
-          try {
-            localStorage.setItem('bookvardi_platform_settings', JSON.stringify(data));
-          } catch {}
-        }
-      })
-      .catch(() => {});
-    return () => { isMounted = false; };
-  }, []);
 
   const companyName = platformSettings.companyName || 'BOOK VARDI';
   const companyAddress = platformSettings.companyAddress || 'Lucknow, Uttar Pradesh - 226001';
