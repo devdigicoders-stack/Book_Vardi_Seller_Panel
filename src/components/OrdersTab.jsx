@@ -1740,6 +1740,11 @@ export default function OrdersTab() {
 
               {/* Order Status & Fulfillment Management Card */}
               {(() => {
+                const normStatus = String(activeOrderModal.status || activeOrderModal.overallStatus || '').toLowerCase().trim();
+                const isDispatched = ['shipped', 'out for delivery', 'out_for_delivery', 'delivered', 'completed'].includes(normStatus);
+                const hasAssignedAwb = Boolean(activeOrderModal.trackingNumber || activeOrderModal.shipmentDetails?.awbNumber);
+                const isLockedFulfillment = isDispatched || hasAssignedAwb;
+
                 const isSelfDeliveryAssigned = Boolean(
                   activeOrderModal.deliveryMode === 'self_delivery' ||
                   activeOrderModal.deliveryType === 'self_delivery' ||
@@ -1772,10 +1777,10 @@ export default function OrdersTab() {
                     <div className="grid grid-cols-2 gap-2 bg-teal-100/60 p-1 rounded-xl">
                       <button
                         type="button"
-                        disabled={isFinalStatus}
+                        disabled={isLockedFulfillment}
                         onClick={() => setDeliveryModeInput('third_party')}
-                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                          isFinalStatus ? 'cursor-not-allowed opacity-75' : ''
+                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all ${
+                          isLockedFulfillment ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
                         } ${
                           deliveryModeInput === 'third_party'
                             ? 'bg-white text-teal-900 shadow-xs ring-1 ring-teal-300'
@@ -1786,10 +1791,10 @@ export default function OrdersTab() {
                       </button>
                       <button
                         type="button"
-                        disabled={isFinalStatus}
+                        disabled={isLockedFulfillment}
                         onClick={() => setDeliveryModeInput('self_delivery')}
-                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                          isFinalStatus ? 'cursor-not-allowed opacity-75' : ''
+                        className={`py-1.5 rounded-lg font-bold text-[11px] transition-all ${
+                          isLockedFulfillment ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
                         } ${
                           deliveryModeInput === 'self_delivery'
                             ? 'bg-white text-teal-900 shadow-xs ring-1 ring-teal-300'
@@ -1838,6 +1843,7 @@ export default function OrdersTab() {
                               <label className="font-semibold text-gray-700">Courier Partner</label>
                             </div>
                             <select
+                              disabled={isLockedFulfillment}
                               value={modalCourierInput}
                               onChange={(e) => {
                                 const selected = e.target.value;
@@ -1846,7 +1852,11 @@ export default function OrdersTab() {
                                   setModalTrackingInput(generateDynamicTrackingId(selected));
                                 }
                               }}
-                              className="w-full px-3 py-2 rounded-xl border font-medium focus:outline-none bg-white border-gray-200 focus:border-teal-600"
+                              className={`w-full px-3 py-2 rounded-xl border font-medium focus:outline-none ${
+                                isLockedFulfillment
+                                  ? 'bg-gray-100 text-gray-700 cursor-not-allowed border-gray-200'
+                                  : 'bg-white border-gray-200 focus:border-teal-600'
+                              }`}
                             >
                               <option value="Shiprocket">Shiprocket (Multi-Courier Aggregator)</option>
                               <option value="Delhivery">Delhivery Express</option>
@@ -1860,20 +1870,50 @@ export default function OrdersTab() {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <label className="font-semibold text-gray-700">Tracking AWB Number</label>
-                          <button
-                            type="button"
-                            onClick={() => setModalTrackingInput(generateDynamicTrackingId(modalCourierInput))}
-                            className="text-[10px] text-teal-700 hover:text-teal-900 font-bold underline cursor-pointer"
-                          >
-                            ⚡ Generate Dynamic AWB
-                          </button>
+                          {isLockedFulfillment ? (
+                            <div className="flex items-center gap-2">
+                              {activeOrderModal.trackingUrl && (
+                                <a
+                                  href={activeOrderModal.trackingUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] text-teal-700 hover:text-teal-900 font-bold inline-flex items-center gap-0.5 underline cursor-pointer"
+                                >
+                                  <ExternalLink size={11} /> Live Track ↗
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(modalTrackingInput || activeOrderModal.trackingNumber);
+                                  alert('📋 AWB Number copied to clipboard!');
+                                }}
+                                className="text-[10px] text-teal-700 hover:text-teal-900 font-bold underline cursor-pointer"
+                              >
+                                📋 Copy
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setModalTrackingInput(generateDynamicTrackingId(modalCourierInput))}
+                              className="text-[10px] text-teal-700 hover:text-teal-900 font-bold underline cursor-pointer"
+                            >
+                              ⚡ Generate Dynamic AWB
+                            </button>
+                          )}
                         </div>
                         <input
                           type="text"
+                          readOnly={isLockedFulfillment}
                           value={modalTrackingInput}
                           onChange={(e) => setModalTrackingInput(e.target.value)}
                           placeholder="Not Assigned (Click Generate or type AWB)"
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-mono"
+                          className={`w-full px-3 py-2 rounded-xl border font-mono ${
+                            isLockedFulfillment
+                              ? 'bg-gray-100 text-gray-700 cursor-not-allowed border-gray-200'
+                              : 'border-gray-200 bg-white'
+                          }`}
                         />
                       </div>
                     </div>
@@ -2052,10 +2092,14 @@ export default function OrdersTab() {
                       onChange={(e) => setModalStatusInput(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-gray-300 font-extrabold bg-white focus:outline-none focus:border-teal-600 text-xs"
                     >
-                      <option value="Pending">🕒 Pending</option>
-                      <option value="Confirmed">✅ Confirmed</option>
-                      <option value="Processing">⏳ Processing</option>
-                      <option value="Packed">📦 Packed</option>
+                      {!isDispatched && (
+                        <>
+                          <option value="Pending">🕒 Pending</option>
+                          <option value="Confirmed">✅ Confirmed</option>
+                          <option value="Processing">⏳ Processing</option>
+                          <option value="Packed">📦 Packed</option>
+                        </>
+                      )}
                       <option value="Shipped">🚚 Shipped</option>
                       <option value="Out for Delivery">🛵 Out for Delivery</option>
                       <option value="Delivered">🎉 Delivered</option>
@@ -2067,21 +2111,37 @@ export default function OrdersTab() {
                   </div>
 
                   <div className="flex items-end">
-                    <button
-                      type="button"
-                      disabled={isSavingDelivery}
-                      onClick={handleModalSaveStatus}
-                      className="w-full py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer text-xs disabled:opacity-60 flex items-center justify-center gap-2"
-                    >
-                      {isSavingDelivery ? (
-                        <>
-                          <Loader2 size={14} className="animate-spin" />
-                          <span>Saving & Dispatching WhatsApp...</span>
-                        </>
-                      ) : (
-                        <span>Save Delivery Partner & Tracking Details</span>
-                      )}
-                    </button>
+                    {(() => {
+                      const isSameStatus = modalStatusInput === activeOrderModal.status;
+                      const isFullyLocked = isLockedFulfillment && isSameStatus;
+
+                      return (
+                        <button
+                          type="button"
+                          disabled={isSavingDelivery || isFullyLocked}
+                          onClick={handleModalSaveStatus}
+                          className={`w-full py-2.5 font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 ${
+                            isFullyLocked
+                              ? 'bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200'
+                              : 'bg-teal-800 hover:bg-teal-900 text-white cursor-pointer'
+                          }`}
+                        >
+                          {isSavingDelivery ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Updating Order Status...</span>
+                            </>
+                          ) : isFullyLocked ? (
+                            <>
+                              <Lock size={13} />
+                              <span>Shipment Details Locked (Already Dispatched)</span>
+                            </>
+                          ) : (
+                            <span>Update Status to {modalStatusInput}</span>
+                          )}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
