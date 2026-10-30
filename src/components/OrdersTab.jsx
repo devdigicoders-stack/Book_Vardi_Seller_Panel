@@ -545,7 +545,7 @@ export default function OrdersTab() {
         lowerCourier.includes('shadowfax') ? `https://track.shadowfax.in/track?tracking_id=${finalAwb}` :
         lowerCourier.includes('xpressbees') ? `https://www.xpressbees.com/track?shipment_id=${finalAwb}` :
         lowerCourier.includes('indiapost') || lowerCourier.includes('speedpost') ? `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx?consignmentNo=${finalAwb}` :
-        `https://track.shiprocket.in/tracking/${finalAwb}`
+        `https://shiprocket.co/tracking/${finalAwb}`
       ) : '';
 
       const details = {
