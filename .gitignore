@@ -1,0 +1,59 @@
+# Node & Package Manager Dependencies
+node_modules/
+
+# Build & Output Directories
+dist/
+dist-ssr/
+build/
+out/
+coverage/
+
+# Environment & Secret files
+.env
+.env.*
+*.local
+!.env.example
+
+# User Uploaded Assets & Images
+uploads/
+uploads/**/*
+!uploads/**/.gitkeep
+public/uploads/
+public/uploads/**/*
+!public/uploads/**/.gitkeep
+
+# Custom Script & Temporary Directories
+script/
+scripts/
+scratch/
+tmp/
+temp/
+
+# Log files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDE & OS System Files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# AI Tooling & Configs
+.gemini/
+.antigravity/
+.oxlintrc.json
+
+# Documentation
+*.md
