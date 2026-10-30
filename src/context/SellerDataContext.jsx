@@ -1475,50 +1475,44 @@ export const SellerDataProvider = ({ children }) => {
   };
 
   const updateSellerProfile = async (updates) => {
-    const isCriticalChange = Boolean(
-      updates.bankDetails ||
-      updates.bankAccountNumber ||
-      updates.bankIfscCode ||
-      updates.bankAccountHolder ||
-      updates.passbookDoc ||
-      (updates.documents && updates.documents.passbookDoc)
-    );
-
-    setSellerUser(prev => {
-      const activeProf = readActiveSellerProfile();
-      const next = { 
-        ...activeProf, 
-        ...prev, 
-        ...updates,
-        ...(isCriticalChange ? { status: 'pending', submissionStatus: 'pending' } : {})
-      };
-      try {
-        localStorage.setItem('seller_user_profile', JSON.stringify(next));
-        if (isCriticalChange) {
-          localStorage.setItem('bv_seller_status', 'pending');
-          window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: 'pending' }));
-        }
-        const savedReg = localStorage.getItem('bv_seller_reg_data');
-        const regObj = savedReg ? JSON.parse(savedReg) : {};
-        localStorage.setItem('bv_seller_reg_data', JSON.stringify({ 
-          ...regObj, 
-          ...updates,
-          ...(isCriticalChange ? { status: 'pending', submissionStatus: 'pending' } : {})
-        }));
-      } catch (e) {}
-      return next;
-    });
-
     try {
       const res = await updateSellerProfileApi(updates);
-      if (res?.requiresAdminApproval || res?.seller?.status === 'pending') {
-        setSellerUser(prev => ({ ...prev, status: 'pending', submissionStatus: 'pending' }));
-        localStorage.setItem('bv_seller_status', 'pending');
-        window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: 'pending' }));
+      if (res?.requiresApproval || res?.pendingUpdates) {
+        setSellerUser(prev => {
+          const next = {
+            ...prev,
+            pendingUpdates: res.pendingUpdates || updates,
+            pendingUpdatesStatus: 'pending_review'
+          };
+          try {
+            localStorage.setItem('seller_user_profile', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+        return res;
+      }
+
+      if (res?.seller) {
+        setSellerUser(prev => {
+          const next = { ...prev, ...res.seller };
+          try {
+            localStorage.setItem('seller_user_profile', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      } else {
+        setSellerUser(prev => {
+          const next = { ...prev, ...updates };
+          try {
+            localStorage.setItem('seller_user_profile', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
       }
       return res;
     } catch (err) {
       console.warn('updateSellerProfile API notice:', err);
+      return { success: false, error: err.message };
     }
   };
 

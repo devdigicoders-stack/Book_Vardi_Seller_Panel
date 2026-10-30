@@ -24,7 +24,9 @@ import {
   Crosshair,
   Navigation,
   Loader2,
-  Edit3
+  Edit3,
+  Clock,
+  X
 } from 'lucide-react';
 import { useSellerData } from '../context/SellerDataContext';
 import DocumentPreviewModal from './DocumentPreviewModal';
@@ -349,6 +351,8 @@ export default function ProfileTab() {
   }, [stepData]);
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionNotice, setSubmissionNotice] = useState(null);
   const [securityForm, setSecurityForm] = useState({
     currentPassword: '',
     newPassword: '',
@@ -377,8 +381,10 @@ export default function ProfileTab() {
     } catch {}
   };
 
-  const handleProfileSubmit = (e) => {
+  const handleProfileSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    setSubmissionNotice(null);
     const payload = {
       ...formData,
       bankAccountHolder: formData.bankAccountHolder,
@@ -396,14 +402,27 @@ export default function ProfileTab() {
         accountType: formData.accountType || 'Current Account'
       }
     };
-    updateSellerProfile(payload);
     try {
-      const saved = localStorage.getItem('bv_seller_reg_data');
-      let parsed = saved ? JSON.parse(saved) : {};
-      localStorage.setItem('bv_seller_reg_data', JSON.stringify({ ...parsed, ...payload }));
-    } catch {}
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+      const res = await updateSellerProfile(payload);
+      setIsSubmitting(false);
+      if (res?.requiresApproval || sellerUser?.status === 'approved') {
+        setSubmissionNotice({
+          type: 'pending_approval',
+          title: 'Badlav Admin Approval Ke Liye Submit Ho Gaye Hain',
+          message: 'Aapki profile update request submit ho gayi hai aur approval ke liye Admin Portal par bhej di gayi hai. Admin dwara verify aur approve hone ke baad ye changes live ho jayenge.'
+        });
+      } else {
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 2500);
+      }
+    } catch (err) {
+      setIsSubmitting(false);
+      setSubmissionNotice({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Profile update karne me samasya aayi.'
+      });
+    }
   };
 
   const handleSecuritySubmit = (e) => {
@@ -472,6 +491,54 @@ export default function ProfileTab() {
           </div>
         </div>
       </div>
+
+      {/* Submission Success / Pending Approval Modal Dialog */}
+      {submissionNotice && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 space-y-4 text-center animate-in zoom-in-95">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center shadow-xs">
+              <Clock size={28} />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-gray-900">{submissionNotice.title}</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">{submissionNotice.message}</p>
+            </div>
+            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-[11px] text-amber-900 text-left leading-relaxed">
+              ℹ️ <strong>Admin Verification Policy:</strong> Seller Profile, Store Name, Legal Details, Bank & Settlement Account jaise sensitive credentials admin verification ke baad hi update hote hain taaki security aur compliance bani rahe.
+            </div>
+            <button
+              type="button"
+              onClick={() => setSubmissionNotice(null)}
+              className="w-full py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-extrabold rounded-xl text-xs cursor-pointer shadow-xs transition-colors"
+            >
+              Theek Hai, Samajh Gaya (OK)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Prominent Pending Admin Review Alert Banner */}
+      {sellerUser?.pendingUpdates && (
+        <div className="bg-amber-50 border-2 border-amber-300 p-4 rounded-2xl flex items-start gap-3.5 text-amber-950 shadow-xs animate-in fade-in">
+          <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0 text-amber-700">
+            <Clock size={20} />
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="font-extrabold text-sm flex items-center gap-2">
+              <span>Profile Badlav Admin Approval Ke Liye Pending Hain</span>
+              <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2 py-0.5 rounded-full uppercase">Pending Review</span>
+            </div>
+            <p className="text-amber-800 leading-relaxed">
+              Aapke dwara submit kiye gaye profile aur store details Admin Portal par verification ke liye bhej diye gaye hain. Admin verify karke jaise hi approve karenge, ye badlav live store par reflect ho jayenge.
+            </p>
+            {sellerUser.pendingUpdates?.submittedAt && (
+              <div className="text-[11px] text-amber-700 font-mono mt-1">
+                Submitted on: {new Date(sellerUser.pendingUpdates.submittedAt).toLocaleString('en-IN')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MODE 1: ALL 12 STEPS REGISTRATION & KYC DATA */}
       {viewMode === 'all-steps' && (
@@ -1269,6 +1336,18 @@ export default function ProfileTab() {
                 )}
               </div>
 
+              {sellerUser?.status === 'approved' && (
+                <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-950 text-xs flex items-start gap-2.5">
+                  <AlertCircle size={16} className="text-amber-700 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-extrabold text-amber-900">Admin Verification Policy Active</div>
+                    <div className="text-[11px] text-amber-800 leading-relaxed">
+                      Aapka account <strong>Approved Verified Seller</strong> hai. Tax compliance aur buyer security ke niyam anusar, yahan kiye gaye koi bhi profile, contact, address ya bank details badlav pehle Admin Portal par verification aur approval ke liye submit honge.
+                    </div>
+                  </div>
+                </div>
+              )}
+
             <form onSubmit={handleProfileSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -1506,9 +1585,20 @@ export default function ProfileTab() {
               <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 bg-brand-teal hover:bg-brand-teal-light disabled:opacity-50 text-white font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
                 >
-                  <Save size={15} /> Save Profile & Address Details
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" />
+                      <span>Submitting for Approval...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={15} />
+                      <span>{sellerUser?.status === 'approved' ? 'Save & Submit for Approval' : 'Save Profile & Address Details'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
