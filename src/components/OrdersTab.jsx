@@ -361,8 +361,9 @@ export default function OrdersTab() {
   }, [orders, selectedStatus, searchQuery]);
 
   const handleOpenShipModal = (orderId) => {
-    setShippingOrderId(orderId);
-    const ord = orders.find(o => String(o.id || o._id) === String(orderId));
+    const ord = orders.find(o => String(o.orderId || o.id || o._id) === String(orderId));
+    const targetId = ord?.orderId || ord?.id || orderId;
+    setShippingOrderId(targetId);
     const isSelf = ord?.deliveryMode === 'self_delivery' || ord?.deliveryType === 'self_delivery' || Boolean(ord?.selfDeliveryDetails?.deliveryPartnerToken);
     setShipModalDeliveryMode(isSelf ? 'self_delivery' : 'third_party');
     const assignedCourier = ord?.courierName && ord.courierName !== 'N/A' ? ord.courierName : 'Shiprocket';
@@ -1025,7 +1026,7 @@ export default function OrdersTab() {
 
                           {o.status === 'Confirmed' && (
                             <button
-                              onClick={() => handleOpenShipModal(o.id)}
+                              onClick={() => handleOpenShipModal(o.orderId || o.id || o._id)}
                               className="px-2.5 py-1 bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-semibold rounded-lg shadow-xs flex items-center gap-1 cursor-pointer"
                             >
                               <Truck size={12} /> Pack & Ship
