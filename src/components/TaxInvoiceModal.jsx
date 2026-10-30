@@ -677,21 +677,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   const isProductSpecificCoupon = Boolean(
     order.couponDetails?.applicableScope === 'specific_product' ||
-<<<<<<< HEAD
-    (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
-  );
-
-  const eligibleProductIds = new Set(
-    (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
-      .filter(Boolean)
-      .map(id => String(id))
-  );
-
-  const currentSellerHasEligibleProducts = !isProductSpecificCoupon || items.some(it => {
-    const pId = String(it.productId || it.id || it._id || '');
-    return eligibleProductIds.has(pId);
-  });
-=======
     order.couponDetails?.applicableScope === 'specific_kit' ||
     order.couponDetails?.specificProductId ||
     order.couponDetails?.specificKitId ||
@@ -722,7 +707,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   };
 
   const currentSellerHasEligibleProducts = items.some(isItemEligibleForCoupon);
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
 
   const sellerShare = allOrderItemsSum > 0 ? (itemsSum / allOrderItemsSum) : 1;
   const shippingCost = sellerGroups.length > 1
@@ -746,16 +730,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const isItemPriceAlreadyDiscounted = !currentItemsHaveDiscount && rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
 
   const subtotal = itemsSum;
-<<<<<<< HEAD
-  const grandTotal = Math.max(0, Math.round((subtotal + shippingCost - totalDiscounts) * 100) / 100);
-=======
   const rawCodFee = Number(order.codFee ?? order.appliedCodFee ?? order.codCharges ?? order.settlement?.codChargeAmount ?? 0);
   const isCodOrder = String(order.paymentMethod || '').toUpperCase().includes('COD') || 
                      String(order.paymentMethod || '').toUpperCase().includes('CASH') || 
                      rawCodFee > 0;
   const effectiveCodFeeInTotal = (isCodOrder && rawCodFee > 0) ? rawCodFee : 0;
   const grandTotal = Math.max(0, Math.round((subtotal + shippingCost - totalDiscounts + effectiveCodFeeInTotal) * 100) / 100);
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
   const discountRatio = (!currentItemsHaveDiscount && subtotal > 0 && totalDiscounts > 0)
     ? Math.min(1, totalDiscounts / subtotal)
     : 0;
@@ -803,11 +783,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       if (itemDiscount === 0 && Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice)) {
         itemDiscount = Math.round((Number(item.price) - Number(item.finalPrice)) * qty * 100) / 100;
       }
-<<<<<<< HEAD
-    } else if (discountRatio > 0 && (!isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || '')))) {
-=======
     } else if (discountRatio > 0 && isItemEligibleForCoupon(item)) {
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
       const isLast = idx === items.length - 1;
       itemDiscount = isLast
         ? Math.max(0, Math.round((totalDiscounts - runningProratedDiscount) * 100) / 100)
@@ -1136,13 +1112,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const hasSelfDeliveryDetails = Boolean(
     order.selfDeliveryDetails?.deliveryPartnerToken || 
     order.selfDeliveryDetails?.deliveryPersonName ||
-<<<<<<< HEAD
-    items.some(it => it.selfDeliveryDetails?.deliveryPartnerToken || it.selfDeliveryDetails?.deliveryPersonName)
-  );
-
-  // Dynamic Third-Party vs Self-Delivery Resolution
-  const isThirdParty = rawMode.includes('third') || rawMode.includes('courier') || (hasValidCourier && !rawMode.includes('self'));
-=======
     order.deliveryOtp ||
     items.some(it => it.selfDeliveryDetails?.deliveryPartnerToken || it.selfDeliveryDetails?.deliveryPersonName || it.deliveryOtp)
   );
@@ -1162,7 +1131,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
   // Dynamic Third-Party vs Self-Delivery Resolution
   const isThirdParty = isExplicitThirdParty || !isExplicitSelf;
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
   const isSelf = !isThirdParty;
 
   // Active Status & Reversal Detection
@@ -1177,8 +1145,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const isRule3CodSelf = isCod && !isThirdParty;
   const isRule2OnlineCourier = !isCod && isThirdParty;
   const isRule1OnlineSelf = !isCod && !isThirdParty;
-<<<<<<< HEAD
-=======
 
   // Dynamic Exemption for specific GSTIN (e.g. 09BLMPK2840L2ZN / National School Dress)
   const candidateGstList = [
@@ -1215,23 +1181,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     String(resolvedSeller?.storeName || '').toLowerCase().includes('national') ||
     String(order.sellerStoreName || order.storeName || '').toLowerCase().includes('national') ||
     (items || []).some(it => String(it.sellerStoreName || it.storeName || '').toLowerCase().includes('national'));
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
 
   // Dynamic Marketplace Commission Rate (Resolved per seller schedule)
   const marketplaceCommissionRate = isExemptedSeller ? 0 : getSellerCommissionRate();
 
   const settlementGross = Math.max(0, Math.round((subtotal - totalDiscounts) * 100) / 100);
 
-<<<<<<< HEAD
-  const marketplaceCommission = isSettlementReversed ? 0 : Math.round((settlementGross * (marketplaceCommissionRate / 100)) * 100) / 100;
-  const gstOnCommission = isSettlementReversed ? 0 : Math.round((marketplaceCommission * 0.18) * 100) / 100;
-  const tdsAmount = isSettlementReversed ? 0 : Math.round((settlementGross * 0.001) * 100) / 100;
-
-  // Statutory Tax:
-  // Rule 3 (COD Self): GST TCS is 0% when portal does not collect customer payment
-  // Rule 1, 2, 4: GST TCS is 0.5% (Sec 52)
-  // For 0% GST / Books: TCS = 0
-=======
   const marketplaceCommission = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((settlementGross * (marketplaceCommissionRate / 100)) * 100) / 100;
   const gstOnCommission = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((marketplaceCommission * 0.18) * 100) / 100;
   const tdsAmount = (isSettlementReversed || isExemptedSeller) ? 0 : Math.round((settlementGross * 0.001) * 100) / 100;
@@ -1240,26 +1195,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   // Rule 3 (COD Self): GST TCS is 0% when portal does not collect customer payment
   // Rule 1, 2, 4: GST TCS is 0.5% (Sec 52 of CGST Act - strictly on Taxable Value)
   // For 0% GST / Books / Exempted GST: TCS = 0
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
   const isTaxFreeOrder = (items || []).every(it => {
     const r = Number(it.rate ?? it.gstPercent ?? it.gstPercentage ?? it.gstRate ?? it.gst ?? 5);
     const cat = String(it.category || '').toLowerCase();
     return r === 0 || cat.includes('book');
   });
-<<<<<<< HEAD
-  const tcsRate = (isSettlementReversed || isRule3CodSelf || isTaxFreeOrder) ? 0 : 0.5;
-  const gstTcsAmount = (isSettlementReversed || isRule3CodSelf || isTaxFreeOrder) ? 0 : Math.round(((settlementGross * tcsRate) / 100) * 100) / 100;
-
-  // Delivery Charges + 18% GST (Rule 2 & Rule 4: Third-Party Delivery)
-  const orderThreshold = Number(order.freeDeliveryThreshold ?? order.minOrderFreeShipping ?? 401);
-  const isAboveThreshold = (settlementGross >= orderThreshold || grandTotal >= orderThreshold || Number(order.total || order.totalAmount || 0) >= orderThreshold || Number(order.subtotal || 0) >= orderThreshold);
-  const isAbove400 = isAboveThreshold;
-  let delivBorneBy = order.deliveryChargeBorneBy;
-  if (!delivBorneBy) {
-    if (isAboveThreshold) delivBorneBy = 'admin';
-    else if (order.isDeliveryBorneBySeller || order.deliveryBorneBy === 'seller') delivBorneBy = 'seller';
-    else if (shippingCost > 0 || Number(order.shippingFee ?? order.shippingCost ?? 0) > 0) delivBorneBy = 'customer';
-=======
   const itemsTaxableSum = (itemBreakdowns || []).reduce((sum, it) => sum + (Number(it.taxableVal) || 0), 0);
   const settlementTaxable = itemsTaxableSum > 0 ? itemsTaxableSum : settlementGross;
   const tcsRate = (isSettlementReversed || isExemptedSeller || isRule3CodSelf || isTaxFreeOrder) ? 0 : 0.5;
@@ -1290,7 +1230,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     if (isAboveThreshold) delivBorneBy = 'admin';
     else if (customerShippingPaid > 0) delivBorneBy = 'customer';
     else if (order.isDeliveryBorneBySeller || order.deliveryBorneBy === 'seller') delivBorneBy = 'seller';
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
     else delivBorneBy = isThirdParty ? 'seller' : 'admin';
   }
 
@@ -1298,19 +1237,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   let gstOnDeliveryAmount = 0;
   let totalDeliveryDeduction = 0;
 
-<<<<<<< HEAD
-  if (!isSettlementReversed && isThirdParty && delivBorneBy === 'seller' && !isAbove400) {
-    deliveryChargeAmount = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? 40);
-    gstOnDeliveryAmount = Math.round(((deliveryChargeAmount * shippingGstRate) / 100) * 100) / 100;
-    totalDeliveryDeduction = Math.round((deliveryChargeAmount + gstOnDeliveryAmount) * 100) / 100;
-=======
   if (!isSettlementReversed && !isExemptedSeller && isThirdParty && delivBorneBy === 'seller' && !isAbove400) {
     const rawDeliveryFee = Number(order.deliveryCharge ?? order.shippingAmount ?? order.shippingCost ?? order.shippingFee ?? 49);
     // Delivery charges are GST INCLUSIVE (no extra GST added on top)
     totalDeliveryDeduction = Math.round(rawDeliveryFee * 100) / 100;
     deliveryChargeAmount = Math.round((totalDeliveryDeduction / (1 + shippingGstRate / 100)) * 100) / 100;
     gstOnDeliveryAmount = Math.round((totalDeliveryDeduction - deliveryChargeAmount) * 100) / 100;
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
   }
 
   // COD Charges & Allocation Policy
@@ -1340,17 +1272,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   // Final Settlement:
   const sellerSettlement = isSettlementReversed
     ? 0
-<<<<<<< HEAD
-    : (isRule3CodSelf
-      ? -totalDeductions
-      : Math.max(0, Math.round((settlementGross - totalDeductions) * 100) / 100));
-=======
     : (isExemptedSeller
       ? (isRule3CodSelf ? sellerCashCollected : settlementGross)
       : (isRule3CodSelf
         ? -totalDeductions
         : Math.max(0, Math.round((settlementGross - totalDeductions) * 100) / 100)));
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
 
   const sellerPayout = sellerSettlement;
 
@@ -2014,10 +1940,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
               </div>
 
               <div className="flex justify-between text-gray-700">
-<<<<<<< HEAD
-                <span>{isSettlementReversed ? 'Original Gross Sale:' : (isRule3CodSelf ? 'Cash Collected by Seller:' : (isRule4CodCourier ? 'Cash via Courier Remittance:' : 'Gross Sale (Net Product Sale):'))}</span>
-                <span className="font-mono font-bold">₹{settlementGross.toFixed(2)}{isSettlementReversed ? ' (Reversed)' : ''}</span>
-=======
                 <div>
                   <span>{isSettlementReversed ? 'Original Gross Sale:' : (isRule3CodSelf ? 'Cash Collected by Seller:' : (isRule4CodCourier ? 'Cash via Courier Remittance:' : 'Gross Sale (Net Product Sale):'))}</span>
                   {isRule3CodSelf && selfDeliveryFee > 0 && (
@@ -2027,7 +1949,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   )}
                 </div>
                 <span className="font-mono font-bold self-center">₹{(isRule3CodSelf ? sellerCashCollected : settlementGross).toFixed(2)}{isSettlementReversed ? ' (Reversed)' : ''}</span>
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
               </div>
               <div className="flex justify-between text-amber-900 font-medium">
                 <span>Commission ({marketplaceCommissionRate}%):</span>
@@ -2055,11 +1976,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   ) : isTaxFreeOrder ? (
                     <span className="text-[9px] text-emerald-700 font-bold ml-1">₹0.00 (0% GST / Books Tax-Free)</span>
                   ) : (
-<<<<<<< HEAD
-                    <span className="text-[9px] text-sky-700 font-normal ml-1">0.5% (TCS)</span>
-=======
                     <span className="text-[9px] text-sky-700 font-normal ml-1">0.5% (on Taxable ₹{settlementTaxable.toFixed(2)})</span>
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
                   )}
                 </span>
                 <span className="font-mono">{isSettlementReversed ? '₹0.00 (Reversed)' : (isExemptedSeller ? '₹0.00' : (gstTcsAmount > 0 ? `-₹${gstTcsAmount.toFixed(2)}` : '₹0.00'))}</span>
@@ -2077,8 +1994,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                     <span className="font-mono text-teal-700 font-bold">₹0.00 (ग्राहक द्वारा वहन / Paid by Customer)</span>
                   ) : (
                     <span className="font-mono text-teal-700 font-bold">FREE (Admin Absorbs ≥₹{orderThreshold})</span>
-<<<<<<< HEAD
-=======
                   )}
                 </div>
               ) : (isSelf && customerShippingPaid > 0 && (
@@ -2108,7 +2023,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                     </span>
                   ) : (
                     <span className="font-mono text-gray-500">₹0.00</span>
->>>>>>> 143a325a40bdcbcd45fca38ea6a803dab25c820a
                   )}
                 </div>
               )}
