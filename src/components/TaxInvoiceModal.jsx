@@ -18,6 +18,7 @@ import { useSellerData, readActiveSellerSettings, readActiveSellerProfile, strip
 import { SERVER_URL } from '../utils/api';
 import { getSellerInvoiceNumber } from '../utils/invoiceHelper';
 import useModalBackTrap from '../hooks/useModalBackTrap';
+import ShippingLabelView from './ShippingLabelView';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
 
@@ -218,11 +219,16 @@ export function parseStateInfo(sourceObj, fallbackString = '') {
   return { key: 'uttar_pradesh', name: 'Uttar Pradesh' };
 }
 
-export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: passedSellerUser }) {
+export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: passedSellerUser, initialMode = 'invoice' }) {
   if (!isOpen || !order) return null;
 
+  const [documentMode, setDocumentMode] = useState(initialMode || 'invoice');
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedSellerKey, setSelectedSellerKey] = useState(null);
+
+  useEffect(() => {
+    if (initialMode) setDocumentMode(initialMode);
+  }, [initialMode]);
 
   const [platformSettings, setPlatformSettings] = useState(() => {
     try {
@@ -1459,7 +1465,37 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
           </div>
 
           <div className="flex items-center gap-2">
-            {confirmed && (
+            {/* View Switcher: Tax Invoice vs Shipping Label */}
+            <div className="flex items-center gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setDocumentMode('invoice')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  documentMode === 'invoice'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="View Standard GST Tax Invoice"
+              >
+                <FileText size={13} />
+                <span>Invoice</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDocumentMode('shipping_label')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  documentMode === 'shipping_label'
+                    ? 'bg-amber-400 text-gray-950 font-black shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="View & Print 4x6 / A4 Parcel Shipping Label & Packing Slip with Barcode"
+              >
+                <BarcodeIcon size={13} />
+                <span>Shipping Label</span>
+              </button>
+            </div>
+
+            {confirmed && documentMode === 'invoice' && (
               <>
                 <button
                   onClick={handleDownloadPDF}
@@ -1563,6 +1599,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                 </p>
               )}
             </div>
+          </div>
+        ) : documentMode === 'shipping_label' ? (
+          <div className="p-4 sm:p-6 overflow-y-auto">
+            <ShippingLabelView
+              order={order}
+              sellerDetails={resolvedSeller}
+              items={items}
+              invoiceNumber={resolvedInvoiceNumber}
+              onClose={onClose}
+              onSwitchToInvoice={() => setDocumentMode('invoice')}
+            />
           </div>
         ) : (
 

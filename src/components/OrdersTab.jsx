@@ -30,7 +30,8 @@ import {
   ShieldCheck,
   RefreshCw,
   Loader2,
-  Lock
+  Lock,
+  Barcode as BarcodeIcon
 } from 'lucide-react';
 import { useSellerData, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 import TaxInvoiceModal, { parseStateInfo } from './TaxInvoiceModal';
@@ -108,6 +109,7 @@ export default function OrdersTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOrderModal, setActiveOrderModal] = useState(null);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [invoiceModalMode, setInvoiceModalMode] = useState('invoice');
   const [isShipModalOpen, setIsShipModalOpen] = useState(false);
   const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
   const [shippingOrderId, setShippingOrderId] = useState(null);
@@ -1007,6 +1009,20 @@ export default function OrdersTab() {
                             <Eye size={15} />
                           </button>
 
+                          {o.status !== 'Pending' && o.status !== 'Cancelled' && (
+                            <button
+                              onClick={() => {
+                                setActiveOrderModal(o);
+                                setInvoiceModalMode('shipping_label');
+                                setIsInvoiceModalOpen(true);
+                              }}
+                              className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                              title="Print Shipping Label & Packing Slip (Courier Parcel Sticker)"
+                            >
+                              <BarcodeIcon size={15} />
+                            </button>
+                          )}
+
                           {o.status === 'Pending' && (
                             <button
                               onClick={() => updateOrderStatus(o.id, 'Confirmed')}
@@ -1101,18 +1117,37 @@ export default function OrdersTab() {
                   const isLocked = !isConfirmedOrder;
 
                   return (
-                    <button
-                      onClick={() => setIsInvoiceModalOpen(true)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs ${
-                        isLocked
-                          ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
-                          : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
-                      }`}
-                      title={isLocked ? "Invoice locked while order status is pending confirmation" : "View & Print GST Tax Invoice & Packing Slip"}
-                    >
-                      {isLocked ? <Lock size={14} /> : <FileText size={14} />}
-                      <span>{isLocked ? 'Invoice Locked (Pending)' : 'Tax Invoice & Label'}</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setInvoiceModalMode('invoice');
+                          setIsInvoiceModalOpen(true);
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs ${
+                          isLocked
+                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                            : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200'
+                        }`}
+                        title={isLocked ? "Invoice locked while order status is pending confirmation" : "View & Print GST Tax Invoice"}
+                      >
+                        {isLocked ? <Lock size={14} /> : <FileText size={14} />}
+                        <span>{isLocked ? 'Invoice Locked (Pending)' : 'Tax Invoice'}</span>
+                      </button>
+
+                      {!isLocked && (
+                        <button
+                          onClick={() => {
+                            setInvoiceModalMode('shipping_label');
+                            setIsInvoiceModalOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-2xs"
+                          title="Generate & Print 4x6 / A4 Courier Shipping Label & Packing Slip (with Barcode & QR Code)"
+                        >
+                          <BarcodeIcon size={14} />
+                          <span>Shipping Label & Slip</span>
+                        </button>
+                      )}
+                    </div>
                   );
                 })()}
 
@@ -3403,6 +3438,7 @@ export default function OrdersTab() {
         onClose={() => setIsInvoiceModalOpen(false)}
         order={activeOrderModal}
         sellerUser={sellerUser}
+        initialMode={invoiceModalMode}
       />
       )}
 
@@ -3412,6 +3448,11 @@ export default function OrdersTab() {
           isOpen={isCreateShipmentModalOpen}
           onClose={() => setIsCreateShipmentModalOpen(false)}
           order={activeOrderModal}
+          onOpenShippingLabel={() => {
+            setIsCreateShipmentModalOpen(false);
+            setInvoiceModalMode('shipping_label');
+            setIsInvoiceModalOpen(true);
+          }}
           onShipmentCreated={(result) => {
             if (activeOrderModal && result?.awbNumber) {
               updateOrderStatus(activeOrderModal.id || activeOrderModal._id, 'Shipped', {

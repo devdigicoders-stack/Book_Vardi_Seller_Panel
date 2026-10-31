@@ -1,9 +1,9 @@
 import useModalBackTrap from '../hooks/useModalBackTrap';
 import React, { useState, useEffect } from 'react';
-import { Truck, X, Package, ShieldCheck, CheckCircle2, Download, ExternalLink, Loader2, Sparkles } from 'lucide-react';
+import { Truck, X, Package, ShieldCheck, CheckCircle2, Download, ExternalLink, Loader2, Sparkles, Printer } from 'lucide-react';
 import { checkServiceabilityApi, createShipmentApi } from '../utils/api';
 
-export default function CreateShipmentModal({ isOpen, onClose, order, onShipmentCreated }) {
+export default function CreateShipmentModal({ isOpen, onClose, order, onShipmentCreated, onOpenShippingLabel }) {
   useModalBackTrap(isOpen, onClose);
   if (!isOpen || !order) return null;
 
@@ -157,14 +157,25 @@ export default function CreateShipmentModal({ isOpen, onClose, order, onShipment
               </div>
 
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <a
-                  href={`data:text/plain;charset=utf-8,BOOKVARDI%20SHIPPING%20LABEL%0AAWB:%20${shipmentResult.awbNumber}%0AOrder:%20${orderId}%0ADestination:%20${deliveryPincode}`}
-                  download={`ShippingLabel-${shipmentResult.awbNumber}.txt`}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-teal-800 hover:bg-teal-700 text-white font-extrabold text-xs px-6 py-3 rounded-xl shadow-md transition-all cursor-pointer"
-                >
-                  <Download size={15} />
-                  <span>Download Shipping Label PDF</span>
-                </a>
+                {onOpenShippingLabel ? (
+                  <button
+                    type="button"
+                    onClick={onOpenShippingLabel}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-teal-800 hover:bg-teal-700 text-white font-extrabold text-xs px-6 py-3 rounded-xl shadow-md transition-all cursor-pointer"
+                  >
+                    <Printer size={15} />
+                    <span>Print 4x6 / A4 Shipping Label & Slip</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-teal-800 hover:bg-teal-700 text-white font-extrabold text-xs px-6 py-3 rounded-xl shadow-md transition-all cursor-pointer"
+                  >
+                    <Printer size={15} />
+                    <span>View Shipping Label</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
