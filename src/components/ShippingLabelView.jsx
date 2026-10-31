@@ -177,13 +177,113 @@ export default function ShippingLabelView({
   const rawPaymentMode = String(order.paymentMethod || order.paymentMode || '').toUpperCase();
   const isCod = rawPaymentMode.includes('COD') || rawPaymentMode.includes('CASH');
 
-  // Customer info
-  const customerName = order.customer?.name || order.shippingAddress?.name || order.user?.name || 'Customer';
-  const customerAddress = order.shippingAddress?.street || order.shippingAddress?.addressLine1 || order.shippingAddress?.address || order.address || 'Delivery Address';
-  const customerCity = order.shippingAddress?.city || order.city || 'Delhi';
-  const customerState = order.shippingAddress?.state || order.state || 'Delhi';
-  const customerPincode = order.shippingAddress?.pincode || order.shippingAddress?.postalCode || order.pincode || '110093';
-  const customerPhone = order.shippingAddress?.phone || order.customer?.phone || order.user?.phone || order.phone || '';
+  // Multi-layered Customer & Address Resolution
+  const addrObj = (typeof order.shippingAddress === 'object' && order.shippingAddress !== null)
+    ? order.shippingAddress
+    : (typeof order.rawShippingAddress === 'object' && order.rawShippingAddress !== null)
+    ? order.rawShippingAddress
+    : (typeof order.shippingAddressObj === 'object' && order.shippingAddressObj !== null)
+    ? order.shippingAddressObj
+    : null;
+
+  const addrString = typeof order.shippingAddress === 'string'
+    ? order.shippingAddress
+    : (typeof order.deliveryAddress === 'string'
+      ? order.deliveryAddress
+      : (typeof order.address === 'string' ? order.address : ''));
+
+  const pincodeMatch = addrString ? addrString.match(/\b([1-9][0-9]{5})\b/) : null;
+
+  let detectedState = '';
+  const lowerAddr = (addrString + ' ' + (addrObj?.state || '') + ' ' + (addrObj?.city || '')).toLowerCase();
+  if (lowerAddr.includes('uttar pradesh') || lowerAddr.includes('utter pradesh') || lowerAddr.includes('up') || lowerAddr.includes('u.p.')) {
+    detectedState = 'Uttar Pradesh';
+  } else if (lowerAddr.includes('delhi') || lowerAddr.includes('new delhi')) {
+    detectedState = 'Delhi';
+  } else if (lowerAddr.includes('haryana')) {
+    detectedState = 'Haryana';
+  } else if (lowerAddr.includes('punjab')) {
+    detectedState = 'Punjab';
+  } else if (lowerAddr.includes('bihar')) {
+    detectedState = 'Bihar';
+  } else if (lowerAddr.includes('rajasthan')) {
+    detectedState = 'Rajasthan';
+  } else if (lowerAddr.includes('uttarakhand')) {
+    detectedState = 'Uttarakhand';
+  }
+
+  let detectedCity = '';
+  if (lowerAddr.includes('saharanpur')) detectedCity = 'Saharanpur';
+  else if (lowerAddr.includes('behat')) detectedCity = 'Behat';
+  else if (lowerAddr.includes('lucknow')) detectedCity = 'Lucknow';
+  else if (lowerAddr.includes('noida')) detectedCity = 'Noida';
+  else if (lowerAddr.includes('ghaziabad')) detectedCity = 'Ghaziabad';
+  else if (lowerAddr.includes('kanpur')) detectedCity = 'Kanpur';
+  else if (lowerAddr.includes('agra')) detectedCity = 'Agra';
+  else if (lowerAddr.includes('delhi')) detectedCity = 'Delhi';
+
+  const customerName = (
+    order.customerName ||
+    order.customer?.name ||
+    order.customer?.fullName ||
+    addrObj?.name ||
+    addrObj?.fullName ||
+    order.userName ||
+    order.user?.name ||
+    'Customer'
+  );
+
+  const rawState = addrObj?.state || order.state || detectedState || '';
+  const customerState = (
+    rawState.toUpperCase().includes('UTT') || rawState.toUpperCase().includes('PRADESH')
+      ? 'Uttar Pradesh'
+      : (rawState || 'Uttar Pradesh')
+  );
+
+  const customerCity = (
+    addrObj?.city ||
+    order.city ||
+    detectedCity ||
+    (lowerAddr.includes('behat') ? 'Behat' : (customerState === 'Uttar Pradesh' ? 'Saharanpur' : 'City'))
+  );
+
+  const customerPincode = (
+    addrObj?.pincode ||
+    addrObj?.postalCode ||
+    order.pincode ||
+    order.postalCode ||
+    (pincodeMatch ? pincodeMatch[1] : '') ||
+    '247121'
+  );
+
+  const customerPhone = (
+    order.customerPhone ||
+    order.customer?.phone ||
+    addrObj?.phone ||
+    order.userPhone ||
+    order.user?.phone ||
+    order.phone ||
+    ''
+  );
+
+  let customerAddress = (
+    addrObj?.street ||
+    addrObj?.addressLine ||
+    addrObj?.addressLine1 ||
+    addrObj?.address ||
+    order.address ||
+    ''
+  );
+
+  if (addrObj?.landmark && !customerAddress.toLowerCase().includes(String(addrObj.landmark).toLowerCase())) {
+    customerAddress = `${customerAddress}, ${addrObj.landmark}`.trim().replace(/^,\s*/, '');
+  }
+  if (!customerAddress && addrString) {
+    customerAddress = addrString;
+  }
+  if (!customerAddress) {
+    customerAddress = 'Delivery Address';
+  }
 
   // Seller info
   const sellerStoreName = sellerDetails?.storeName || order.sellerStoreName || order.storeName || 'NATIONAL SCHOOL DRESS EVAM PUSTAK BHANDAR';
