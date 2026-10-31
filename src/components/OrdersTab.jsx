@@ -31,7 +31,10 @@ import {
   RefreshCw,
   Loader2,
   Lock,
-  Barcode as BarcodeIcon
+  Barcode as BarcodeIcon,
+  Calendar,
+  RotateCcw,
+  CheckCircle2
 } from 'lucide-react';
 import { useSellerData, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 import TaxInvoiceModal, { parseStateInfo } from './TaxInvoiceModal';
@@ -81,6 +84,67 @@ export const formatDisplayOrderId = (rawId) => {
   return str;
 };
 
+export const resolveExchangeStatus = (order) => {
+  const retStatus = String(order?.returnRequest?.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const orderStatus = String(order?.status || order?.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  
+  if (['exchanged', 'exchange_completed', 'completed'].includes(retStatus) || ['exchanged', 'exchange_completed', 'completed'].includes(orderStatus)) {
+    return 'Exchange Completed';
+  }
+  if (['exchange_dispatched', 'replacement_dispatched', 'shipped'].includes(retStatus) || ['exchange_dispatched', 'replacement_dispatched'].includes(orderStatus)) {
+    return 'Replacement Dispatched';
+  }
+  if (retStatus === 'pickup_scheduled' || orderStatus === 'pickup_scheduled') {
+    return 'Pickup Scheduled';
+  }
+  if (retStatus.includes('approved') || orderStatus.includes('approved')) {
+    return 'Exchange Approved';
+  }
+  if (retStatus.includes('reject') || orderStatus.includes('reject')) {
+    return 'Exchange Rejected';
+  }
+  return 'Exchange Requested';
+};
+
+export const resolveReturnStatus = (order) => {
+  const retStatus = String(order?.returnRequest?.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const orderStatus = String(order?.status || order?.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  
+  if (['refund_completed', 'refunded', 'refund_processed'].includes(retStatus) || ['refund_completed', 'refunded'].includes(orderStatus)) {
+    return 'Refund Completed';
+  }
+  if (['product_received', 'product_return_received'].includes(retStatus) || orderStatus === 'product_received') {
+    return 'Product Received';
+  }
+  if (retStatus === 'pickup_scheduled' || orderStatus === 'pickup_scheduled') {
+    return 'Pickup Scheduled';
+  }
+  if (retStatus.includes('approved') || orderStatus.includes('approved')) {
+    return 'Return Approved';
+  }
+  if (retStatus.includes('reject') || orderStatus.includes('reject')) {
+    return 'Return Rejected';
+  }
+  return 'Return Requested';
+};
+
+export const getExchangeStepIndex = (statusStr) => {
+  const s = String(statusStr || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  if (['exchanged', 'exchange_completed', 'completed'].includes(s)) return 5;
+  if (['exchange_dispatched', 'replacement_dispatched', 'shipped'].includes(s)) return 4;
+  if (['pickup_scheduled'].includes(s)) return 3;
+  if (['exchange_approved', 'approved'].includes(s)) return 2;
+  return 1;
+};
+
+export const EXCHANGE_TIMELINE_STEPS = [
+  { step: 1, key: 'exchange_requested', label: 'Exchange Requested', desc: 'Replacement requested', icon: RotateCcw },
+  { step: 2, key: 'exchange_approved', label: 'Exchange Approved', desc: 'Store approved request', icon: CheckCircle2 },
+  { step: 3, key: 'pickup_scheduled', label: 'Pickup Scheduled', desc: 'Courier pickup booked', icon: Calendar },
+  { step: 4, key: 'exchange_dispatched', label: 'Replacement Dispatched', desc: 'Dispatched via courier', icon: Truck },
+  { step: 5, key: 'exchanged', label: 'Exchange Completed', desc: 'Replacement delivered', icon: ShieldCheck }
+];
+
 const STATUS_CONFIG = {
   Pending: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: Clock },
   Processing: { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-200', icon: Clock },
@@ -100,6 +164,9 @@ const STATUS_CONFIG = {
   'Product Received': { bg: 'bg-indigo-50', text: 'text-indigo-900', border: 'border-indigo-200', icon: Package },
   Refunded: { bg: 'bg-emerald-100', text: 'text-emerald-950', border: 'border-emerald-300', icon: CheckCircle },
   'Exchange Dispatched': { bg: 'bg-purple-100', text: 'text-purple-950', border: 'border-purple-300', icon: Truck },
+  'Replacement Dispatched': { bg: 'bg-purple-100', text: 'text-purple-950', border: 'border-purple-300', icon: Truck },
+  'Exchange Completed': { bg: 'bg-emerald-100', text: 'text-emerald-950', border: 'border-emerald-300', icon: CheckCircle },
+  'Refund Completed': { bg: 'bg-emerald-100', text: 'text-emerald-950', border: 'border-emerald-300', icon: CheckCircle },
   Exchanged: { bg: 'bg-emerald-100', text: 'text-emerald-950', border: 'border-emerald-300', icon: CheckCircle }
 };
 
@@ -1900,9 +1967,207 @@ export default function OrdersTab() {
                   ? 'Self-Delivery (Direct Store Fleet)'
                   : (activeOrderModal.courierName || '3rd-Party Courier');
 
+                const isExchange = Boolean(
+                  activeOrderModal.returnRequest?.type === "exchange" ||
+                  activeOrderModal.returnRequest?.requestType === "exchange" ||
+                  String(activeOrderModal.status).toLowerCase().includes("exchange") ||
+                  String(activeOrderModal.overallStatus).toLowerCase().includes("exchange") ||
+                  String(activeOrderModal.returnRequest?.status).toLowerCase().includes("exchange") ||
+                  String(modalStatusInput).toLowerCase().includes("exchange")
+                );
+
+                const isReturnOnly = Boolean(
+                  hasActiveReturnRequest(activeOrderModal) && !isExchange
+                );
+
                 return (
                   <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-100 space-y-4">
-                    <div className="flex items-center justify-between font-bold text-teal-950">
+                {/* Visual Exchange Journey Stepper (Matching Customer Website Timeline) */}
+                {isExchange && (
+                  <div className="bg-gradient-to-b from-purple-50/70 via-indigo-50/40 to-white rounded-2xl p-4 sm:p-5 border border-purple-200/80 space-y-4 shadow-2xs">
+                    <div className="flex items-center justify-between border-b border-purple-100 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <RotateCcw size={16} className="text-purple-700" />
+                        <span className="font-extrabold text-xs text-purple-950 uppercase tracking-wider">
+                          Live Product Exchange Timeline
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300">
+                        {modalStatusInput || "Exchange Approved"}
+                      </span>
+                    </div>
+
+                    <div className="relative pt-2 pb-1">
+                      <div className="absolute top-7 left-6 right-6 h-1 bg-gray-200 -translate-y-1/2 z-0 hidden sm:block">
+                        <div
+                          className="h-full bg-gradient-to-r from-purple-600 via-indigo-600 to-emerald-500 transition-all duration-500"
+                          style={{
+                            width: `${
+                              getExchangeStepIndex(modalStatusInput || activeOrderModal.status || activeOrderModal.returnRequest?.status) === 5 ? 100 :
+                              getExchangeStepIndex(modalStatusInput || activeOrderModal.status || activeOrderModal.returnRequest?.status) === 4 ? 75 :
+                              getExchangeStepIndex(modalStatusInput || activeOrderModal.status || activeOrderModal.returnRequest?.status) === 3 ? 50 :
+                              getExchangeStepIndex(modalStatusInput || activeOrderModal.status || activeOrderModal.returnRequest?.status) === 2 ? 25 : 5
+                            }%`
+                          }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 relative z-10">
+                        {EXCHANGE_TIMELINE_STEPS.map((s) => {
+                          const stepIdx = getExchangeStepIndex(modalStatusInput || activeOrderModal.status || activeOrderModal.returnRequest?.status);
+                          const isCompleted = s.step < stepIdx;
+                          const isCurrent = s.step === stepIdx;
+                          const StepIcon = s.icon;
+
+                          return (
+                            <div
+                              key={s.step}
+                              onClick={() => setModalStatusInput(s.label)}
+                              className="flex flex-col items-center text-center cursor-pointer group"
+                              title={`Click to set status to '${s.label}'`}
+                            >
+                              <div
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 mb-1.5 ${
+                                  isCurrent
+                                    ? "bg-amber-600 text-white ring-4 ring-amber-600/25 shadow-md scale-105"
+                                    : isCompleted
+                                    ? "bg-emerald-600 text-white shadow-xs"
+                                    : "bg-white text-gray-400 border-2 border-gray-200 group-hover:border-purple-300 group-hover:text-purple-700"
+                                }`}
+                              >
+                                {isCompleted ? (
+                                  <Check size={18} className="stroke-[3]" />
+                                ) : (
+                                  <StepIcon size={18} className={isCurrent ? "text-amber-100" : ""} />
+                                )}
+                              </div>
+                              <span
+                                className={`text-[11px] font-black leading-tight ${
+                                  isCurrent
+                                    ? "text-amber-800"
+                                    : isCompleted
+                                    ? "text-gray-900"
+                                    : "text-gray-400 group-hover:text-purple-900"
+                                }`}
+                              >
+                                {s.label}
+                              </span>
+                              <span className="text-[10px] text-gray-500 leading-tight mt-0.5 hidden sm:block">
+                                {s.desc}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Exchange Rider Assignment Note */}
+                {isExchange && (
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-purple-950 text-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base shrink-0">🔄</span>
+                      <span>
+                        <strong>Exchange Delivery Note:</strong> Rider will be automatically instructed to pick up the old item and deliver the replacement ({activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength}m` : (activeOrderModal.returnRequest?.exchangeSize || "Requested item")}).
+                      </span>
+                    </div>
+                    <span className="font-mono font-extrabold text-[11px] px-2 py-0.5 rounded-md bg-purple-200 text-purple-950 shrink-0">
+                      {activeOrderModal.returnRequest?.priceAdjustmentType === "extra_payment"
+                        ? `Collect +₹${activeOrderModal.returnRequest.priceDifference}`
+                        : "Collect ₹0"}
+                    </span>
+                  </div>
+                )}
+
+                {/* Status Selection & Save */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-gray-700">Update Status</label>
+                    <select
+                      value={modalStatusInput}
+                      onChange={(e) => setModalStatusInput(e.target.value)}
+                      disabled={activeOrderModal.status === "Cancelled" || modalStatusInput === "Exchange Completed"}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-300 font-extrabold bg-white focus:outline-none focus:border-teal-600 text-xs disabled:bg-gray-100 disabled:text-gray-500"
+                    >
+                      {isExchange ? (
+                        <>
+                          <option value="Exchange Requested">🔄 Exchange Requested</option>
+                          <option value="Exchange Approved">✅ Exchange Approved</option>
+                          <option value="Pickup Scheduled">📅 Pickup Scheduled</option>
+                          <option value="Replacement Dispatched">🚚 Replacement Dispatched</option>
+                          <option value="Exchange Completed">🎉 Exchange Completed</option>
+                          <option value="Exchange Rejected">❌ Exchange Rejected</option>
+                        </>
+                      ) : isReturnOnly ? (
+                        <>
+                          <option value="Return Requested">🔄 Return Requested</option>
+                          <option value="Return Approved">✅ Return Approved</option>
+                          <option value="Pickup Scheduled">📅 Pickup Scheduled</option>
+                          <option value="Product Received">📦 Product Received</option>
+                          <option value="Refund Completed">🎉 Refund Completed</option>
+                          <option value="Return Rejected">❌ Return Rejected</option>
+                        </>
+                      ) : (
+                        <>
+                          {activeOrderModal.status === "Pending" && (
+                            <option value="Pending">🕒 Pending</option>
+                          )}
+                          {!isDispatched && (
+                            <>
+                              <option value="Confirmed">✅ Confirmed</option>
+                              <option value="Packed">📦 Packed</option>
+                            </>
+                          )}
+                          <option value="Shipped">🚚 Shipped</option>
+                          <option value="Out for Delivery">🛵 Out for Delivery</option>
+                          <option value="Delivered">🎉 Delivered</option>
+                          {activeOrderModal.status !== "Delivered" && (
+                            <option value="Cancelled">❌ Cancelled</option>
+                          )}
+                          {modalStatusInput && !["Pending", "Confirmed", "Packed", "Shipped", "Out for Delivery", "Delivered", "Cancelled"].includes(modalStatusInput) && (
+                            <option value={modalStatusInput}>{modalStatusInput}</option>
+                          )}
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="flex items-end">
+                    {(() => {
+                      const isSameStatus = modalStatusInput === activeOrderModal.status;
+                      const isFullyLocked = isLockedFulfillment && isSameStatus;
+
+                      return (
+                        <button
+                          type="button"
+                          disabled={isSavingDelivery || isFullyLocked}
+                          onClick={handleModalSaveStatus}
+                          className={`w-full py-2.5 font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 ${
+                            isFullyLocked
+                              ? 'bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200'
+                              : 'bg-teal-800 hover:bg-teal-900 text-white cursor-pointer'
+                          }`}
+                        >
+                          {isSavingDelivery ? (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>Updating Order Status...</span>
+                            </>
+                          ) : isFullyLocked ? (
+                            <>
+                              <Lock size={13} />
+                              <span>Shipment Details Locked (Already Dispatched)</span>
+                            </>
+                          ) : (
+                            <span>Update Status to {modalStatusInput}</span>
+                          )}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                </div>
+                    <div className="flex items-center justify-between font-bold text-teal-950 border-t border-teal-200/70 pt-3">
                       <span className="flex items-center gap-1.5 text-sm">
                         <Truck size={16} className="text-teal-700" /> Fulfillment & Delivery Management
                       </span>
@@ -2204,88 +2469,6 @@ export default function OrdersTab() {
                     </div>
                   </div>
                 )}
-                {/* Exchange Rider Assignment Note */}
-                {Boolean(activeOrderModal.returnRequest?.type === 'exchange' || String(activeOrderModal.status).toLowerCase().includes('exchange')) && (
-                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-purple-950 text-xs flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base shrink-0">🔄</span>
-                      <span>
-                        <strong>Exchange Delivery Note:</strong> Rider will be automatically instructed to pick up the old item and deliver the replacement ({activeOrderModal.returnRequest?.exchangeLength ? `${activeOrderModal.returnRequest.exchangeLength}m` : (activeOrderModal.returnRequest?.exchangeSize || 'Requested item')}).
-                      </span>
-                    </div>
-                    <span className="font-mono font-extrabold text-[11px] px-2 py-0.5 rounded-md bg-purple-200 text-purple-950 shrink-0">
-                      {activeOrderModal.returnRequest?.priceAdjustmentType === 'extra_payment'
-                        ? `Collect +₹${activeOrderModal.returnRequest.priceDifference}`
-                        : 'Collect ₹0'}
-                    </span>
-                  </div>
-                )}
-
-                {/* Status Selection & Save */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div className="space-y-1">
-                    <label className="font-semibold text-gray-700">Update Status</label>
-                    <select
-                      value={modalStatusInput}
-                      onChange={(e) => setModalStatusInput(e.target.value)}
-                      disabled={activeOrderModal.status === 'Delivered' || activeOrderModal.status === 'Cancelled'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-300 font-extrabold bg-white focus:outline-none focus:border-teal-600 text-xs disabled:bg-gray-100 disabled:text-gray-500"
-                    >
-                      {activeOrderModal.status === 'Pending' && (
-                        <option value="Pending">🕒 Pending</option>
-                      )}
-                      {!isDispatched && (
-                        <>
-                          <option value="Confirmed">✅ Confirmed</option>
-                          <option value="Packed">📦 Packed</option>
-                        </>
-                      )}
-                      <option value="Shipped">🚚 Shipped</option>
-                      <option value="Out for Delivery">🛵 Out for Delivery</option>
-                      <option value="Delivered">🎉 Delivered</option>
-                      {activeOrderModal.status !== 'Delivered' && (
-                        <option value="Cancelled">❌ Cancelled</option>
-                      )}
-                      {modalStatusInput && !['Pending', 'Confirmed', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(modalStatusInput) && (
-                        <option value={modalStatusInput}>{modalStatusInput}</option>
-                      )}
-                    </select>
-                  </div>
-
-                  <div className="flex items-end">
-                    {(() => {
-                      const isSameStatus = modalStatusInput === activeOrderModal.status;
-                      const isFullyLocked = isLockedFulfillment && isSameStatus;
-
-                      return (
-                        <button
-                          type="button"
-                          disabled={isSavingDelivery || isFullyLocked}
-                          onClick={handleModalSaveStatus}
-                          className={`w-full py-2.5 font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 ${
-                            isFullyLocked
-                              ? 'bg-gray-100 text-gray-500 cursor-not-allowed border border-gray-200'
-                              : 'bg-teal-800 hover:bg-teal-900 text-white cursor-pointer'
-                          }`}
-                        >
-                          {isSavingDelivery ? (
-                            <>
-                              <Loader2 size={14} className="animate-spin" />
-                              <span>Updating Order Status...</span>
-                            </>
-                          ) : isFullyLocked ? (
-                            <>
-                              <Lock size={13} />
-                              <span>Shipment Details Locked (Already Dispatched)</span>
-                            </>
-                          ) : (
-                            <span>Update Status to {modalStatusInput}</span>
-                          )}
-                        </button>
-                      );
-                    })()}
-                  </div>
-                </div>
               </div>
             );
           })()}
