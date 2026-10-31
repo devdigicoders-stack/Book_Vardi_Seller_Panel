@@ -1356,8 +1356,27 @@ export default function OrdersTab() {
                       ) : (
                         <p className="text-gray-500 italic">Original Payment Method (UPI/Online Auto-Refund)</p>
                       )}
+                      {activeOrderModal.returnRequest?.returnAwbNumber && (
+                        <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-blue-700 block">Shiprocket Reverse Pickup AWB:</span>
+                            <span className="font-mono font-extrabold text-blue-950 text-xs">{activeOrderModal.returnRequest.returnAwbNumber}</span>
+                            <span className="text-gray-600 text-[10px] ml-1.5">({activeOrderModal.returnRequest.returnCourierName || 'Shiprocket'})</span>
+                          </div>
+                          {activeOrderModal.returnRequest.returnTrackingUrl && (
+                            <a
+                              href={activeOrderModal.returnRequest.returnTrackingUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-2xs"
+                            >
+                              Track Return ↗
+                            </a>
+                          )}
+                        </div>
+                      )}
                       {activeOrderModal.returnRequest?.refundTxnId && (
-                        <p className="text-emerald-800 font-bold"><strong>Refund TXN ID:</strong> {activeOrderModal.returnRequest.refundTxnId}</p>
+                        <p className="text-emerald-800 font-bold"><strong>Refund TXN ID:</strong> <span className="font-mono">{activeOrderModal.returnRequest.refundTxnId}</span></p>
                       )}
                       {activeOrderModal.returnRequest?.rejectionReason && (
                         <p className="text-rose-700 font-bold"><strong>Rejection Reason:</strong> {activeOrderModal.returnRequest.rejectionReason}</p>
