@@ -359,26 +359,60 @@ export default function BillingReportsTab() {
         totalGstAmount = itemsGross - totalTaxableValue;
       }
 
-      // Marketplace deductions
-      const commRate = Number(o.commissionRate ?? settings?.commissionRate ?? sellerUser?.commissionRate ?? 10);
-      const commAmount = o.settlement?.commissionAmount !== undefined
-        ? Number(o.settlement.commissionAmount)
-        : Math.round(((grossAmount * commRate) / 100) * 100) / 100;
+      // Statutory Exemption check (09BLMPK2840L2ZN / National School Dress / Digicoders / 0% Commission)
+      const candidateGstList = [
+        sellerUser?.gstNumber,
+        sellerUser?.gstin,
+        o.sellerGstNumber,
+        o.sellerGstin,
+        o.gstNumber,
+        o.sellerDetails?.gstNumber,
+        o.sellerDetails?.gstin,
+        ...(o.items || []).map(it => it.sellerDetails?.gstNumber || it.sellerId?.gstNumber || it.sellerGstNumber || it.sellerGstin)
+      ].filter(Boolean).map(g => String(g).trim().toUpperCase().replace(/[^A-Z0-9]/g, ''));
 
-      const gstOnComm = o.settlement?.gstOnCommissionAmount !== undefined
-        ? Number(o.settlement.gstOnCommissionAmount)
-        : Math.round(((commAmount * 18) / 100) * 100) / 100;
+      const cleanStoreLower = String(sellerUser?.storeName || o.sellerStoreName || o.storeName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const candidatePhones = [
+        sellerUser?.phone,
+        o.sellerPhone,
+        o.sellerDetails?.phone
+      ].filter(Boolean).map(p => String(p).replace(/\D/g, ''));
 
-      // TDS (Sec 194-O) 0.1% on Gross Amount
-      const tdsAmount = o.settlement?.tdsAmount !== undefined
-        ? Number(o.settlement.tdsAmount)
-        : Math.round(((grossAmount * 0.1) / 100) * 100) / 100;
+      const isExemptedSeller =
+        candidateGstList.some(g => g.includes('09BLMPK2840L2ZN')) ||
+        cleanStoreLower.includes('nationalschooldress') ||
+        cleanStoreLower.includes('pustakbhandar') ||
+        cleanStoreLower.includes('digicoders') ||
+        candidatePhones.some(p => p.includes('9027237697')) ||
+        Number(sellerUser?.commissionRate ?? sellerUser?.commissionPercentage) === 0 ||
+        Number(o.commissionRate) === 0;
 
-      // GST TCS (Sec 52) 0.5% (Rule 3 COD Self Delivery = 0)
+      // Marketplace deductions (Strictly 0% if exempted)
+      const commRate = isExemptedSeller ? 0 : Number(o.commissionRate ?? settings?.commissionRate ?? sellerUser?.commissionRate ?? 10);
+      const commAmount = isExemptedSeller
+        ? 0
+        : (o.settlement?.commissionAmount !== undefined
+            ? Number(o.settlement.commissionAmount)
+            : Math.round(((grossAmount * commRate) / 100) * 100) / 100);
+
+      const gstOnComm = isExemptedSeller
+        ? 0
+        : (o.settlement?.gstOnCommissionAmount !== undefined
+            ? Number(o.settlement.gstOnCommissionAmount)
+            : Math.round(((commAmount * 18) / 100) * 100) / 100);
+
+      // TDS (Sec 194-O) 0.1% on Gross Amount (Strictly 0% if exempted)
+      const tdsAmount = isExemptedSeller
+        ? 0
+        : (o.settlement?.tdsAmount !== undefined
+            ? Number(o.settlement.tdsAmount)
+            : Math.round(((grossAmount * 0.1) / 100) * 100) / 100);
+
+      // GST TCS (Sec 52) 0.5% (Rule 3 COD Self Delivery = 0, Strictly 0% if exempted)
       const rawPayment = String(o.paymentMethod || o.paymentMode || '').toUpperCase();
       const isCod = rawPayment.includes('COD') || rawPayment.includes('CASH');
       const isRule3 = isCod && isSelfDelivery;
-      const gstTcsAmount = isRule3
+      const gstTcsAmount = (isRule3 || isExemptedSeller)
         ? 0
         : (o.settlement?.gstTcsAmount !== undefined
             ? Number(o.settlement.gstTcsAmount)
@@ -417,6 +451,7 @@ export default function BillingReportsTab() {
         isRefunded,
         isSelfDelivery,
         isThirdParty,
+        isExemptedSeller,
         grossAmount,
         deliveryFee,
         itemsGross,
@@ -806,10 +841,10 @@ export default function BillingReportsTab() {
         o.invoiceNo,
         o.orderDate.toLocaleDateString('en-IN'),
         `₹${o.grossAmount.toFixed(2)}`,
-        `${o.commRate}%`,
-        `₹${o.commAmount.toFixed(2)}`,
-        `₹${o.gstOnComm.toFixed(2)}`,
-        `₹${(o.commAmount + o.gstOnComm).toFixed(2)}`,
+        o.isExemptedSeller ? '0% (Exempt)' : `${o.commRate}%`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.commAmount.toFixed(2)}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.gstOnComm.toFixed(2)}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${(o.commAmount + o.gstOnComm).toFixed(2)}`,
         `₹${o.netPayout.toFixed(2)}`
       ];
 
@@ -819,10 +854,10 @@ export default function BillingReportsTab() {
         'Invoice No': o.invoiceNo,
         'Date': o.orderDate.toLocaleDateString('en-IN'),
         'Order Gross Value (₹)': o.grossAmount.toFixed(2),
-        'Commission Rate (%)': `${o.commRate}%`,
-        'Base Commission (₹)': o.commAmount.toFixed(2),
-        'GST on Commission @ 18% (₹)': o.gstOnComm.toFixed(2),
-        'Total Commission Billed (₹)': (o.commAmount + o.gstOnComm).toFixed(2),
+        'Commission Rate (%)': o.isExemptedSeller ? '0% (Exempt)' : `${o.commRate}%`,
+        'Base Commission (₹)': o.isExemptedSeller ? '0.00 (Exempt)' : o.commAmount.toFixed(2),
+        'GST on Commission @ 18% (₹)': o.isExemptedSeller ? '0.00 (Exempt)' : o.gstOnComm.toFixed(2),
+        'Total Commission Billed (₹)': o.isExemptedSeller ? '0.00 (Exempt)' : (o.commAmount + o.gstOnComm).toFixed(2),
         'Net Settlement (₹)': o.netPayout.toFixed(2)
       });
 
@@ -862,8 +897,8 @@ export default function BillingReportsTab() {
         o.customerState,
         `₹${o.grossAmount.toFixed(2)}`,
         '194-O',
-        '0.10%',
-        `₹${o.tdsAmount.toFixed(2)}`,
+        o.isExemptedSeller ? '0.00% (Exempt)' : '0.10%',
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.tdsAmount.toFixed(2)}`,
         `₹${o.netPayout.toFixed(2)}`
       ];
 
@@ -874,10 +909,10 @@ export default function BillingReportsTab() {
         'Customer State': o.customerState,
         'Gross Sales Amount (₹)': o.grossAmount.toFixed(2),
         'TDS Section': '194-O',
-        'TDS Rate (%)': '0.10%',
-        'TDS Amount Deducted (₹)': o.tdsAmount.toFixed(2),
+        'TDS Rate (%)': o.isExemptedSeller ? '0.00% (Exempt)' : '0.10%',
+        'TDS Amount Deducted (₹)': o.isExemptedSeller ? '0.00' : o.tdsAmount.toFixed(2),
         'Net Disbursed (₹)': o.netPayout.toFixed(2),
-        'Status': 'Deducted by Marketplace'
+        'Status': o.isExemptedSeller ? 'Exempted (09BLMPK2840L2ZN / Zero TDS)' : 'Deducted by Marketplace'
       });
 
       const totalRow = [
@@ -914,10 +949,10 @@ export default function BillingReportsTab() {
         o.orderDate.toLocaleDateString('en-IN'),
         o.isSelfDelivery ? 'Self Delivery' : 'Courier',
         `₹${o.totalTaxableValue.toFixed(2)}`,
-        `₹${o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2)}`,
-        `₹${o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2)}`,
-        `₹${o.isInterState ? o.gstTcsAmount.toFixed(2) : '0.00'}`,
-        `₹${o.gstTcsAmount.toFixed(2)}`
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2)}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2)}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.isInterState ? o.gstTcsAmount.toFixed(2) : '0.00'}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.gstTcsAmount.toFixed(2)}`
       ];
 
       const getXlsx = (o, idx) => ({
@@ -926,10 +961,10 @@ export default function BillingReportsTab() {
         'Date': o.orderDate.toLocaleDateString('en-IN'),
         'Delivery Mode': o.isSelfDelivery ? 'Self Delivery (OTP)' : 'Third-Party Courier',
         'Net Taxable Supply (₹)': o.totalTaxableValue.toFixed(2),
-        'CGST TCS @ 0.5% (₹)': o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2),
-        'SGST TCS @ 0.5% (₹)': o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2),
-        'IGST TCS @ 1.0% (₹)': o.isInterState ? o.gstTcsAmount.toFixed(2) : '0.00',
-        'Total GST TCS (₹)': o.gstTcsAmount.toFixed(2)
+        'CGST TCS @ 0.5% (₹)': o.isExemptedSeller ? '0.00 (Exempt)' : (o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2)),
+        'SGST TCS @ 0.5% (₹)': o.isExemptedSeller ? '0.00 (Exempt)' : (o.isInterState ? '0.00' : (o.gstTcsAmount / 2).toFixed(2)),
+        'IGST TCS @ 1.0% (₹)': o.isExemptedSeller ? '0.00 (Exempt)' : (o.isInterState ? o.gstTcsAmount.toFixed(2) : '0.00'),
+        'Total GST TCS (₹)': o.isExemptedSeller ? '0.00 (Exempt)' : o.gstTcsAmount.toFixed(2)
       });
 
       const totalRow = [
@@ -974,9 +1009,9 @@ export default function BillingReportsTab() {
         `${isReturnOrCancel ? '-' : ''}₹${o.grossAmount.toFixed(2)}`,
         `₹${o.totalTaxableValue.toFixed(2)}`,
         `₹${o.totalGstAmount.toFixed(2)}`,
-        `₹${o.commAmount.toFixed(2)}`,
-        `₹${o.tdsAmount.toFixed(2)}`,
-        `₹${o.gstTcsAmount.toFixed(2)}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.commAmount.toFixed(2)}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.tdsAmount.toFixed(2)}`,
+        o.isExemptedSeller ? '₹0.00 (Exempt)' : `₹${o.gstTcsAmount.toFixed(2)}`,
         `₹${o.netPayout.toFixed(2)}`
       ];
     };
