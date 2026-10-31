@@ -3,10 +3,10 @@ import { useEffect, useRef } from 'react';
 /**
  * Universal hook to handle browser / mobile hardware Back button for modals and drawers.
  * Pushes a history entry when modal opens, and closes modal when Back is pressed
- * instead of exiting the application.
+ * instead of exiting the application or navigating away from the current tab.
  *
- * StrictMode-safe: Uses deferred history.back() and unique trapKey so React 18
- * development mode double-effect cycles never trigger premature popstate and close the modal.
+ * StrictMode-safe: Uses deferred history.back(), global modal open tracking, and
+ * unique trapKey so closing modals never kicks the seller/admin back to Dashboard.
  */
 export function useModalBackTrap(isOpen, onClose) {
   const isPushedRef = useRef(false);
@@ -21,14 +21,23 @@ export function useModalBackTrap(isOpen, onClose) {
       backTimeoutRef.current = null;
     }
 
+    if (isOpen) {
+      if (typeof window !== 'undefined') {
+        window.__bv_modal_open_count = (window.__bv_modal_open_count || 0) + 1;
+      }
+    }
+
     if (!isOpen) {
       if (isPushedRef.current) {
         const pushedKey = isPushedRef.current;
         isPushedRef.current = false;
-        if (typeof window !== 'undefined' && window.history.state && (window.history.state.trapKey === pushedKey || window.history.state.modalBackTrap)) {
-          try {
-            window.history.back();
-          } catch {}
+        if (typeof window !== 'undefined') {
+          window.__bv_modal_popping = Date.now() + 500;
+          if (window.history.state && (window.history.state.trapKey === pushedKey || window.history.state.modalBackTrap)) {
+            try {
+              window.history.back();
+            } catch {}
+          }
         }
       }
       return;
@@ -41,7 +50,7 @@ export function useModalBackTrap(isOpen, onClose) {
       isPushedRef.current = currentTrapKey;
       try {
         window.history.pushState(
-          { modalBackTrap: true, sellerOrderModalOpen: true, trapKey: currentTrapKey },
+          { modalBackTrap: true, sellerOrderModalOpen: true, sellerModalOpen: true, trapKey: currentTrapKey },
           '',
           window.location.href
         );
@@ -52,25 +61,34 @@ export function useModalBackTrap(isOpen, onClose) {
       if (isPushedRef.current) {
         // Browser has already popped this entry
         isPushedRef.current = false;
+        if (typeof window !== 'undefined') {
+          window.__bv_modal_popping = Date.now() + 500;
+        }
         if (typeof onCloseRef.current === 'function') {
           onCloseRef.current();
         }
       }
     };
 
-    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('popstate', handlePopState, true);
 
     return () => {
-      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('popstate', handlePopState, true);
+      if (isOpen && typeof window !== 'undefined') {
+        window.__bv_modal_open_count = Math.max(0, (window.__bv_modal_open_count || 1) - 1);
+      }
       const pushedKey = isPushedRef.current;
       if (pushedKey) {
         // Defer history.back() so React StrictMode (dev) immediate remount can cancel it
         backTimeoutRef.current = setTimeout(() => {
           isPushedRef.current = false;
-          if (typeof window !== 'undefined' && window.history.state && (window.history.state.trapKey === pushedKey || window.history.state.modalBackTrap)) {
-            try {
-              window.history.back();
-            } catch {}
+          if (typeof window !== 'undefined') {
+            window.__bv_modal_popping = Date.now() + 500;
+            if (window.history.state && (window.history.state.trapKey === pushedKey || window.history.state.modalBackTrap)) {
+              try {
+                window.history.back();
+              } catch {}
+            }
           }
         }, 80);
       }
