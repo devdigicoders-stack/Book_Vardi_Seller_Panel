@@ -12,7 +12,8 @@ import {
   Store,
   DollarSign,
   Truck,
-  ExternalLink
+  ExternalLink,
+  BarcodeIcon 
 } from 'lucide-react';
 import { useSellerData, readActiveSellerSettings, readActiveSellerProfile, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 import { SERVER_URL } from '../utils/api';
