@@ -2630,7 +2630,8 @@ export default function OrdersTab() {
                         (activeOrderModal.gstNumber === '09BLMPK2840L2ZN') ||
                         (sellerUser?.gstNumber === '09BLMPK2840L2ZN') ||
                         activeOrderModal.isCodExempted ||
-                        String(sellerUser?.storeName || activeOrderModal.sellerStoreName || '').toLowerCase().includes('national school dress');
+                        String(sellerUser?.storeName || activeOrderModal.sellerStoreName || '').toLowerCase().includes('national school dress') ||
+                        String(sellerUser?.storeName || activeOrderModal.sellerStoreName || '').toLowerCase().includes('digicoders');
 
                       return (
                         <div className="flex justify-between items-center text-gray-700 flex-wrap gap-1">
@@ -2814,7 +2815,10 @@ export default function OrdersTab() {
 
                 const isExemptedSeller = candidateGstList.includes('09BLMPK2840L2ZN') ||
                   String(sellerUser?.storeName || '').toLowerCase().includes('national school dress') ||
-                  String(activeOrderModal.sellerStoreName || activeOrderModal.storeName || '').toLowerCase().includes('national school dress');
+                  String(activeOrderModal.sellerStoreName || activeOrderModal.storeName || '').toLowerCase().includes('national school dress') ||
+                  String(sellerUser?.storeName || '').toLowerCase().includes('digicoders') ||
+                  String(activeOrderModal.sellerStoreName || activeOrderModal.storeName || '').toLowerCase().includes('digicoders') ||
+                  (activeOrderModal.items || []).some(it => String(it.sellerStoreName || it.storeName || '').toLowerCase().includes('digicoders'));
 
                 const commRate = isExemptedSeller
                   ? 0
