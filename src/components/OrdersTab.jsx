@@ -1812,23 +1812,7 @@ export default function OrdersTab() {
                 </div>
               )}
 
-              {/* Visual Order Progress Stepper */}
-              <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 space-y-2">
-                <div className="font-bold text-gray-800 text-[11px] uppercase tracking-wider">Fulfillment Timeline</div>
-                <div className="grid grid-cols-5 gap-1 text-center font-bold text-[10px]">
-                  {['Pending', 'Confirmed', 'Packed', 'Shipped', 'Delivered'].map((step, idx) => {
-                    const currentIdx = ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Delivered'].indexOf(activeOrderModal.status);
-                    const isPassed = currentIdx >= idx;
-                    const isCurrent = currentIdx === idx;
-                    return (
-                      <div key={step} className="space-y-1">
-                        <div className={`h-1.5 rounded-full ${isPassed ? 'bg-teal-600' : 'bg-gray-200'} ${isCurrent ? 'ring-2 ring-teal-400 ring-offset-1' : ''}`} />
-                        <div className={isPassed ? 'text-teal-900 font-extrabold' : 'text-gray-400 font-normal'}>{step}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+
               
               {/* Customer Profile & Shipping Address Card */}
               <div className="p-4 rounded-xl bg-white border border-gray-200 shadow-2xs space-y-3">
