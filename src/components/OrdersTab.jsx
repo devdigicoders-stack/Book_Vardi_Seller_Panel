@@ -853,7 +853,7 @@ export default function OrdersTab() {
                 <th className="py-3 px-3">Customer & School</th>
                 <th className="py-3 px-3">Items</th>
                 <th className="py-3 px-3">Total Amount</th>
-                <th className="py-3 px-3">Update Status</th>
+                <th className="py-3 px-3">Order Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -966,7 +966,7 @@ export default function OrdersTab() {
                       <td className="py-3.5 px-3">
                         <div className="flex flex-col gap-1">
                           {isReturnExchangeOrder(o) ? (
-                            /* Return/Exchange orders: lock the inline dropdown and redirect to detail modal */
+                            /* Return/Exchange orders: lock the inline badge and redirect to detail modal */
                             <div className="flex flex-col gap-1">
                               <div className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${conf.bg} ${conf.text} ${conf.border}`}>
                                 {o.status?.replace(/_/g, ' ') || 'Return/Exchange'}
@@ -981,23 +981,11 @@ export default function OrdersTab() {
                               </button>
                             </div>
                           ) : (
-                          <select
-                            value={o.status || 'Pending'}
-                            onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-500 ${conf.bg} ${conf.text} ${conf.border}`}
-                          >
-                            <option value="Pending">🕒 Pending</option>
-                            <option value="Confirmed">✅ Confirmed</option>
-                            <option value="Processing">⚙️ Processing</option>
-                            <option value="Packed">📦 Packed</option>
-                            <option value="Shipped">🚚 Shipped</option>
-                            <option value="Out for Delivery">🛵 Out for Delivery</option>
-                            <option value="Delivered">🎉 Delivered</option>
-                            <option value="Cancelled">❌ Cancelled</option>
-                            {o.status && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(o.status) && (
-                              <option value={o.status}>{o.status}</option>
-                            )}
-                          </select>
+                            /* Process-driven: Once an order is Confirmed, status follows fulfillment workflow (Pack & Ship -> Mark Delivered) */
+                            <div className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 w-fit ${conf.bg} ${conf.text} ${conf.border}`}>
+                              <Icon size={12} />
+                              <span>{o.status || 'Pending'}</span>
+                            </div>
                           )}
                           {(o.status === 'Cancelled' || o.cancellationReason) && (
                             <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 truncate max-w-[130px]" title={`Cancelled by ${o.cancelledBy || 'Customer'}. Reason: ${o.cancellationReason || 'Customer requested cancellation'}`}>
@@ -2202,21 +2190,25 @@ export default function OrdersTab() {
                     <select
                       value={modalStatusInput}
                       onChange={(e) => setModalStatusInput(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-300 font-extrabold bg-white focus:outline-none focus:border-teal-600 text-xs"
+                      disabled={activeOrderModal.status === 'Delivered' || activeOrderModal.status === 'Cancelled'}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-300 font-extrabold bg-white focus:outline-none focus:border-teal-600 text-xs disabled:bg-gray-100 disabled:text-gray-500"
                     >
+                      {activeOrderModal.status === 'Pending' && (
+                        <option value="Pending">🕒 Pending</option>
+                      )}
                       {!isDispatched && (
                         <>
-                          <option value="Pending">🕒 Pending</option>
                           <option value="Confirmed">✅ Confirmed</option>
-                          <option value="Processing">⏳ Processing</option>
                           <option value="Packed">📦 Packed</option>
                         </>
                       )}
                       <option value="Shipped">🚚 Shipped</option>
                       <option value="Out for Delivery">🛵 Out for Delivery</option>
                       <option value="Delivered">🎉 Delivered</option>
-                      <option value="Cancelled">❌ Cancelled</option>
-                      {modalStatusInput && !['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(modalStatusInput) && (
+                      {activeOrderModal.status !== 'Delivered' && (
+                        <option value="Cancelled">❌ Cancelled</option>
+                      )}
+                      {modalStatusInput && !['Pending', 'Confirmed', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(modalStatusInput) && (
                         <option value={modalStatusInput}>{modalStatusInput}</option>
                       )}
                     </select>
