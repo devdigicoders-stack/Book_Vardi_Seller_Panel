@@ -303,6 +303,14 @@ export default function ShippingLabelView({
   const orderTotal = Number(order.total || order.totalAmount || 0);
   const orderSubtotal = Number(order.subtotal || order.sellerSubtotal || orderTotal);
   const deliveryCharge = Number(order.shippingFee || order.shippingCost || order.deliveryCharge || 0);
+  let rawCodFee = Number(order.codFee ?? order.appliedCodFee ?? order.codCharges ?? order.settlement?.codChargeAmount ?? 0);
+  if ((isNaN(rawCodFee) || rawCodFee <= 0) && isCod && orderTotal > 0) {
+    const itemsGrossSum = effectiveItems.reduce((acc, it) => acc + (Number(it.finalPrice ?? it.price ?? 0) * Number(it.quantity || 1)), 0);
+    const expectedBase = Math.round((itemsGrossSum + deliveryCharge) * 100) / 100;
+    if (orderTotal > expectedBase) {
+      rawCodFee = Math.round((orderTotal - expectedBase) * 100) / 100;
+    }
+  }
 
   // SVG Barcode
   const barcodeSvgData = useMemo(() => {
@@ -622,6 +630,19 @@ export default function ShippingLabelView({
                     <td className="p-1 border-r border-black text-right font-mono">₹{(deliveryCharge / 1.05).toFixed(2)}</td>
                     <td className="p-1 border-r border-black text-right font-mono">₹{(deliveryCharge - (deliveryCharge / 1.05)).toFixed(2)}</td>
                     <td className="p-1 text-right font-mono font-bold">₹{deliveryCharge.toFixed(2)}</td>
+                  </tr>
+                )}
+
+                {/* Dedicated Cash on Delivery (COD) Fee Row if applied */}
+                {rawCodFee > 0 && (
+                  <tr className="bg-gray-50/50">
+                    <td className="p-1 border-r border-black font-medium">COD Collection & Handling Fee</td>
+                    <td className="p-1 border-r border-black text-center font-mono">9985</td>
+                    <td className="p-1 border-r border-black text-center font-bold">NA</td>
+                    <td className="p-1 border-r border-black text-right font-mono">₹{rawCodFee.toFixed(2)}</td>
+                    <td className="p-1 border-r border-black text-right font-mono">₹{rawCodFee.toFixed(2)}</td>
+                    <td className="p-1 border-r border-black text-right font-mono">₹0.00 (0%)</td>
+                    <td className="p-1 text-right font-mono font-bold">₹{rawCodFee.toFixed(2)}</td>
                   </tr>
                 )}
               </tbody>

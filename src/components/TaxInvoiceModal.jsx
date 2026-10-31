@@ -737,10 +737,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   const isItemPriceAlreadyDiscounted = !currentItemsHaveDiscount && rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
 
   const subtotal = itemsSum;
-  const rawCodFee = Number(order.codFee ?? order.appliedCodFee ?? order.codCharges ?? order.settlement?.codChargeAmount ?? 0);
+  let rawCodFee = Number(order.codFee ?? order.appliedCodFee ?? order.codCharges ?? order.settlement?.codChargeAmount ?? 0);
   const isCodOrder = String(order.paymentMethod || '').toUpperCase().includes('COD') || 
                      String(order.paymentMethod || '').toUpperCase().includes('CASH') || 
                      rawCodFee > 0;
+  if ((isNaN(rawCodFee) || rawCodFee <= 0) && isCodOrder && (order.totalAmount || order.total)) {
+    const rawOrderTotal = Number(order.totalAmount || order.total || 0);
+    const expectedBase = Math.round((subtotal + shippingCost - totalDiscounts) * 100) / 100;
+    if (rawOrderTotal > expectedBase) {
+      rawCodFee = Math.round((rawOrderTotal - expectedBase) * 100) / 100;
+    }
+  }
   const effectiveCodFeeInTotal = (isCodOrder && rawCodFee > 0) ? rawCodFee : 0;
   const grandTotal = Math.max(0, Math.round((subtotal + shippingCost - totalDiscounts + effectiveCodFeeInTotal) * 100) / 100);
   const discountRatio = (!currentItemsHaveDiscount && subtotal > 0 && totalDiscounts > 0)
