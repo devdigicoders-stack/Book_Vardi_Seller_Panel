@@ -930,30 +930,136 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               </div>
             </div>
 
-            {/* Order Items List */}
+            {/* Order Items List / Package Action Checklist */}
             <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-3">
-              <div className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 border-b border-gray-100 pb-2">
-                <Package size={16} className="text-teal-700" /> Items to Handover ({order?.items?.length || 0})
-              </div>
-
-              <div className="divide-y divide-gray-100">
-                {order?.items?.map((item, idx) => {
-                  const itemQtyFormatted = formatItemQuantity(item);
-                  const itemTotal = Number(item.price || 0) * Number(item.quantity || 1);
-                  const formattedItemPrice = itemTotal % 1 !== 0 ? itemTotal.toFixed(2) : itemTotal.toLocaleString('en-IN');
-                  return (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-extrabold text-gray-900">{item.name}</div>
-                        <div className="text-gray-500 text-[11px] font-medium">
-                          Qty: {itemQtyFormatted} {item.size ? `• Size: ${item.size}` : ''} {item.category ? `• ${item.category}` : ''}
-                        </div>
-                      </div>
-                      <div className="font-bold text-gray-900">₹{formattedItemPrice}</div>
+              {isExchangeOrder ? (
+                <>
+                  <div className="font-extrabold text-gray-900 text-sm flex items-center justify-between border-b border-gray-100 pb-2">
+                    <div className="flex items-center gap-1.5 text-purple-900">
+                      <Package size={16} className="text-purple-700" />
+                      <span>2-Way Exchange Package Checklist</span>
                     </div>
-                  );
-                })}
-              </div>
+                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                      Exchange Handover & Pickup
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {/* Item 1: REPLACEMENT Item TO HAND OVER */}
+                    <div className="p-3 rounded-xl border-2 border-emerald-300 bg-emerald-50/60 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                          <span>🎁</span> 1. REPLACEMENT ITEM (HAND OVER TO CUSTOMER)
+                        </span>
+                        <span className="text-[10px] font-extrabold bg-emerald-600 text-white px-2 py-0.5 rounded-md uppercase tracking-wide">
+                          Hand Over
+                        </span>
+                      </div>
+                      <div className="text-xs font-black text-gray-900">
+                        {returnReq.exchangeItemName || returnReq.itemName || order?.items?.[0]?.name || 'Replacement Product'}
+                      </div>
+                      <div className="text-[11px] text-gray-700 font-medium flex items-center gap-2 flex-wrap pt-0.5">
+                        <span>Qty: 1</span>
+                        <span>•</span>
+                        <span className="bg-emerald-200 text-emerald-950 font-black px-2 py-0.5 rounded-md border border-emerald-300">
+                          Replacement Size: {returnReq.exchangeLength ? `${returnReq.exchangeLength} Meter(s)` : (returnReq.exchangeSize || '28')}
+                        </span>
+                        {order?.items?.[0]?.category && <span>• {order?.items?.[0]?.category}</span>}
+                      </div>
+                    </div>
+
+                    {/* Item 2: OLD Item TO COLLECT */}
+                    <div className="p-3 rounded-xl border-2 border-amber-300 bg-amber-50/60 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                          <span>📦</span> 2. OLD ITEM (COLLECT BACK FROM CUSTOMER)
+                        </span>
+                        <span className="text-[10px] font-extrabold bg-amber-600 text-white px-2 py-0.5 rounded-md uppercase tracking-wide">
+                          Collect / Pickup
+                        </span>
+                      </div>
+                      <div className="text-xs font-black text-gray-900">
+                        {returnReq.itemName || order?.items?.[0]?.name || 'Original Delivered Product'}
+                      </div>
+                      <div className="text-[11px] text-gray-700 font-medium flex items-center gap-2 flex-wrap pt-0.5">
+                        <span>Qty: 1</span>
+                        <span>•</span>
+                        <span className="bg-amber-200 text-amber-950 font-black px-2 py-0.5 rounded-md border border-amber-300">
+                          Original Size: {order?.items?.[0]?.size || '26'}
+                        </span>
+                        {order?.items?.[0]?.category && <span>• {order?.items?.[0]?.category}</span>}
+                      </div>
+                      {returnReq.reason && (
+                        <div className="text-[10px] text-amber-800 italic pt-0.5">
+                          Exchange Reason: "{returnReq.reason}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : isReturnOrder ? (
+                <>
+                  <div className="font-extrabold text-gray-900 text-sm flex items-center justify-between border-b border-gray-100 pb-2">
+                    <div className="flex items-center gap-1.5 text-cyan-900">
+                      <Package size={16} className="text-cyan-700" />
+                      <span>Items to Collect / Pickup ({order?.items?.length || 0})</span>
+                    </div>
+                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200">
+                      Return Pickup
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-gray-100">
+                    {order?.items?.map((item, idx) => {
+                      const itemQtyFormatted = formatItemQuantity(item);
+                      const itemTotal = Number(item.price || 0) * Number(item.quantity || 1);
+                      const formattedItemPrice = itemTotal % 1 !== 0 ? itemTotal.toFixed(2) : itemTotal.toLocaleString('en-IN');
+                      return (
+                        <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                          <div>
+                            <div className="font-extrabold text-gray-900">{item.name}</div>
+                            <div className="text-gray-500 text-[11px] font-medium">
+                              Qty: {itemQtyFormatted} {item.size ? `• Pickup Size: ${item.size}` : ''} {item.category ? `• ${item.category}` : ''}
+                            </div>
+                          </div>
+                          <div className="font-bold text-gray-900">₹{formattedItemPrice}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="font-extrabold text-gray-900 text-sm flex items-center justify-between border-b border-gray-100 pb-2">
+                    <div className="flex items-center gap-1.5 text-teal-900">
+                      <Package size={16} className="text-teal-700" />
+                      <span>Items to Handover ({order?.items?.length || 0})</span>
+                    </div>
+                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-200">
+                      Order Handover
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-gray-100">
+                    {order?.items?.map((item, idx) => {
+                      const itemQtyFormatted = formatItemQuantity(item);
+                      const itemTotal = Number(item.price || 0) * Number(item.quantity || 1);
+                      const formattedItemPrice = itemTotal % 1 !== 0 ? itemTotal.toFixed(2) : itemTotal.toLocaleString('en-IN');
+                      return (
+                        <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                          <div>
+                            <div className="font-extrabold text-gray-900">{item.name}</div>
+                            <div className="text-gray-500 text-[11px] font-medium">
+                              Qty: {itemQtyFormatted} {item.size ? `• Handover Size: ${item.size}` : ''} {item.category ? `• ${item.category}` : ''}
+                            </div>
+                          </div>
+                          <div className="font-bold text-gray-900">₹{formattedItemPrice}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
 
               {order?.isBulkOrder ? (
                 <div className="pt-2 border-t border-gray-200 space-y-1 text-xs font-bold">
@@ -971,6 +1077,63 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                       ₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString('en-IN')}
                     </span>
                   </div>
+                </div>
+              ) : isExchangeOrder ? (
+                <div className="pt-3 border-t border-gray-200 space-y-1.5 text-xs text-gray-700 font-medium">
+                  <div className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <CreditCard size={12} className="text-purple-700" />
+                    <span>Exchange Settlement & Payment Summary</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-gray-600">
+                    <span>Original Order Status:</span>
+                    <span className="font-bold text-emerald-700">Already Paid (Order Value: ₹{formattedTotalAmount})</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-gray-600">
+                    <span>Replacement Handover:</span>
+                    <span className="font-semibold text-gray-900">
+                      Size {returnReq.exchangeLength ? `${returnReq.exchangeLength}m` : (returnReq.exchangeSize || '28')}
+                    </span>
+                  </div>
+
+                  {isExchangeExtraPayment ? (
+                    <div className="flex justify-between items-center text-amber-800 font-bold bg-amber-50 p-2 rounded-lg border border-amber-200">
+                      <span>Price Difference (Collect from Customer):</span>
+                      <span className="font-mono text-sm font-black">+₹{exchangeDiff}</span>
+                    </div>
+                  ) : isExchangeRefund ? (
+                    <div className="flex justify-between items-center text-emerald-700 font-bold bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                      <span>Refund Due to Customer (Sent to Bank):</span>
+                      <span className="font-mono text-sm font-black">₹{Math.abs(exchangeDiff)}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center text-gray-600 bg-gray-50 p-2 rounded-lg border border-gray-200">
+                      <span>Price Difference:</span>
+                      <span className="font-bold text-emerald-700">₹0 (Equal Value Exchange)</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-gray-100 flex justify-between items-center font-extrabold text-sm text-gray-900">
+                    <span>Total Cash to Collect at Doorstep:</span>
+                    <span className="text-purple-950 font-black text-base font-mono">
+                      ₹{isExchangeExtraPayment ? exchangeDiff : 0}
+                    </span>
+                  </div>
+                </div>
+              ) : isReturnOrder ? (
+                <div className="pt-3 border-t border-gray-200 space-y-1.5 text-xs text-gray-700 font-medium">
+                  <div className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <CreditCard size={12} className="text-cyan-700" />
+                    <span>Return Pickup Settlement</span>
+                  </div>
+                  <div className="flex justify-between items-center text-gray-600">
+                    <span>Doorstep Cash Collection:</span>
+                    <span className="font-black text-emerald-700 font-mono text-sm">₹0 (No Cash to Collect)</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500">
+                    Refund is transferred online to the customer's account after warehouse receipt verification.
+                  </p>
                 </div>
               ) : (
                 <div className="pt-3 border-t border-gray-200 space-y-1.5 text-xs text-gray-700 font-medium">
