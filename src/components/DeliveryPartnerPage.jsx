@@ -999,6 +999,33 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     </span>
                   </div>
 
+                  {(() => {
+                    const isCod = /cod|cash\s*on\s*delivery/i.test(String(order?.paymentMethod || ''));
+                    let codVal = Number(order?.codFee ?? order?.appliedCodFee ?? order?.codCharges ?? order?.settlement?.codChargeAmount ?? 0);
+                    if ((isNaN(codVal) || codVal <= 0) && isCod) {
+                      const sub = Number(order?.subtotal || order?.items?.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0) || 0);
+                      const ship = Number(order?.shippingFee !== undefined ? order.shippingFee : (order?.shippingCost !== undefined ? order.shippingCost : 0));
+                      const disc = Number(order?.discount || order?.discountAmount || 0);
+                      const tax = Number(order?.gst || order?.taxAmount || 0);
+                      const total = Number(order?.totalAmount || order?.total || 0);
+                      const expectedBase = Math.round((sub + ship + tax - disc) * 100) / 100;
+                      if (total > expectedBase) {
+                        codVal = Math.round((total - expectedBase) * 100) / 100;
+                      }
+                    }
+                    if (codVal > 0) {
+                      return (
+                        <div className="flex justify-between items-center text-gray-600">
+                          <span>Cash on Delivery (COD) Fee:</span>
+                          <span className="font-semibold text-gray-900 font-mono">
+                            +₹{codVal % 1 !== 0 ? codVal.toFixed(2) : codVal.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {Boolean(order?.discount || order?.discountAmount) && Number(order?.discount || order?.discountAmount) > 0 && (
                     <div className="flex justify-between items-center text-emerald-700 font-semibold">
                       <span>Coupon / Savings Discount:</span>
