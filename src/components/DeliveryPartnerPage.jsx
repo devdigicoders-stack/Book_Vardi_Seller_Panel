@@ -178,19 +178,26 @@ export default function DeliveryPartnerPage({ onNavigate }) {
         const isExchange = Boolean(
           ord.isExchangeTask ||
           retReqType === 'exchange' ||
-          statusStr.includes('exchange')
+          String(ord.returnRequest?.requestType || '').toLowerCase() === 'exchange' ||
+          Boolean(ord.returnRequest?.exchangeSize || ord.returnRequest?.exchangeLength || ord.returnRequest?.exchangeColor) ||
+          statusStr.includes('exchange') ||
+          String(ord.deliveryStatus || '').toLowerCase().includes('swap') ||
+          String(ord.selfDeliveryDetails?.status || '').toLowerCase().includes('swap')
         );
-        const isReturn = Boolean(
+        const isReturn = !isExchange && Boolean(
           ord.isReturnTask ||
           retReqType === 'return' ||
-          (!isExchange && Boolean(retReqType || ord.returnRequest?.reason)) ||
-          statusStr.includes('return')
+          Boolean(retReqType || ord.returnRequest?.reason) ||
+          statusStr.includes('return') ||
+          statusStr.includes('pickup')
         );
 
         let isCompleted = false;
         if (isExchange) {
           // Exchange handover requires customer OTP verification; only 'exchanged' indicates finished task
-          isCompleted = (statusStr === 'exchanged' || retReqStatus === 'exchanged');
+          const delStatus = String(ord.deliveryStatus || '').toLowerCase();
+          const selfStatus = String(ord.selfDeliveryDetails?.status || '').toLowerCase();
+          isCompleted = (statusStr === 'exchanged' || retReqStatus === 'exchanged' || delStatus.includes('swap completed') || selfStatus.includes('swap completed'));
         } else if (isReturn) {
           // Return pickup is completed once verified by rider with OTP
           const delStatus = String(ord.deliveryStatus || '').toLowerCase();
@@ -347,14 +354,21 @@ export default function DeliveryPartnerPage({ onNavigate }) {
 
   const isExchangeOrder = Boolean(
     order?.isExchangeTask ||
-    order?.returnRequest?.type === 'exchange' ||
-    String(order?.overallStatus || order?.status || '').toLowerCase().includes('exchange')
+    String(order?.returnRequest?.type || order?.returnRequest?.requestType || '').toLowerCase() === 'exchange' ||
+    Boolean(order?.returnRequest?.exchangeSize || order?.returnRequest?.exchangeLength || order?.returnRequest?.exchangeColor) ||
+    String(order?.returnRequest?.status || '').toLowerCase().includes('exchange') ||
+    String(order?.overallStatus || order?.status || '').toLowerCase().includes('exchange') ||
+    String(order?.deliveryStatus || '').toLowerCase().includes('swap') ||
+    String(order?.selfDeliveryDetails?.status || '').toLowerCase().includes('swap')
   );
-  const isReturnOrder = Boolean(
+  const isReturnOrder = !isExchangeOrder && Boolean(
     order?.isReturnTask ||
-    order?.returnRequest?.type === 'return' ||
-    (!isExchangeOrder && Boolean(order?.returnRequest?.type || order?.returnRequest?.reason)) ||
+    String(order?.returnRequest?.type || order?.returnRequest?.requestType || '').toLowerCase() === 'return' ||
+    Boolean(order?.returnRequest?.type || order?.returnRequest?.reason) ||
+    String(order?.returnRequest?.status || '').toLowerCase().includes('return') ||
+    String(order?.returnRequest?.status || '').toLowerCase().includes('refund') ||
     String(order?.overallStatus || order?.status || '').toLowerCase().includes('return') ||
+    String(order?.overallStatus || order?.status || '').toLowerCase().includes('refund') ||
     String(order?.overallStatus || order?.status || '').toLowerCase().includes('pickup')
   );
 
@@ -499,17 +513,22 @@ export default function DeliveryPartnerPage({ onNavigate }) {
         setDeliverySuccess(true);
         setOtpError('');
         setOtpDigits(['', '', '', '']);
-        const successMsg = isReturnOrder
+        const successMsg = isExchangeOrder
+          ? '🔄 Exchange OTP verified! Doorstep swap completed.'
+          : isReturnOrder
           ? '📦 Return Pickup OTP verified! Item marked as Product Received & Restocked.'
-          : isExchangeOrder
-          ? '🔄 Exchange OTP verified! Order marked as Exchanged.'
           : '🎉 Delivery OTP verified successfully! Order marked as Delivered.';
         setResendMsg(res?.message || successMsg);
-        const finalStatus = isReturnOrder ? 'product_received' : isExchangeOrder ? 'exchanged' : 'Delivered';
+        const finalStatus = isExchangeOrder ? 'exchanged' : isReturnOrder ? 'product_received' : 'Delivered';
         setOrder((prev) => (prev ? {
           ...prev,
           overallStatus: finalStatus,
           status: finalStatus,
+          deliveryStatus: isExchangeOrder ? 'Doorstep Swap Completed' : isReturnOrder ? 'Returned (Product Received)' : 'Delivered',
+          selfDeliveryDetails: {
+            ...(prev.selfDeliveryDetails || {}),
+            status: isExchangeOrder ? 'Doorstep Swap Completed' : isReturnOrder ? 'Pickup Completed' : 'Delivered'
+          },
           paymentStatus: isReturnOrder ? prev.paymentStatus : 'paid',
           returnRequest: prev.returnRequest ? { ...prev.returnRequest, status: finalStatus } : null
         } : prev));
@@ -643,17 +662,17 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               <div className="bg-emerald-600 text-white p-5 rounded-2xl shadow-lg text-center space-y-2 animate-in zoom-in-95 duration-200">
                 <CheckCircle size={48} className="mx-auto text-amber-300 animate-bounce" />
                 <h2 className="text-xl font-extrabold">
-                  {isReturnOrder
+                  {isExchangeOrder
+                    ? 'Doorstep Swap Completed! 🔄'
+                    : isReturnOrder
                     ? 'Return Pickup Completed! 📦'
-                    : isExchangeOrder
-                    ? 'Exchange Handover Completed! 🔄'
                     : 'Delivery Completed! 🎉'}
                 </h2>
                 <p className="text-xs text-emerald-100">
-                  {isReturnOrder
+                  {isExchangeOrder
+                    ? `Customer Exchange OTP verified for Order #${order?.orderId}. Doorstep swap successfully completed (replacement delivered & old item collected).`
+                    : isReturnOrder
                     ? `Customer Return OTP verified for Order #${order?.orderId}. Item marked as Product Received and restocked.`
-                    : isExchangeOrder
-                    ? `Customer Exchange OTP verified for Order #${order?.orderId}. Handover successfully recorded.`
                     : `Customer OTP verified successfully for Order #${order?.orderId}.`}
                 </p>
               </div>
@@ -665,10 +684,10 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                   </div>
                   <div>
                     <span className="text-[10px] font-extrabold uppercase text-gray-500 tracking-wider">
-                      {isReturnOrder ? 'Pickup Status' : isExchangeOrder ? 'Exchange Status' : 'Order Status'}
+                      {isExchangeOrder ? 'Doorstep Swap Status' : isReturnOrder ? 'Pickup Status' : 'Order Status'}
                     </span>
                     <div className="font-extrabold text-gray-900 text-base flex items-center gap-1.5">
-                      {order?.overallStatus || (isReturnOrder ? 'Out for Pickup' : 'Out for Delivery')}
+                      {order?.deliveryStatus || order?.selfDeliveryDetails?.status || order?.overallStatus || (isExchangeOrder ? 'Out for Doorstep Swap' : isReturnOrder ? 'Out for Pickup' : 'Out for Delivery')}
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                     </div>
                   </div>
@@ -1397,17 +1416,17 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                   <ShieldCheck size={18} className="text-teal-700 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold">
-                      {isReturnOrder
-                        ? 'Doorstep Return OTP Security:'
-                        : isExchangeOrder
+                      {isExchangeOrder
                         ? 'Doorstep Exchange OTP Security:'
+                        : isReturnOrder
+                        ? 'Doorstep Return OTP Security:'
                         : 'Doorstep OTP & Payment Security:'}
                     </span>{' '}
                     4-digit PIN is sent directly to customer's phone.{' '}
                     {isReturnOrder ? (
                       <>Verifying OTP marks item as <strong className="text-teal-950 uppercase font-bold">PRODUCT RECEIVED</strong> and auto-restores inventory stock.</>
                     ) : isExchangeOrder ? (
-                      <>Verifying OTP marks task as <strong className="text-teal-950 uppercase font-bold">EXCHANGED</strong> and confirms 2-way item handover.</>
+                      <>Verifying OTP marks task as <strong className="text-teal-950 uppercase font-bold">DOORSTEP SWAP COMPLETED</strong> and confirms 2-way item handover.</>
                     ) : (
                       <>Verifying OTP marks payment as <strong className="text-teal-950 uppercase font-bold">PAID</strong> and order as <strong className="text-teal-950 uppercase font-bold">DELIVERED</strong>.</>
                     )}
@@ -1431,10 +1450,10 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                       : resendCooldown > 0
                       ? `⏳ Resend OTP in ${resendCooldown}s`
                       : isPaymentVerified
-                      ? (isReturnOrder
-                        ? "📲 Resend Return Pickup OTP to Customer"
-                        : isExchangeOrder
+                      ? (isExchangeOrder
                         ? "📲 Resend Exchange OTP to Customer"
+                        : isReturnOrder
+                        ? "📲 Resend Return Pickup OTP to Customer"
                         : "📲 Resend OTP to Customer's Phone")
                       : "🔒 Verify Cash Payment First to Send/Resend OTP"}
                   </span>
@@ -1453,10 +1472,10 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                   <Key size={18} className={isPaymentVerified ? 'text-amber-300' : 'text-gray-400'} />
                   <span>
                     {isPaymentVerified
-                      ? (isReturnOrder
+                      ? (isExchangeOrder
+                        ? 'Complete Doorstep Swap & Verify OTP'
+                        : isReturnOrder
                         ? 'Complete Return Pickup & Verify OTP'
-                        : isExchangeOrder
-                        ? 'Complete Exchange & Verify OTP'
                         : 'Complete Delivery & Verify OTP')
                       : '🔒 Verify Payment to Complete Delivery'}
                   </span>

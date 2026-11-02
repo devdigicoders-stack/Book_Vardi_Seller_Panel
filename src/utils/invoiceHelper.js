@@ -1,6 +1,7 @@
 /**
  * Invoice Numbering and Series Generation Utility
  * Generates sequential seller-specific invoice numbers (e.g. NSD01, NSD02, SS01, SS02)
+ * Supports Section 31 Replacement Invoices for Exchanges and Section 34 Credit Notes
  */
 
 export const getSellerInvoicePrefix = (sellerOrStoreName) => {
@@ -63,6 +64,48 @@ export const formatSellerCreditNoteNumber = (prefix, seqNumber) => {
   return `${cleanPrefix}CN${String(num).padStart(2, '0')}`;
 };
 
+/**
+ * Checks whether an order had an exchange that was delivered / doorstep swap completed
+ */
+export const isOrderExchangeDelivered = (order) => {
+  if (!order) return false;
+  const rawStatus = String(order.status || order.overallStatus || '').toLowerCase().trim();
+  const normStatus = rawStatus.replace(/[\s-]+/g, '_');
+  const normReturnStatus = String(order.returnRequest?.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const returnReqStatus = normReturnStatus;
+  const returnType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim();
+
+  const isExchange = returnType === 'exchange' ||
+                     normStatus.includes('exchange') ||
+                     normReturnStatus.includes('exchange') ||
+                     String(order.deliveryStatus || '').toLowerCase().includes('swap') ||
+                     String(order.selfDeliveryDetails?.status || '').toLowerCase().includes('swap') ||
+                     Boolean(order.returnRequest?.exchangeSize || order.returnRequest?.exchangeLength);
+
+  if (!isExchange) return false;
+
+  const deliveryStatus = String(order.deliveryStatus || '').toLowerCase();
+  const selfDelivStatus = String(order.selfDeliveryDetails?.status || '').toLowerCase();
+
+  const isDelivered = normStatus === 'exchanged' ||
+                      normStatus === 'swap_completed' ||
+                      normStatus.includes('completed') ||
+                      normStatus === 'delivered' ||
+                      deliveryStatus.includes('swap completed') ||
+                      deliveryStatus.includes('delivered') ||
+                      selfDelivStatus.includes('swap completed') ||
+                      selfDelivStatus.includes('delivered') ||
+                      Boolean(order.deliveredAt) ||
+                      Boolean(order.exchangedAt) ||
+                      ['exchanged', 'swap_completed', 'delivered', 'completed'].includes(returnReqStatus);
+
+  return isDelivered;
+};
+
+/**
+ * Resolves the sequential Section 34 Credit Note number for an order
+ * (e.g. NSD04 -> NSDCN04)
+ */
 export const getSellerCreditNoteNumber = (order, seller = null, allOrders = []) => {
   if (!order) return 'INVCN01';
   if (order.sellerCreditNoteNo && /^[A-Z0-9]{2,}CN\d+$/i.test(order.sellerCreditNoteNo)) {
@@ -74,12 +117,21 @@ export const getSellerCreditNoteNumber = (order, seller = null, allOrders = []) 
   const sellerCand = seller || order.sellerDetails || order.items?.[0]?.sellerDetails || order;
   const storeName = sellerCand?.storeName || sellerCand?.sellerStoreName || sellerCand?.businessName || sellerCand?.name || order.sellerStoreName || order.storeName || '';
   const prefix = getSellerInvoicePrefix(storeName);
+
+  // If order has an invoice number (like NSD04), sync CN number with it directly
+  const invStr = String(order.sellerInvoiceNo || order.invoiceNumber || '');
+  const match = invStr.match(/^[A-Z0-9]{2,}?0*(\d+)$/i);
+  if (match) {
+    const seq = parseInt(match[1], 10);
+    return formatSellerCreditNoteNumber(prefix, seq);
+  }
+
   const seq = order.sellerCreditNoteSequence || order.sellerSequence || 1;
   return formatSellerCreditNoteNumber(prefix, seq);
 };
 
 /**
- * Resolves the sequential invoice number for a given order
+ * Resolves the sequential invoice number for a given base order
  */
 export const getSellerInvoiceNumber = (order, seller = null, allOrders = []) => {
   if (!order) return 'INV01';
@@ -102,7 +154,6 @@ export const getSellerInvoiceNumber = (order, seller = null, allOrders = []) => 
 
   // 4. Calculate chronological sequence from allOrders list if provided
   if (Array.isArray(allOrders) && allOrders.length > 0) {
-    // Filter orders belonging to the same seller if multi-seller array
     const targetOrderId = String(order.id || order.orderId || order._id || '');
     
     // Sort all orders chronologically (oldest first)
@@ -122,3 +173,66 @@ export const getSellerInvoiceNumber = (order, seller = null, allOrders = []) => 
   return formatSellerInvoiceNumber(prefix, 1);
 };
 
+/**
+ * Resolves the sequential replacement invoice number for a delivered exchange product
+ * (e.g. if order was NSD04, replacement delivered item gets NSD05)
+ */
+export const getSellerExchangeInvoiceNumber = (order, seller = null, allOrders = []) => {
+  if (!order) return null;
+
+  // 1. If explicit exchange invoice number exists on order and is clean
+  const existingExch = order.exchangeInvoiceNumber || order.sellerExchangeInvoiceNo;
+  if (existingExch && typeof existingExch === 'string' && !existingExch.startsWith('EXCH-') && !existingExch.startsWith('INV-')) {
+    return existingExch;
+  }
+
+  // Only delivered exchanges get a replacement invoice
+  if (!isOrderExchangeDelivered(order)) {
+    return null;
+  }
+
+  const sellerCand = seller || order.sellerDetails || order.items?.[0]?.sellerDetails || order;
+  const storeName = sellerCand?.storeName || sellerCand?.sellerStoreName || sellerCand?.businessName || sellerCand?.name || order.sellerStoreName || order.storeName || '';
+  const prefix = getSellerInvoicePrefix(storeName);
+
+  // 2. If explicit sellerExchangeSequence is set
+  if (order.sellerExchangeSequence && Number(order.sellerExchangeSequence) > 0) {
+    return formatSellerInvoiceNumber(prefix, order.sellerExchangeSequence);
+  }
+
+  // 3. Calculate sequence based on base orders count + exchange delivery rank
+  if (Array.isArray(allOrders) && allOrders.length > 0) {
+    const targetOrderId = String(order.id || order.orderId || order._id || '');
+
+    // Determine max base sequence or count
+    let maxBaseSeq = 0;
+    allOrders.forEach(o => {
+      const seq = Number(o.sellerSequence) || 0;
+      if (seq > maxBaseSeq) maxBaseSeq = seq;
+      const invMatch = String(o.sellerInvoiceNo || o.invoiceNumber || '').match(/^[A-Z0-9]{2,}?0*(\d+)$/i);
+      if (invMatch) {
+        const num = parseInt(invMatch[1], 10);
+        if (num > maxBaseSeq) maxBaseSeq = num;
+      }
+    });
+    if (maxBaseSeq === 0) maxBaseSeq = allOrders.length;
+
+    // Filter delivered exchanges
+    const deliveredExchanges = allOrders
+      .filter(o => isOrderExchangeDelivered(o))
+      .sort((a, b) => {
+        const timeA = new Date(a.returnRequest?.updatedAt || a.deliveredAt || a.exchangedAt || a.createdAt || 0).getTime();
+        const timeB = new Date(b.returnRequest?.updatedAt || b.deliveredAt || b.exchangedAt || b.createdAt || 0).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return String(a._id || a.id || '').localeCompare(String(b._id || b.id || ''));
+      });
+
+    const exchIdx = deliveredExchanges.findIndex(o => String(o.id || o.orderId || o._id || '') === targetOrderId);
+    if (exchIdx >= 0) {
+      const exchSeq = maxBaseSeq + exchIdx + 1;
+      return formatSellerInvoiceNumber(prefix, exchSeq);
+    }
+  }
+
+  return null;
+};

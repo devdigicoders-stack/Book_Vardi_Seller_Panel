@@ -41,7 +41,7 @@ import TaxInvoiceModal, { parseStateInfo } from './TaxInvoiceModal';
 import CreateShipmentModal from './CreateShipmentModal';
 import { generateRiderWhatsAppMessage, buildRiderWhatsAppUrl } from '../utils/whatsappRiderHelper';
 import { SERVER_URL } from '../utils/api';
-import { getSellerInvoiceNumber } from '../utils/invoiceHelper';
+import { getSellerInvoiceNumber, getSellerCreditNoteNumber, getSellerExchangeInvoiceNumber, isOrderExchangeDelivered } from '../utils/invoiceHelper';
 import useModalBackTrap from '../hooks/useModalBackTrap';
 
 // Helper to generate absolute Storefront Website Delivery Partner portal link
@@ -82,6 +82,21 @@ export const formatDisplayOrderId = (rawId) => {
     return `#${str.slice(-8).toUpperCase()}`;
   }
   return str;
+};
+
+export const isOrderSelfDelivery = (order) => {
+  if (!order) return false;
+  const rawMode = String(order.deliveryMode || order.deliveryType || '').toLowerCase();
+  const hasCourier = Boolean(order.courierName && order.courierName !== 'N/A' && order.courierName !== '');
+  if (hasCourier) return false;
+  return Boolean(
+    rawMode.includes('self') ||
+    order.selfDeliveryDetails?.deliveryPersonName ||
+    order.selfDeliveryDetails?.deliveryPartnerToken ||
+    order.deliveryOtp ||
+    (order.settlementRule && String(order.settlementRule).includes('SELF_DELIVERY')) ||
+    (order.settlement?.settlementRule && String(order.settlement.settlementRule).includes('SELF_DELIVERY'))
+  );
 };
 
 export const resolveExchangeStatus = (order) => {
@@ -187,6 +202,7 @@ export default function OrdersTab() {
   const [shipModalDriverName, setShipModalDriverName] = useState('');
   const [shipModalDriverPhone, setShipModalDriverPhone] = useState('');
   const [shipModalVehicleNumber, setShipModalVehicleNumber] = useState('');
+  const [shipModalAction, setShipModalAction] = useState('ship'); // 'ship' | 'confirm'
 
   // Bulk selection state
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -433,10 +449,11 @@ export default function OrdersTab() {
     });
   }, [orders, selectedStatus, searchQuery]);
 
-  const handleOpenShipModal = (orderId) => {
+  const handleOpenShipModal = (orderId, action = 'ship') => {
     const ord = orders.find(o => String(o.orderId || o.id || o._id) === String(orderId));
     const targetId = ord?.orderId || ord?.id || orderId;
     setShippingOrderId(targetId);
+    setShipModalAction(action);
     const isSelf = ord?.deliveryMode === 'self_delivery' || ord?.deliveryType === 'self_delivery' || Boolean(ord?.selfDeliveryDetails?.deliveryPartnerToken);
     setShipModalDeliveryMode(isSelf ? 'self_delivery' : 'third_party');
     const assignedCourier = ord?.courierName && ord.courierName !== 'N/A' ? ord.courierName : 'Shiprocket';
@@ -448,8 +465,21 @@ export default function OrdersTab() {
     setIsShipModalOpen(true);
   };
 
-  const handleConfirmShip = () => {
+  const handleConfirmShip = async () => {
     if (shippingOrderId) {
+      const targetStatus = shipModalAction === 'confirm' ? 'Confirmed' : 'Shipped';
+      const ord = orders.find(o => String(o.id || o._id || o.orderId) === String(shippingOrderId));
+
+      const sellerPayload = {
+        sellerId: sellerUser?.id || sellerUser?._id || ord?.sellerDetails?.sellerId,
+        storeName: sellerUser?.storeName || sellerUser?.tradeName || sellerUser?.name || ord?.sellerDetails?.storeName || 'Partner Merchant',
+        sellerName: sellerUser?.name || sellerUser?.ownerFullName || sellerUser?.storeName || ord?.sellerDetails?.sellerName || 'Partner Merchant',
+        phone: sellerUser?.phone || sellerUser?.sellerPhone || ord?.sellerDetails?.phone || '',
+        email: sellerUser?.email || sellerUser?.sellerEmail || ord?.sellerDetails?.email || '',
+        address: sellerUser?.address || sellerUser?.registeredAddress || ord?.sellerDetails?.address || '',
+        city: sellerUser?.city || ord?.sellerDetails?.city || ''
+      };
+
       if (shipModalDeliveryMode === 'self_delivery') {
         if (!shipModalDriverName.trim()) {
           alert('⚠️ Please enter Driver / Delivery Person Name.');
@@ -463,16 +493,34 @@ export default function OrdersTab() {
           alert('⚠️ Please enter Vehicle Number (e.g. UP32 AB 1234).');
           return;
         }
-        const ord = orders.find(o => String(o.id || o._id) === String(shippingOrderId));
-        const tokenVal = String(ord?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${Math.floor(100000 + Math.random() * 900000)}`).trim();
+        const tokenVal = String(ord?.selfDeliveryDetails?.deliveryPartnerToken || `DLV-${ord?.orderId || ord?.id || Math.floor(100000 + Math.random() * 900000)}`).trim();
         const trackingLink = getDriverWebsiteUrl(tokenVal);
 
-        updateOrderStatus(shippingOrderId, 'Shipped', {
+        // Open WhatsApp for rider if self-delivery
+        if (shipModalDriverPhone.trim()) {
+          const waMsg = generateRiderWhatsAppMessage({
+            order: ord || { id: shippingOrderId },
+            driverName: shipModalDriverName.trim(),
+            vehicleNumber: shipModalVehicleNumber.trim(),
+            trackingLink
+          });
+          const waUrl = buildRiderWhatsAppUrl({ phone: shipModalDriverPhone, message: waMsg });
+          if (waUrl) {
+            try {
+              window.open(waUrl, '_blank', 'noopener,noreferrer');
+            } catch (e) {
+              console.warn('Could not open WhatsApp tab automatically:', e);
+            }
+          }
+        }
+
+        await updateOrderStatus(shippingOrderId, targetStatus, {
           deliveryMode: 'self_delivery',
           deliveryType: 'self_delivery',
           courierName: '',
           trackingNumber: tokenVal,
           trackingUrl: trackingLink,
+          sellerDetails: sellerPayload,
           selfDeliveryDetails: {
             deliveryPersonName: shipModalDriverName.trim(),
             deliveryPersonPhone: shipModalDriverPhone.trim(),
@@ -483,11 +531,12 @@ export default function OrdersTab() {
         });
       } else {
         const finalAwb = trackingNumberInput.trim() || generateDynamicTrackingId(courierInput || 'Shiprocket');
-        updateOrderStatus(shippingOrderId, 'Shipped', {
+        await updateOrderStatus(shippingOrderId, targetStatus, {
           deliveryMode: 'third_party',
           deliveryType: 'third_party',
           courierName: courierInput || 'Shiprocket',
-          trackingNumber: finalAwb
+          trackingNumber: finalAwb,
+          sellerDetails: sellerPayload
         });
       }
       setIsShipModalOpen(false);
@@ -1076,7 +1125,7 @@ export default function OrdersTab() {
                             <Eye size={15} />
                           </button>
 
-                          {o.status !== 'Pending' && o.status !== 'Cancelled' && (
+                          {o.status !== 'Pending' && o.status !== 'Cancelled' && !isOrderSelfDelivery(o) && (
                             <button
                               onClick={() => {
                                 setActiveOrderModal(o);
@@ -1092,16 +1141,17 @@ export default function OrdersTab() {
 
                           {o.status === 'Pending' && (
                             <button
-                              onClick={() => updateOrderStatus(o.id, 'Confirmed')}
-                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold rounded-lg shadow-xs cursor-pointer"
+                              onClick={() => handleOpenShipModal(o.orderId || o.id || o._id, 'confirm')}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold rounded-lg shadow-xs cursor-pointer flex items-center gap-1"
+                              title="Select Delivery Partner to Confirm Order"
                             >
-                              Confirm
+                              <Check size={12} /> Confirm
                             </button>
                           )}
 
                           {o.status === 'Confirmed' && (
                             <button
-                              onClick={() => handleOpenShipModal(o.orderId || o.id || o._id)}
+                              onClick={() => handleOpenShipModal(o.orderId || o.id || o._id, 'ship')}
                               className="px-2.5 py-1 bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-semibold rounded-lg shadow-xs flex items-center gap-1 cursor-pointer"
                             >
                               <Truck size={12} /> Pack & Ship
@@ -1167,7 +1217,7 @@ export default function OrdersTab() {
                     <span>Placed on {activeOrderModal.date}</span>
                     <span>•</span>
                     <span className="font-bold text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
-                      Invoice: {getSellerInvoiceNumber(activeOrderModal, sellerUser, orders)}
+                      Invoice: {isOrderExchangeDelivered(activeOrderModal) ? getSellerExchangeInvoiceNumber(activeOrderModal, sellerUser, orders) : getSellerInvoiceNumber(activeOrderModal, sellerUser, orders)}
                     </span>
                   </div>
                 </div>
@@ -1201,7 +1251,7 @@ export default function OrdersTab() {
                         <span>{isLocked ? 'Invoice Locked (Pending)' : 'Tax Invoice'}</span>
                       </button>
 
-                      {!isLocked && (
+                      {!isLocked && !isOrderSelfDelivery(activeOrderModal) && (
                         <button
                           onClick={() => {
                             setInvoiceModalMode('shipping_label');
@@ -1443,47 +1493,86 @@ export default function OrdersTab() {
                       )}
                     </div>
 
-                    <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
-                      <p className="font-bold text-gray-900 flex items-center gap-1">
-                        <CreditCard size={13} className="text-teal-700" /> Refund Account Details:
-                      </p>
-                      {activeOrderModal.returnRequest?.refundDetails?.upiId || activeOrderModal.refundDetails?.upiId ? (
-                        <p><strong>UPI ID:</strong> <span className="font-mono font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded">{activeOrderModal.returnRequest?.refundDetails?.upiId || activeOrderModal.refundDetails?.upiId}</span></p>
-                      ) : activeOrderModal.returnRequest?.refundDetails?.bankName || activeOrderModal.refundDetails?.bankName ? (
-                        <>
-                          <p><strong>Bank:</strong> {activeOrderModal.returnRequest?.refundDetails?.bankName || activeOrderModal.refundDetails?.bankName}</p>
-                          <p><strong>A/C:</strong> {activeOrderModal.returnRequest?.refundDetails?.accountNumber || activeOrderModal.refundDetails?.accountNumber}</p>
-                          <p><strong>IFSC:</strong> {activeOrderModal.returnRequest?.refundDetails?.ifscCode || activeOrderModal.refundDetails?.ifscCode}</p>
-                        </>
-                      ) : (
-                        <p className="text-gray-500 italic">Original Payment Method (UPI/Online Auto-Refund)</p>
-                      )}
-                      {activeOrderModal.returnRequest?.returnAwbNumber && (
-                        <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs flex items-center justify-between">
-                          <div>
-                            <span className="text-[10px] uppercase font-bold text-blue-700 block">Shiprocket Reverse Pickup AWB:</span>
-                            <span className="font-mono font-extrabold text-blue-950 text-xs">{activeOrderModal.returnRequest.returnAwbNumber}</span>
-                            <span className="text-gray-600 text-[10px] ml-1.5">({activeOrderModal.returnRequest.returnCourierName || 'Shiprocket'})</span>
-                          </div>
-                          {activeOrderModal.returnRequest.returnTrackingUrl && (
-                            <a
-                              href={activeOrderModal.returnRequest.returnTrackingUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-2xs"
-                            >
-                              Track Return ↗
-                            </a>
+                    {/* Refund Account Details & Partial Refund Status */}
+                    {(() => {
+                      const retReq = activeOrderModal.returnRequest || {};
+                      const retStatus = String(retReq.status || activeOrderModal.status || '').toLowerCase().trim();
+                      const retType = String(retReq.type || retReq.requestType || (retStatus.includes('exchange') ? 'exchange' : 'return')).toLowerCase().trim();
+                      const isExchange = retType === 'exchange';
+                      const exchangePriceDiff = Number(retReq.priceDifference || 0);
+                      const exchangePriceAdjType = retReq.priceAdjustmentType || (exchangePriceDiff > 0 ? 'extra_payment' : exchangePriceDiff < 0 ? 'partial_refund' : 'none');
+                      const refundDueAmount = Math.abs(exchangePriceDiff) || Number(retReq.refundAmount || 0) || Math.max(0, Number(retReq.originalItemPrice || 0) - Number(retReq.replacementItemPrice || 0));
+                      const hasRefundDue = isExchange && (exchangePriceAdjType === 'partial_refund' || exchangePriceDiff < 0 || refundDueAmount > 0);
+                      const isExchangeRefundDone = Boolean(retReq.refundTxnId || activeOrderModal.refundTxnId || activeOrderModal.refundDetails?.refundTxnId || retReq.refundStatus === 'completed');
+
+                      return (
+                        <div className="p-3 bg-white/90 rounded-xl border border-amber-100 space-y-1">
+                          <p className="font-bold text-gray-900 flex items-center gap-1">
+                            <CreditCard size={13} className="text-teal-700" /> Refund Account Details:
+                          </p>
+                          {activeOrderModal.returnRequest?.refundDetails?.upiId || activeOrderModal.refundDetails?.upiId ? (
+                            <p><strong>UPI ID:</strong> <span className="font-mono font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded">{activeOrderModal.returnRequest?.refundDetails?.upiId || activeOrderModal.refundDetails?.upiId}</span></p>
+                          ) : activeOrderModal.returnRequest?.refundDetails?.bankName || activeOrderModal.refundDetails?.bankName ? (
+                            <>
+                              <p><strong>Bank:</strong> {activeOrderModal.returnRequest?.refundDetails?.bankName || activeOrderModal.refundDetails?.bankName}</p>
+                              <p><strong>A/C:</strong> {activeOrderModal.returnRequest?.refundDetails?.accountNumber || activeOrderModal.refundDetails?.accountNumber}</p>
+                              <p><strong>IFSC:</strong> {activeOrderModal.returnRequest?.refundDetails?.ifscCode || activeOrderModal.refundDetails?.ifscCode}</p>
+                            </>
+                          ) : (
+                            <p className="text-gray-500 italic">Original Payment Method (UPI/Online Auto-Refund)</p>
+                          )}
+
+                          {/* Partial refund status banner for Exchange */}
+                          {isExchange && hasRefundDue && (
+                            isExchangeRefundDone ? (
+                              <div className="mt-2 p-2 bg-emerald-50 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                                <CheckCircle size={14} className="text-emerald-700 shrink-0" />
+                                <span>₹{refundDueAmount} Refund Completed! TXN ID: <span className="font-mono font-black">{retReq.refundTxnId || activeOrderModal.refundTxnId}</span></span>
+                              </div>
+                            ) : (
+                              <div className="mt-2 p-2 bg-amber-50 border border-amber-300 rounded-lg text-xs font-bold text-amber-950 flex items-center justify-between gap-2">
+                                <span className="flex items-center gap-1">
+                                  ⚠️ <strong>₹{refundDueAmount} Refund Pending:</strong> Pay to customer's account above
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnActionState(prev => ({ ...prev, showRefundInput: true }))}
+                                  className="px-2 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-bold rounded cursor-pointer shrink-0"
+                                >
+                                  💳 Enter TXN No
+                                </button>
+                              </div>
+                            )
+                          )}
+
+                          {activeOrderModal.returnRequest?.returnAwbNumber && (
+                            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] uppercase font-bold text-blue-700 block">Shiprocket Reverse Pickup AWB:</span>
+                                <span className="font-mono font-extrabold text-blue-950 text-xs">{activeOrderModal.returnRequest.returnAwbNumber}</span>
+                                <span className="text-gray-600 text-[10px] ml-1.5">({activeOrderModal.returnRequest.returnCourierName || 'Shiprocket'})</span>
+                              </div>
+                              {activeOrderModal.returnRequest.returnTrackingUrl && (
+                                <a
+                                  href={activeOrderModal.returnRequest.returnTrackingUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-2xs"
+                                >
+                                  Track Return ↗
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          {(activeOrderModal.returnRequest?.refundTxnId || activeOrderModal.refundTxnId) && !isExchange && (
+                            <p className="text-emerald-800 font-bold"><strong>Refund TXN ID:</strong> <span className="font-mono">{activeOrderModal.returnRequest?.refundTxnId || activeOrderModal.refundTxnId}</span></p>
+                          )}
+                          {activeOrderModal.returnRequest?.rejectionReason && (
+                            <p className="text-rose-700 font-bold"><strong>Rejection Reason:</strong> {activeOrderModal.returnRequest.rejectionReason}</p>
                           )}
                         </div>
-                      )}
-                      {activeOrderModal.returnRequest?.refundTxnId && (
-                        <p className="text-emerald-800 font-bold"><strong>Refund TXN ID:</strong> <span className="font-mono">{activeOrderModal.returnRequest.refundTxnId}</span></p>
-                      )}
-                      {activeOrderModal.returnRequest?.rejectionReason && (
-                        <p className="text-rose-700 font-bold"><strong>Rejection Reason:</strong> {activeOrderModal.returnRequest.rejectionReason}</p>
-                      )}
-                    </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Return / Exchange Action Controls */}
@@ -1502,6 +1591,12 @@ export default function OrdersTab() {
                       const isProductReceived = ['product_received', 'product_return_received'].includes(retStatus);
                       const isExchangeDispatched = retStatus === 'exchange_dispatched';
                       const isCompleted = ['refund_completed', 'refunded', 'exchanged'].includes(retStatus);
+
+                      const exchangePriceDiff = Number(retReq.priceDifference || 0);
+                      const exchangePriceAdjType = retReq.priceAdjustmentType || (exchangePriceDiff > 0 ? 'extra_payment' : exchangePriceDiff < 0 ? 'partial_refund' : 'none');
+                      const refundDueAmount = Math.abs(exchangePriceDiff) || Number(retReq.refundAmount || 0) || Math.max(0, Number(retReq.originalItemPrice || 0) - Number(retReq.replacementItemPrice || 0));
+                      const hasRefundDue = isExchange && (exchangePriceAdjType === 'partial_refund' || exchangePriceDiff < 0 || refundDueAmount > 0);
+                      const isExchangeRefundDone = Boolean(retReq.refundTxnId || activeOrderModal.refundTxnId || activeOrderModal.refundDetails?.refundTxnId || retReq.refundStatus === 'completed');
 
                       return (
                         <div className="space-y-2">
@@ -1581,47 +1676,71 @@ export default function OrdersTab() {
                               <button
                                 type="button"
                                 disabled={isUpdatingReturnStatus}
-                                onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'exchanged')}
+                                onClick={() => {
+                                  if (hasRefundDue && !isExchangeRefundDone) {
+                                    setReturnActionState(prev => ({ ...prev, showRefundInput: true }));
+                                  } else {
+                                    handleReturnExchangeAction(activeOrderModal.id, 'exchanged');
+                                  }
+                                }}
                                 className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                               >
-                                {isUpdatingReturnStatus ? '⏳ Completing...' : '✓ Complete Doorstep Swap (Delivered & Old Item Restocked)'}
+                                {isUpdatingReturnStatus
+                                  ? '⏳ Completing...'
+                                  : hasRefundDue && !isExchangeRefundDone
+                                  ? `💳 Process Customer Refund (₹${refundDueAmount}) & Complete Swap`
+                                  : '✓ Complete Doorstep Swap (Delivered & Old Item Restocked)'}
                               </button>
                             )}
 
                             {isCompleted && (
-                              <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-[11px] bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
-                                <span>✅ Lifecycle Completed</span>
-                                {isReturn ? (
-                                  <a
-                                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="underline text-emerald-900 ml-1"
-                                  >
-                                    View Credit Note
-                                  </a>
-                                ) : (
-                                  <div className="flex items-center gap-1.5 ml-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-[11px] bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                                  <span>✅ Lifecycle Completed</span>
+                                  {isReturn ? (
                                     <a
                                       href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="underline text-rose-800"
-                                      title="Credit Note for returned item"
+                                      className="underline text-emerald-900 ml-1"
                                     >
-                                      Credit Note
+                                      View Credit Note
                                     </a>
-                                    <span className="text-gray-400">|</span>
-                                    <a
-                                      href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="underline text-teal-900 font-bold"
-                                      title="Tax Invoice for new exchange replacement item"
-                                    >
-                                      Replacement Tax Invoice
-                                    </a>
-                                  </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 ml-1">
+                                      <a
+                                        href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="underline text-rose-800"
+                                        title="Credit Note for returned item"
+                                      >
+                                        Credit Note
+                                      </a>
+                                      <span className="text-gray-400">|</span>
+                                      <a
+                                        href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="underline text-teal-900 font-bold"
+                                        title="Tax Invoice for new exchange replacement item"
+                                      >
+                                        Replacement Tax Invoice
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Customer Refund button if exchange was swapped/completed without entering refund transaction yet */}
+                                {isExchange && hasRefundDue && !isExchangeRefundDone && (
+                                  <button
+                                    type="button"
+                                    disabled={isUpdatingReturnStatus}
+                                    onClick={() => setReturnActionState(prev => ({ ...prev, showRefundInput: !prev.showRefundInput }))}
+                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                                  >
+                                    <span>💳 Process Customer Refund (₹{refundDueAmount})</span>
+                                  </button>
                                 )}
                               </div>
                             )}
@@ -1685,12 +1804,26 @@ export default function OrdersTab() {
                           )}
 
                           {returnActionState.showRefundInput && (
-                            <div className="p-3 bg-white rounded-xl border border-emerald-200 space-y-2">
-                              <label className="font-semibold text-emerald-900 text-[11px] block">Refund Transaction Reference / ID:</label>
+                            <div className="p-3.5 bg-white rounded-xl border border-emerald-300 shadow-xs space-y-2.5">
+                              {isExchange && hasRefundDue ? (
+                                <div className="p-2.5 bg-amber-50/90 border border-amber-200 rounded-lg text-xs space-y-1">
+                                  <p className="font-extrabold text-amber-950 flex items-center gap-1">
+                                    <span>💳 Customer Partial Refund Due:</span>
+                                    <span className="text-emerald-800 font-black text-sm">₹{refundDueAmount}</span>
+                                  </p>
+                                  <p className="text-[11px] text-amber-800">
+                                    Replacement product price is ₹{refundDueAmount} lower than the original product.
+                                    Transfer ₹{refundDueAmount} to customer's bank account shown above and enter the transaction / UTR reference below to complete.
+                                  </p>
+                                </div>
+                              ) : (
+                                <label className="font-semibold text-emerald-900 text-[11px] block">Refund Transaction Reference / ID:</label>
+                              )}
+
                               <div className="flex gap-2">
                                 <input
                                   type="text"
-                                  placeholder="e.g. UPI-REF-99238491823"
+                                  placeholder={isExchange ? "e.g. UTR / IMPS / UPI Ref (e.g. UPI-REF-99238491823)" : "e.g. UPI-REF-99238491823"}
                                   value={returnActionState.refundTxnId}
                                   onChange={e => setReturnActionState(prev => ({ ...prev, refundTxnId: e.target.value }))}
                                   className="flex-1 px-3 py-1.5 text-xs border border-emerald-300 rounded-lg outline-none font-mono"
@@ -1698,7 +1831,7 @@ export default function OrdersTab() {
                                 <button
                                   type="button"
                                   onClick={() => setReturnActionState(prev => ({ ...prev, refundTxnId: `UPI-REF-${Date.now().toString().slice(-8)}` }))}
-                                  className="px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer"
+                                  className="px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer hover:bg-emerald-100"
                                 >
                                   Generate ID
                                 </button>
@@ -1706,10 +1839,22 @@ export default function OrdersTab() {
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => handleReturnExchangeAction(activeOrderModal.id, 'refund_completed', { refundTransactionId: returnActionState.refundTxnId || `REF-${Date.now()}`, refundAmount: activeOrderModal.returnRequest?.refundAmount || activeOrderModal.total })}
-                                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                                  disabled={isUpdatingReturnStatus}
+                                  onClick={() => {
+                                    const finalTxn = returnActionState.refundTxnId || `UPI-REF-${Date.now().toString().slice(-8)}`;
+                                    handleReturnExchangeAction(
+                                      activeOrderModal.id,
+                                      isExchange ? 'exchanged' : 'refund_completed',
+                                      {
+                                        refundTransactionId: finalTxn,
+                                        refundTxnId: finalTxn,
+                                        refundAmount: isExchange ? refundDueAmount : (activeOrderModal.returnRequest?.refundAmount || activeOrderModal.total)
+                                      }
+                                    );
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-2xs"
                                 >
-                                  Complete Refund
+                                  {isUpdatingReturnStatus ? '⏳ Saving...' : isExchange ? `✓ Complete Exchange & Record ₹${refundDueAmount} Refund` : 'Complete Refund'}
                                 </button>
                                 <button
                                   type="button"
@@ -2477,7 +2622,7 @@ export default function OrdersTab() {
               <div className="space-y-2">
                 <div className="font-bold text-gray-700 flex items-center justify-between">
                   <span>Ordered Items ({activeOrderModal.items?.length || 1})</span>
-                  <span className="text-[10px] text-gray-500 font-normal">Manage individual product fulfillment</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Product fulfillment status</span>
                 </div>
 
                 {/* Multi-Vendor Order Notice Banner */}
@@ -2598,46 +2743,11 @@ export default function OrdersTab() {
                               <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-50 text-purple-900 border border-purple-200 text-[10px] font-extrabold" title="Fulfillment managed via 2-way Return / Exchange workflow">
                                 <span>🔄 2-Way Exchange Active</span>
                               </div>
-                            ) : isMyItem ? (
-                              <select
-                                value={['Pending', 'Confirmed', 'Processing', 'Packed', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(itemStat) ? itemStat : 'Delivered'}
-                                onChange={async (e) => {
-                                  const newStatus = e.target.value;
-                                  const itemIdToUpdate = item._id || item.id || idx;
-                                  const res = await updateOrderItemStatus(activeOrderModal.id, itemIdToUpdate, newStatus);
-                                  if (res && res.order) {
-                                    setActiveOrderModal(res.order);
-                                  } else {
-                                    setActiveOrderModal(prev => {
-                                      if (!prev) return prev;
-                                      const nextItems = (prev.items || []).map((it, i) => (i === idx || it._id === item._id || it.id === item.id) ? { ...it, status: newStatus } : it);
-                                      const allSame = nextItems.every(it => it.status === newStatus);
-                                      return {
-                                        ...prev,
-                                        items: nextItems,
-                                        status: allSame ? newStatus : prev.status,
-                                        overallStatus: allSame ? newStatus : prev.overallStatus
-                                      };
-                                    });
-                                  }
-                                }}
-                                className="text-[11px] font-bold px-2 py-1 rounded-lg border border-gray-300 bg-white hover:border-teal-600 focus:outline-none cursor-pointer"
-                                title="Update status for this specific product"
-                              >
-                                <option value="Pending">🕒 Pending</option>
-                                <option value="Confirmed">✅ Confirmed</option>
-                                <option value="Processing">⏳ Processing</option>
-                                <option value="Packed">📦 Packed</option>
-                                <option value="Shipped">🚚 Shipped</option>
-                                <option value="Out for Delivery">🛵 Out for Delivery</option>
-                                <option value="Delivered">🎉 Delivered</option>
-                                <option value="Cancelled">❌ Cancelled</option>
-                              </select>
-                            ) : (
+                            ) : !isMyItem ? (
                               <span className="text-[10px] text-gray-500 font-bold px-1.5 py-0.5 rounded bg-gray-100 border border-gray-200">
                                 🔒 Other Seller
                               </span>
-                            )}
+                            ) : null}
                           </div>
                           <div className="font-bold text-gray-900 text-xs min-w-[50px] text-right">
                             {(() => {
@@ -3283,13 +3393,33 @@ export default function OrdersTab() {
         </div>
       )}
 
-      {/* Ship & Dispatch Modal */}
+      {/* Ship & Dispatch Modal / Confirm Delivery Partner Modal */}
       {isShipModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 text-xs space-y-4">
-            <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
-              <Truck className="text-purple-700" size={20} /> Pack & Dispatch Order #{shippingOrderId}
-            </h4>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 text-xs space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+              <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
+                <Truck className={shipModalAction === 'confirm' ? "text-teal-700" : "text-purple-700"} size={20} />
+                <span>
+                  {shipModalAction === 'confirm' 
+                    ? `Confirm Order #${shippingOrderId} - Select Delivery Partner` 
+                    : `Pack & Dispatch Order #${shippingOrderId}`}
+                </span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsShipModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 cursor-pointer p-1 rounded-lg hover:bg-gray-100"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-gray-500">
+              {shipModalAction === 'confirm'
+                ? "Order confirmation requires delivery partner selection. Please choose Self-Delivery or 3rd-Party Courier."
+                : "Select fulfillment partner to mark this order shipped and notify customer."}
+            </p>
 
             {/* Mode Selector Tabs */}
             <div className="grid grid-cols-2 gap-2 bg-teal-100/60 p-1 rounded-xl">
@@ -3298,7 +3428,7 @@ export default function OrdersTab() {
                 onClick={() => setShipModalDeliveryMode('third_party')}
                 className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
                   shipModalDeliveryMode === 'third_party'
-                    ? 'bg-white text-teal-900 shadow-xs'
+                    ? 'bg-white text-teal-900 shadow-xs ring-1 ring-teal-300'
                     : 'text-teal-800 hover:text-teal-950'
                 }`}
               >
@@ -3309,7 +3439,7 @@ export default function OrdersTab() {
                 onClick={() => setShipModalDeliveryMode('self_delivery')}
                 className={`py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
                   shipModalDeliveryMode === 'self_delivery'
-                    ? 'bg-white text-teal-900 shadow-xs'
+                    ? 'bg-white text-teal-900 shadow-xs ring-1 ring-teal-300'
                     : 'text-teal-800 hover:text-teal-950'
                 }`}
               >
@@ -3346,7 +3476,7 @@ export default function OrdersTab() {
                     value={shipModalVehicleNumber}
                     onChange={(e) => setShipModalVehicleNumber(e.target.value)}
                     placeholder="e.g. UP32 AB 1234"
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-mono"
                   />
                 </div>
               </div>
@@ -3396,16 +3526,20 @@ export default function OrdersTab() {
 
             <div className="flex gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => setIsShipModalOpen(false)}
                 className="flex-1 py-2 font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleConfirmShip}
-                className="flex-1 py-2 font-semibold text-white bg-purple-700 hover:bg-purple-800 rounded-xl shadow-xs cursor-pointer"
+                className={`flex-1 py-2 font-semibold text-white rounded-xl shadow-xs cursor-pointer ${
+                  shipModalAction === 'confirm' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-700 hover:bg-purple-800'
+                }`}
               >
-                Confirm Dispatch
+                {shipModalAction === 'confirm' ? '✓ Confirm Order' : 'Confirm Dispatch'}
               </button>
             </div>
           </div>
