@@ -369,10 +369,12 @@ export default function BillingReportsTab() {
         Boolean(o.refundStatus)
       );
 
-      const isRefunded = ['refunded', 'refund_completed', 'refund_processed', 'completed'].includes(normStatus) ||
-                         ['refunded', 'refund_completed', 'refund_processed'].includes(normReturnStatus) ||
-                         String(o.refundStatus || '').toLowerCase().includes('completed') ||
-                         String(o.refundStatus || '').toLowerCase().includes('refunded');
+      const isRefunded = !isExchange && (
+        ['refunded', 'refund_completed', 'refund_processed'].includes(normStatus) ||
+        ['refunded', 'refund_completed', 'refund_processed'].includes(normReturnStatus) ||
+        String(o.refundStatus || '').toLowerCase().includes('completed') ||
+        String(o.refundStatus || '').toLowerCase().includes('refunded')
+      );
 
       // Statutory Credit Note Order (Section 34): Sales Returns, Cancellations, Refunds, and Exchanges (where original unit is returned)
       const isCreditNoteOrder = Boolean(isCancelled || isReturn || isRefunded || isExchange || o.creditNoteNumber || o.sellerCreditNoteNo);

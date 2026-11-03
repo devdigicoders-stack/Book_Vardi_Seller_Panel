@@ -958,18 +958,29 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       order.sellerState
     ].find(Boolean) || 'Uttar Pradesh';
     
+    let finalStoreName = primaryName || 'Partner Store';
+    let finalGst = primaryGst;
+    let finalCity = primaryCity;
+    let finalState = primaryState;
+    if (String(finalStoreName).toLowerCase().includes('digicoder')) {
+      finalStoreName = 'National school dress evam pustak bhandar';
+      finalGst = '09BLMPK2840L2ZN';
+      finalCity = 'Behat';
+      finalState = 'Uttar Pradesh';
+    }
+
     return {
-      storeName: primaryName || 'Partner Store',
-      gstNumber: primaryGst,
-      city: primaryCity,
-      state: primaryState
+      storeName: finalStoreName,
+      gstNumber: finalGst,
+      city: finalCity,
+      state: finalState
     };
   };
 
   const resolvedSeller = resolveSeller();
 
   const resolvedInvoiceNumber = useMemo(() => {
-    if (isOrderExchangeDelivered(order)) {
+    if (order.isReplacementInvoice) {
       return getSellerExchangeInvoiceNumber(order, resolvedSeller, contextOrders);
     }
     return getSellerInvoiceNumber(order, resolvedSeller, contextOrders);

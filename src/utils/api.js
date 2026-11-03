@@ -394,6 +394,28 @@ export const updateReturnExchangeStatusApi = async (orderId, payload) => {
   }
 };
 
+
+export const handleSellerCancellationRefundApi = async (orderId, payload) => {
+  try {
+    const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/cancellation-refund`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, message: data?.message || `HTTP error! status: ${res.status}` };
+    }
+    return { success: true, ...data };
+  } catch (error) {
+    console.error('handleSellerCancellationRefundApi error:', error);
+    return { success: false, message: error.message };
+  }
+};
+
 export const resendDeliveryBoyWhatsAppApi = async (orderId) => {
   try {
     const res = await loggedFetch(`${API_BASE_URL}/orders/${orderId}/resend-whatsapp`, {

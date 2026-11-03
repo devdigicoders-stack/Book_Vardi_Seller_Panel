@@ -286,11 +286,19 @@ export default function ShippingLabelView({
   }
 
   // Seller info
-  const sellerStoreName = sellerDetails?.storeName || order.sellerStoreName || order.storeName || 'NATIONAL SCHOOL DRESS EVAM PUSTAK BHANDAR';
-  const sellerContactName = sellerDetails?.name || sellerDetails?.sellerName || 'PRAVEEN KUMAR';
-  const sellerAddress = sellerDetails?.address || 'Shakhumbhari road, Opp uttam palace, Behat, Saharanpur, Uttar Pradesh, 247121';
-  const sellerPhone = sellerDetails?.phone || '+91 9027237697';
-  const sellerGstin = sellerDetails?.gstNumber || sellerDetails?.gstin || order.sellerGstNumber || '09BLMPK2840L2ZN';
+  let sellerStoreName = sellerDetails?.storeName || order.sellerStoreName || order.storeName || 'NATIONAL SCHOOL DRESS EVAM PUSTAK BHANDAR';
+  let sellerContactName = sellerDetails?.name || sellerDetails?.sellerName || 'PRAVEEN KUMAR';
+  let sellerAddress = sellerDetails?.address || 'Shakhumbhari road, Opp uttam palace, Behat, Saharanpur, Uttar Pradesh, 247121';
+  let sellerPhone = sellerDetails?.phone || '+91 9027237697';
+  let sellerGstin = sellerDetails?.gstNumber || sellerDetails?.gstin || order.sellerGstNumber || '09BLMPK2840L2ZN';
+
+  if (sellerStoreName.toLowerCase().includes('digicoder') || sellerAddress.toLowerCase().includes('digicoder')) {
+    sellerStoreName = 'NATIONAL SCHOOL DRESS EVAM PUSTAK BHANDAR';
+    sellerContactName = 'PRAVEEN KUMAR';
+    sellerAddress = 'Shakhumbhari road, Opp uttam palace, Behat, Saharanpur, Uttar Pradesh, 247121';
+    sellerPhone = '+91 9027237697';
+    sellerGstin = '09BLMPK2840L2ZN';
+  }
 
   // Routing hub derivation
   const destHubCode = useMemo(() => {

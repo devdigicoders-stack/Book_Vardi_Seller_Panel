@@ -11,7 +11,7 @@ export default function CreateShipmentModal({ isOpen, onClose, order, onShipment
   const deliveryPincode = order.shippingAddress?.pincode || order.pincode || '110001';
   const pickupPincode = '226001';
 
-  const [weightKg, setWeightKg] = useState(1.5);
+  const [weightKg, setWeightKg] = useState(0.5);
   const [lengthCm, setLengthCm] = useState(25);
   const [widthCm, setWidthCm] = useState(20);
   const [heightCm, setHeightCm] = useState(10);
@@ -31,7 +31,7 @@ export default function CreateShipmentModal({ isOpen, onClose, order, onShipment
       const res = await checkServiceabilityApi({
         pickupPincode,
         deliveryPincode,
-        weightKg: Number(weightKg) || 1,
+        weightKg: Number(weightKg) || 0.5,
         isCod
       });
 
@@ -65,7 +65,7 @@ export default function CreateShipmentModal({ isOpen, onClose, order, onShipment
         orderId,
         courierCode: selectedPartnerCode,
         courierId: selectedPartner?.courierId || null,
-        weightKg: Number(weightKg) || 1,
+        weightKg: Number(weightKg) || 0.5,
         dimensions: {
           length: Number(lengthCm) || 20,
           width: Number(widthCm) || 15,
@@ -201,10 +201,11 @@ export default function CreateShipmentModal({ isOpen, onClose, order, onShipment
                     </label>
                     <input
                       type="number"
-                      step="0.1"
+                      step="0.05"
                       min="0.1"
                       value={weightKg}
                       onChange={(e) => setWeightKg(e.target.value)}
+                      onBlur={handleCheckServiceability}
                       className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-teal-900"
                     />
                   </div>

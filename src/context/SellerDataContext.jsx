@@ -18,6 +18,7 @@ import {
   updateOrderStatusApi,
   updateSellerOrderItemStatusApi,
   updateReturnExchangeStatusApi,
+  handleSellerCancellationRefundApi,
   resendDeliveryBoyWhatsAppApi,
   fetchSchoolOrdersApi,
   createSchoolOrderApi,
@@ -2131,6 +2132,30 @@ export const SellerDataProvider = ({ children }) => {
     }
   };
 
+  const handleCancellationRefund = async (id, payload) => {
+    checkPermission();
+    try {
+      const res = await handleSellerCancellationRefundApi(id, payload);
+      if (res && res.success) {
+        if (res.order) {
+          editOrder(id, res.order);
+        }
+        showToast(res.message || 'Refund action processed successfully!');
+        fetchSellerOrdersApi().then(orderList => {
+          if (Array.isArray(orderList)) setOrders(orderList);
+        }).catch(() => {});
+        return res;
+      } else {
+        showToast(res?.message || 'Failed to process refund action', 'error');
+        return res;
+      }
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Error processing refund action', 'error');
+      return { success: false, message: err.message };
+    }
+  };
+
   const resendDeliveryBoyWhatsApp = async (orderId) => {
     try {
       const res = await resendDeliveryBoyWhatsAppApi(orderId);
@@ -3018,6 +3043,7 @@ export const SellerDataProvider = ({ children }) => {
         updateOrderStatus,
         updateOrderItemStatus,
         updateReturnExchangeStatus,
+        handleCancellationRefund,
         resendDeliveryBoyWhatsApp,
         deleteOrder,
         downloadSellerInvoice,
