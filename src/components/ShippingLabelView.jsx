@@ -14,6 +14,7 @@ import {
   Check
 } from 'lucide-react';
 import { SERVER_URL, getAuthHeaders } from '../utils/api';
+import { parseStateInfo } from './TaxInvoiceModal';
 
 // Code 128-B Pattern Table (Standard ISO/IEC 15417)
 const CODE128_PATTERNS = [
@@ -196,34 +197,6 @@ export default function ShippingLabelView({
 
   const pincodeMatch = addrString ? addrString.match(/\b([1-9][0-9]{5})\b/) : null;
 
-  let detectedState = '';
-  const lowerAddr = (addrString + ' ' + (addrObj?.state || '') + ' ' + (addrObj?.city || '')).toLowerCase();
-  if (lowerAddr.includes('uttar pradesh') || lowerAddr.includes('utter pradesh') || lowerAddr.includes('up') || lowerAddr.includes('u.p.')) {
-    detectedState = 'Uttar Pradesh';
-  } else if (lowerAddr.includes('delhi') || lowerAddr.includes('new delhi')) {
-    detectedState = 'Delhi';
-  } else if (lowerAddr.includes('haryana')) {
-    detectedState = 'Haryana';
-  } else if (lowerAddr.includes('punjab')) {
-    detectedState = 'Punjab';
-  } else if (lowerAddr.includes('bihar')) {
-    detectedState = 'Bihar';
-  } else if (lowerAddr.includes('rajasthan')) {
-    detectedState = 'Rajasthan';
-  } else if (lowerAddr.includes('uttarakhand')) {
-    detectedState = 'Uttarakhand';
-  }
-
-  let detectedCity = '';
-  if (lowerAddr.includes('saharanpur')) detectedCity = 'Saharanpur';
-  else if (lowerAddr.includes('behat')) detectedCity = 'Behat';
-  else if (lowerAddr.includes('lucknow')) detectedCity = 'Lucknow';
-  else if (lowerAddr.includes('noida')) detectedCity = 'Noida';
-  else if (lowerAddr.includes('ghaziabad')) detectedCity = 'Ghaziabad';
-  else if (lowerAddr.includes('kanpur')) detectedCity = 'Kanpur';
-  else if (lowerAddr.includes('agra')) detectedCity = 'Agra';
-  else if (lowerAddr.includes('delhi')) detectedCity = 'Delhi';
-
   const customerName = (
     order.customerName ||
     order.customer?.name ||
@@ -235,25 +208,13 @@ export default function ShippingLabelView({
     'Customer'
   );
 
-  const rawState = addrObj?.state || order.state || detectedState || '';
-  const customerState = (
-    rawState.toUpperCase().includes('UTT') || rawState.toUpperCase().includes('PRADESH')
-      ? 'Uttar Pradesh'
-      : (rawState || 'Uttar Pradesh')
-  );
-
-  const customerCity = (
-    addrObj?.city ||
-    order.city ||
-    detectedCity ||
-    (lowerAddr.includes('behat') ? 'Behat' : (customerState === 'Uttar Pradesh' ? 'Saharanpur' : 'City'))
-  );
-
   const customerPincode = (
     addrObj?.pincode ||
     addrObj?.postalCode ||
+    addrObj?.pin ||
     order.pincode ||
     order.postalCode ||
+    order.shippingAddress?.pincode ||
     (pincodeMatch ? pincodeMatch[1] : '') ||
     '247121'
   );
@@ -310,12 +271,79 @@ export default function ShippingLabelView({
     sellerPincode = '247121';
   }
 
+  // Authoritative State Detection via parseStateInfo (Prevents "Delhivery" being misparsed as Delhi)
+  const sellerStateInfo = useMemo(() => {
+    return parseStateInfo(
+      sellerDetails,
+      `${sellerStoreName} ${sellerAddress} ${sellerDetails?.city || 'Saharanpur'} ${sellerDetails?.state || 'Uttar Pradesh'} ${sellerGstin} ${sellerPincode}`
+    );
+  }, [sellerDetails, sellerStoreName, sellerAddress, sellerGstin, sellerPincode]);
+
+  const customerStateInfo = useMemo(() => {
+    // Clean out delivery partner names like "Delhivery Air" to prevent false state matches
+    const sanitizedAddrStr = `${customerAddress} ${addrObj?.city || order.city || ''} ${addrObj?.state || order.state || ''} ${customerPincode}`
+      .replace(/delhivery\s*(air)?/gi, ' ');
+    return parseStateInfo(addrObj, sanitizedAddrStr);
+  }, [addrObj, customerAddress, order.city, order.state, customerPincode]);
+
+  const customerState = customerStateInfo?.name || 'Uttar Pradesh';
+
+  // Explicit city resolution without false positives from courier names
+  const explicitCity = String(
+    addrObj?.city ||
+    addrObj?.district ||
+    addrObj?.cityName ||
+    order.city ||
+    order.district ||
+    order.shippingAddress?.city ||
+    ''
+  ).trim();
+
+  const customerCity = useMemo(() => {
+    if (explicitCity && !/delhivery/i.test(explicitCity)) return explicitCity;
+    const cleanAddr = String(customerAddress).replace(/delhivery\s*(air)?/gi, ' ').toLowerCase();
+    if (/\blucknow\b/i.test(cleanAddr)) return 'Lucknow';
+    if (/\bsaharanpur\b/i.test(cleanAddr)) return 'Saharanpur';
+    if (/\bbehat\b/i.test(cleanAddr)) return 'Behat';
+    if (/\bkanpur\b/i.test(cleanAddr)) return 'Kanpur';
+    if (/\bnoida\b/i.test(cleanAddr)) return 'Noida';
+    if (/\bghaziabad\b/i.test(cleanAddr)) return 'Ghaziabad';
+    if (/\bagra\b/i.test(cleanAddr)) return 'Agra';
+    if (/\bdelhi\b/i.test(cleanAddr)) return 'Delhi';
+    return customerState === 'Uttar Pradesh' ? 'Saharanpur' : 'City';
+  }, [explicitCity, customerAddress, customerState]);
+
+  // GST Intra-State vs Inter-State Determination
+  // When both seller and buyer are in same state (e.g. Uttar Pradesh, state code 09), isIntraState = true
+  const isIntraState = useMemo(() => {
+    const sKey = sellerStateInfo?.key || 'uttar_pradesh';
+    const cKey = customerStateInfo?.key || 'uttar_pradesh';
+    return sKey === cKey;
+  }, [sellerStateInfo, customerStateInfo]);
+
+  const isInterState = !isIntraState;
+
   // Routing hub derivation
   const destHubCode = useMemo(() => {
-    const pin = String(customerPincode).slice(0, 3);
-    const stateAbbr = String(customerState).toUpperCase().slice(0, 3);
-    return `${stateAbbr}_${pin}_HUB`;
-  }, [customerPincode, customerState]);
+    const pin = String(customerPincode || '247121').slice(0, 3);
+    const stateCode = (customerStateInfo?.key === 'uttar_pradesh' || String(customerState).toLowerCase().includes('uttar'))
+      ? 'UP'
+      : (customerStateInfo?.key?.toUpperCase().slice(0, 3) || 'IND');
+    return `${stateCode}_${pin}_HUB`;
+  }, [customerPincode, customerState, customerStateInfo]);
+
+  const destCityCode = useMemo(() => {
+    const city = String(customerCity || 'HUB').toUpperCase().trim();
+    if (city.includes('LUCKNOW')) return 'LKO';
+    if (city.includes('SAHARANPUR')) return 'SAH';
+    if (city.includes('BEHAT')) return 'BHT';
+    if (city.includes('KANPUR')) return 'KNP';
+    if (city.includes('NOIDA')) return 'NOI';
+    if (city.includes('GHAZIABAD')) return 'GZB';
+    if (city.includes('AGRA')) return 'AGR';
+    if (city.includes('DELHI')) return 'DEL';
+    return city.slice(0, 3);
+  }, [customerCity]);
 
   // Financial aggregates
   const orderTotal = Number(order.total || order.totalAmount || 0);
@@ -338,13 +366,6 @@ export default function ShippingLabelView({
   // QR Code URL (Points to live tracking link)
   const qrTrackingUrl = order.trackingUrl || `https://shiprocket.co/tracking/${awbNumber}`;
   const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=0&data=${encodeURIComponent(qrTrackingUrl)}`;
-
-  // Inter-State determination for Tax Breakdown
-  const isInterState = useMemo(() => {
-    const s1 = String(customerState).toLowerCase().trim();
-    const s2 = String(sellerDetails?.state || 'uttar pradesh').toLowerCase().trim();
-    return s1 && s2 && s1 !== s2 && !s1.includes('uttar') && !s1.includes('up');
-  }, [customerState, sellerDetails?.state]);
 
   const orderDateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN');
   const invoiceDateStr = new Date().toLocaleDateString('en-IN');
@@ -748,8 +769,8 @@ export default function ShippingLabelView({
                   />
                 </div>
                 <div className="text-right text-[10px] leading-tight">
-                  <div className="font-black text-xs text-black">N10_DEL</div>
-                  <div className="font-bold text-[10px] text-gray-800">_Mand</div>
+                  <div className="font-black text-xs text-black">{destCityCode}_{String(customerPincode || '247').slice(0, 3)}</div>
+                  <div className="font-bold text-[10px] text-gray-800">_{String(customerCity || 'Hub').toUpperCase()}</div>
                   <div className="text-[8px] text-gray-500 font-mono mt-0.5">
                     Hub: {destHubCode}
                   </div>
@@ -863,6 +884,8 @@ export default function ShippingLabelView({
                   const taxRate = (explicitGst !== undefined && explicitGst !== null && !isNaN(Number(explicitGst))) ? Number(explicitGst) : (isBook ? 0 : 5);
                   const taxable = taxRate > 0 ? lineTotal / (1 + taxRate / 100) : lineTotal;
                   const taxAmount = lineTotal - taxable;
+                  const itemCgst = isIntraState ? Math.round((taxAmount / 2) * 100) / 100 : 0;
+                  const itemSgst = isIntraState ? Math.round((taxAmount - itemCgst) * 100) / 100 : 0;
 
                   return (
                     <tr key={idx}>
@@ -875,7 +898,18 @@ export default function ShippingLabelView({
                       <td className="p-1 border-r border-black text-right font-mono">₹{lineTotal.toFixed(2)}</td>
                       <td className="p-1 border-r border-black text-right font-mono">₹{taxable.toFixed(2)}</td>
                       <td className="p-1 border-r border-black text-right font-mono">
-                        {taxRate === 0 ? '0% GST (Exempt)' : isInterState ? `IGST ${taxRate}% ₹${taxAmount.toFixed(2)}` : `GST ${taxRate}% ₹${taxAmount.toFixed(2)}`}
+                        {taxRate === 0 ? (
+                          <span className="text-gray-500 font-sans">0% GST (Exempt)</span>
+                        ) : isIntraState ? (
+                          <div className="text-right font-mono text-[8px] leading-tight space-y-0.5">
+                            <div>CGST {(taxRate / 2)}% ₹{itemCgst.toFixed(2)}</div>
+                            <div>SGST {(taxRate / 2)}% ₹{itemSgst.toFixed(2)}</div>
+                          </div>
+                        ) : (
+                          <div className="text-right font-mono text-[8px] leading-tight">
+                            IGST {taxRate}% ₹{taxAmount.toFixed(2)}
+                          </div>
+                        )}
                       </td>
                       <td className="p-1 text-right font-mono font-bold">₹{lineTotal.toFixed(2)}</td>
                     </tr>
@@ -890,6 +924,8 @@ export default function ShippingLabelView({
                   }), 5);
                   const shipTaxable = derivedShipRate > 0 ? deliveryCharge / (1 + derivedShipRate / 100) : deliveryCharge;
                   const shipTax = deliveryCharge - shipTaxable;
+                  const shipCgst = isIntraState ? Math.round((shipTax / 2) * 100) / 100 : 0;
+                  const shipSgst = isIntraState ? Math.round((shipTax - shipCgst) * 100) / 100 : 0;
                   return (
                     <tr className="bg-gray-50/50">
                       <td className="p-1 border-r border-black font-medium">Shipping & Logistics Fee</td>
@@ -898,7 +934,18 @@ export default function ShippingLabelView({
                       <td className="p-1 border-r border-black text-right font-mono">₹{deliveryCharge.toFixed(2)}</td>
                       <td className="p-1 border-r border-black text-right font-mono">₹{shipTaxable.toFixed(2)}</td>
                       <td className="p-1 border-r border-black text-right font-mono">
-                        {derivedShipRate === 0 ? '0% GST' : (isInterState ? `IGST ${derivedShipRate}% ₹${shipTax.toFixed(2)}` : `GST ${derivedShipRate}% ₹${shipTax.toFixed(2)}`)}
+                        {derivedShipRate === 0 ? (
+                          <span className="text-gray-500 font-sans">0% GST</span>
+                        ) : isIntraState ? (
+                          <div className="text-right font-mono text-[8px] leading-tight space-y-0.5">
+                            <div>CGST {(derivedShipRate / 2)}% ₹{shipCgst.toFixed(2)}</div>
+                            <div>SGST {(derivedShipRate / 2)}% ₹{shipSgst.toFixed(2)}</div>
+                          </div>
+                        ) : (
+                          <div className="text-right font-mono text-[8px] leading-tight">
+                            IGST {derivedShipRate}% ₹{shipTax.toFixed(2)}
+                          </div>
+                        )}
                       </td>
                       <td className="p-1 text-right font-mono font-bold">₹{deliveryCharge.toFixed(2)}</td>
                     </tr>
