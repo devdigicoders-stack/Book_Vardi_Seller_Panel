@@ -367,16 +367,16 @@ export default function ShippingLabelView({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {order.shipmentDetails?.shippingLabelUrl && (
+          {(order.shippingLabelUrl || order.shipmentDetails?.shippingLabelUrl) && (
             <a
-              href={order.shipmentDetails.shippingLabelUrl}
+              href={order.shippingLabelUrl || order.shipmentDetails?.shippingLabelUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              title="Download official Shiprocket carrier PDF"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Download & print official carrier PDF shipping label (Amazon Shipping / Delhivery)"
             >
               <ExternalLink size={13} />
-              <span>Shiprocket Label URL</span>
+              <span>Official Carrier Label (PDF)</span>
             </a>
           )}
 
@@ -470,8 +470,16 @@ export default function ShippingLabelView({
               {/* Courier Name & Routing Codes */}
               <div className="mt-1 text-left space-y-0.5">
                 <div className="flex items-center justify-between border-b border-gray-300 pb-0.5">
-                  <span className="font-black text-sm text-black tracking-tight">{courierName}</span>
-                  <span className="font-mono text-[9px] text-gray-500 font-bold">{destHubCode}</span>
+                  <span className="font-black text-sm text-black tracking-tight uppercase">
+                    {order.courierName && order.courierName !== 'Shiprocket'
+                      ? order.courierName
+                      : (order.shipmentDetails?.courierPartnerName && order.shipmentDetails?.courierPartnerName !== 'Shiprocket'
+                        ? order.shipmentDetails.courierPartnerName
+                        : 'Amazon Shipping / Delhivery')}
+                  </span>
+                  <span className="font-mono text-[9px] bg-black text-white px-1.5 py-0.5 rounded font-black">
+                    SUR • 0.500 KG
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono">
                   <span>Routing Code:</span>
@@ -479,7 +487,7 @@ export default function ShippingLabelView({
                 </div>
                 <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono">
                   <span>Return Pin:</span>
-                  <strong className="text-black font-bold">247121</strong>
+                  <strong className="text-black font-bold">{sellerPincode || '247121'}</strong>
                 </div>
               </div>
 
