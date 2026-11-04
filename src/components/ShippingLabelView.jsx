@@ -291,6 +291,13 @@ export default function ShippingLabelView({
   let sellerAddress = sellerDetails?.address || 'Shakhumbhari road, Opp uttam palace, Behat, Saharanpur, Uttar Pradesh, 247121';
   let sellerPhone = sellerDetails?.phone || '+91 9027237697';
   let sellerGstin = sellerDetails?.gstNumber || sellerDetails?.gstin || order.sellerGstNumber || '09BLMPK2840L2ZN';
+  let sellerPincode = (
+    sellerDetails?.pincode ||
+    order.sellerPincode ||
+    order.sellerDetails?.pincode ||
+    (sellerAddress.match(/\b\d{6}\b/) ? sellerAddress.match(/\b\d{6}\b/)[0] : '') ||
+    '247121'
+  );
 
   if (sellerStoreName.toLowerCase().includes('digicoder') || sellerAddress.toLowerCase().includes('digicoder')) {
     sellerStoreName = 'NATIONAL SCHOOL DRESS EVAM PUSTAK BHANDAR';
@@ -298,6 +305,7 @@ export default function ShippingLabelView({
     sellerAddress = 'Shakhumbhari road, Opp uttam palace, Behat, Saharanpur, Uttar Pradesh, 247121';
     sellerPhone = '+91 9027237697';
     sellerGstin = '09BLMPK2840L2ZN';
+    sellerPincode = '247121';
   }
 
   // Routing hub derivation
