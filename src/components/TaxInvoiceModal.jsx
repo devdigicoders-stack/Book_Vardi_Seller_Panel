@@ -24,7 +24,7 @@ import ShippingLabelView from './ShippingLabelView';
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
 
 export function getProductGstRate(item) {
-  const explicitGst = item?.gstPercent ?? item?.gstPercentage ?? item?.gstRate ?? item?.gst ?? item?.taxRate ?? item?.productId?.gstPercent ?? item?.productId?.gstRate ?? item?.productId?.gst ?? item?.productId?.gstPercentage ?? item?.productId?.taxRate;
+  const explicitGst = item?.productId?.gst ?? item?.productId?.gstPercentage ?? item?.productId?.gstPercent ?? item?.productId?.gstRate ?? item?.productId?.taxRate ?? item?.gstPercent ?? item?.gstPercentage ?? item?.gstRate ?? item?.gst ?? item?.taxRate;
   if (explicitGst !== undefined && explicitGst !== null && String(explicitGst).trim() !== '' && !isNaN(Number(explicitGst))) {
     return Number(explicitGst);
   }

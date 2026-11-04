@@ -603,11 +603,13 @@ export default function ShippingLabelView({
                   const qty = Number(item.quantity || 1);
                   const price = Number(item.finalPrice ?? item.price ?? 0);
                   const lineTotal = price * qty;
-                  const cat = String(item.category || item.name || '').toLowerCase();
+                  const candHsn = item?.hsnCode || item?.hsn || item?.productId?.hsnCode || item?.productId?.hsn;
+                  const cat = String(item.category || item?.productId?.category || item.name || '').toLowerCase();
                   const isBook = cat.includes('book') || cat.includes('textbook');
-                  const hsn = isBook ? '4901' : '6203';
-                  const taxRate = isBook ? 0 : 5;
-                  const taxable = lineTotal / (1 + taxRate / 100);
+                  const hsn = candHsn || (isBook ? '4901' : (cat.includes('shoe') || cat.includes('footwear') ? '6403' : (cat.includes('stationery') || cat.includes('bag') ? '4202' : '6203')));
+                  const explicitGst = item?.productId?.gst ?? item?.productId?.gstPercentage ?? item?.productId?.gstPercent ?? item?.productId?.gstRate ?? item?.productId?.taxRate ?? item?.gstPercent ?? item?.gstPercentage ?? item?.gstRate ?? item?.gst ?? item?.taxRate;
+                  const taxRate = (explicitGst !== undefined && explicitGst !== null && !isNaN(Number(explicitGst))) ? Number(explicitGst) : (isBook ? 0 : 5);
+                  const taxable = taxRate > 0 ? lineTotal / (1 + taxRate / 100) : lineTotal;
                   const taxAmount = lineTotal - taxable;
 
                   return (
@@ -621,7 +623,7 @@ export default function ShippingLabelView({
                       <td className="p-1 border-r border-black text-right font-mono">₹{lineTotal.toFixed(2)}</td>
                       <td className="p-1 border-r border-black text-right font-mono">₹{taxable.toFixed(2)}</td>
                       <td className="p-1 border-r border-black text-right font-mono">
-                        {isInterState ? `IGST 5% ₹${taxAmount.toFixed(2)}` : `GST 5% ₹${taxAmount.toFixed(2)}`}
+                        {taxRate === 0 ? '0% GST (Exempt)' : isInterState ? `IGST ${taxRate}% ₹${taxAmount.toFixed(2)}` : `GST ${taxRate}% ₹${taxAmount.toFixed(2)}`}
                       </td>
                       <td className="p-1 text-right font-mono font-bold">₹{lineTotal.toFixed(2)}</td>
                     </tr>
@@ -629,17 +631,27 @@ export default function ShippingLabelView({
                 })}
 
                 {/* Other Charges (Shipping / Convenience) */}
-                {deliveryCharge > 0 && (
-                  <tr className="bg-gray-50/50">
-                    <td className="p-1 border-r border-black font-medium">Shipping & Logistics Fee</td>
-                    <td className="p-1 border-r border-black text-center font-mono">9968</td>
-                    <td className="p-1 border-r border-black text-center font-bold">NA</td>
-                    <td className="p-1 border-r border-black text-right font-mono">₹{deliveryCharge.toFixed(2)}</td>
-                    <td className="p-1 border-r border-black text-right font-mono">₹{(deliveryCharge / 1.05).toFixed(2)}</td>
-                    <td className="p-1 border-r border-black text-right font-mono">₹{(deliveryCharge - (deliveryCharge / 1.05)).toFixed(2)}</td>
-                    <td className="p-1 text-right font-mono font-bold">₹{deliveryCharge.toFixed(2)}</td>
-                  </tr>
-                )}
+                {deliveryCharge > 0 && (() => {
+                  const derivedShipRate = Math.max(...effectiveItems.map(it => {
+                    const g = it?.productId?.gst ?? it?.productId?.gstPercentage ?? it?.productId?.gstPercent ?? it?.gstPercent ?? it?.gst;
+                    return (!isNaN(Number(g))) ? Number(g) : 5;
+                  }), 5);
+                  const shipTaxable = derivedShipRate > 0 ? deliveryCharge / (1 + derivedShipRate / 100) : deliveryCharge;
+                  const shipTax = deliveryCharge - shipTaxable;
+                  return (
+                    <tr className="bg-gray-50/50">
+                      <td className="p-1 border-r border-black font-medium">Shipping & Logistics Fee</td>
+                      <td className="p-1 border-r border-black text-center font-mono">9968</td>
+                      <td className="p-1 border-r border-black text-center font-bold">NA</td>
+                      <td className="p-1 border-r border-black text-right font-mono">₹{deliveryCharge.toFixed(2)}</td>
+                      <td className="p-1 border-r border-black text-right font-mono">₹{shipTaxable.toFixed(2)}</td>
+                      <td className="p-1 border-r border-black text-right font-mono">
+                        {derivedShipRate === 0 ? '0% GST' : (isInterState ? `IGST ${derivedShipRate}% ₹${shipTax.toFixed(2)}` : `GST ${derivedShipRate}% ₹${shipTax.toFixed(2)}`)}
+                      </td>
+                      <td className="p-1 text-right font-mono font-bold">₹{deliveryCharge.toFixed(2)}</td>
+                    </tr>
+                  );
+                })()}
 
                 {/* Dedicated Cash on Delivery (COD) Fee Row if applied */}
                 {rawCodFee > 0 && (
