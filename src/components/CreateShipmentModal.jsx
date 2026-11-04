@@ -12,9 +12,9 @@ export default function CreateShipmentModal({ isOpen, onClose, order, onShipment
   const pickupPincode = '226001';
 
   const [weightKg, setWeightKg] = useState(0.5);
-  const [lengthCm, setLengthCm] = useState(25);
-  const [widthCm, setWidthCm] = useState(20);
-  const [heightCm, setHeightCm] = useState(10);
+  const [lengthCm, setLengthCm] = useState(15);
+  const [widthCm, setWidthCm] = useState(12);
+  const [heightCm, setHeightCm] = useState(5);
 
   const [isCheckingRates, setIsCheckingRates] = useState(false);
   const [availablePartners, setAvailablePartners] = useState([]);
@@ -67,9 +67,9 @@ export default function CreateShipmentModal({ isOpen, onClose, order, onShipment
         courierId: selectedPartner?.courierId || null,
         weightKg: Number(weightKg) || 0.5,
         dimensions: {
-          length: Number(lengthCm) || 20,
-          width: Number(widthCm) || 15,
-          height: Number(heightCm) || 10
+          length: Number(lengthCm) || 15,
+          width: Number(widthCm) || 12,
+          height: Number(heightCm) || 5
         }
       };
 
