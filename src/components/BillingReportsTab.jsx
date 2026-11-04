@@ -298,6 +298,7 @@ export default function BillingReportsTab() {
 
   // 3. Other Filters
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all'); // 'all' | 'active' | 'cancelled'
   const [searchQuery, setSearchQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
 
@@ -641,7 +642,8 @@ export default function BillingReportsTab() {
     const res = enrichedOrders.filter(o => {
       // 1. Report Type filter
       if (reportType === 'tax_invoice') {
-        if (o.isCancelled || o.isRefunded) return false;
+        if (invoiceStatusFilter === 'active' && (o.isCancelled || o.isRefunded)) return false;
+        if (invoiceStatusFilter === 'cancelled' && !(o.isCancelled || o.isRefunded)) return false;
       } else if (reportType === 'credit_note') {
         if (!o.isCreditNoteOrder) return false;
       }
@@ -688,7 +690,7 @@ export default function BillingReportsTab() {
       if (numA !== numB) return numB - numA;
       return (b.orderDate?.getTime() || 0) - (a.orderDate?.getTime() || 0);
     });
-  }, [enrichedOrders, reportType, periodDetails, orderTypeFilter, searchQuery]);
+  }, [enrichedOrders, reportType, periodDetails, orderTypeFilter, invoiceStatusFilter, searchQuery]);
 
   // Aggregate Metrics for Cards
   const metrics = useMemo(() => {
@@ -718,6 +720,25 @@ export default function BillingReportsTab() {
         totalCgst += o.cgstAmount;
         totalSgst += o.sgstAmount;
         totalIgst += o.igstAmount;
+      } else if (reportType === 'tax_invoice') {
+        totalInvoicedGross += o.grossAmount;
+        totalTaxable += o.totalTaxableValue;
+        totalGst += o.totalGstAmount;
+        totalCgst += o.cgstAmount;
+        totalSgst += o.sgstAmount;
+        totalIgst += o.igstAmount;
+        if (o.isCancelled || o.isRefunded) {
+          totalCreditNotesGross += o.grossAmount;
+        } else {
+          totalCommission += o.commAmount;
+          totalGstOnComm += o.gstOnComm;
+          totalTds += o.tdsAmount;
+          totalTcs += o.gstTcsAmount;
+          if (o.isSelfDelivery && o.deliveryAdjustment > 0) {
+            totalSelfDeliveryCredits += o.deliveryAdjustment;
+          }
+          totalNetPayout += o.netPayout;
+        }
       } else if (o.isCancelled || o.isRefunded) {
         totalCreditNotesGross += o.grossAmount;
       } else {
@@ -833,7 +854,8 @@ export default function BillingReportsTab() {
         { label: 'SGST', align: 'right' },
         { label: 'IGST', align: 'right' },
         { label: 'Total GST', align: 'right' },
-        { label: 'Invoice Total', align: 'right' }
+        { label: 'Invoice Total', align: 'right' },
+        { label: 'Status', align: 'center' }
       ];
 
       const getCells = (o, idx) => [
@@ -849,7 +871,16 @@ export default function BillingReportsTab() {
         `₹${o.sgstAmount.toFixed(2)}`,
         `₹${o.igstAmount.toFixed(2)}`,
         `₹${o.totalGstAmount.toFixed(2)}`,
-        `₹${o.grossAmount.toFixed(2)}`
+        `₹${o.grossAmount.toFixed(2)}`,
+        (o.isCancelled || o.isRefunded) ? (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+            Cancelled (CN)
+          </span>
+        ) : (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            Active
+          </span>
+        )
       ];
 
       const getXlsx = (o, idx) => ({
@@ -865,7 +896,8 @@ export default function BillingReportsTab() {
         'SGST (₹)': o.sgstAmount.toFixed(2),
         'IGST (₹)': o.igstAmount.toFixed(2),
         'Total GST (₹)': o.totalGstAmount.toFixed(2),
-        'Invoice Total (₹)': o.grossAmount.toFixed(2)
+        'Invoice Total (₹)': o.grossAmount.toFixed(2),
+        'Status': (o.isCancelled || o.isRefunded) ? 'Cancelled (CN Issued)' : 'Active'
       });
 
       const totalRow = [
@@ -881,7 +913,8 @@ export default function BillingReportsTab() {
         `₹${metrics.totalSgst.toFixed(2)}`,
         `₹${metrics.totalIgst.toFixed(2)}`,
         `₹${metrics.totalGst.toFixed(2)}`,
-        `₹${metrics.totalInvoicedGross.toFixed(2)}`
+        `₹${metrics.totalInvoicedGross.toFixed(2)}`,
+        ''
       ];
 
       return { tableHeaders: headers, getRowCells: getCells, getExcelRow: getXlsx, totalRowPrint: totalRow };
@@ -1118,7 +1151,7 @@ export default function BillingReportsTab() {
 
     const getCells = (o, idx) => {
       const isReturnOrCancel = o.isCancelled || o.isRefunded;
-      const docNo = isReturnOrCancel ? o.creditNoteNo : o.invoiceNo;
+      const docNo = isReturnOrCancel ? `${o.invoiceNo || 'INV'} (${o.creditNoteNo || 'CN'})` : o.invoiceNo;
       return [
         idx + 1,
         docNo,
@@ -1597,6 +1630,19 @@ export default function BillingReportsTab() {
             </div>
           )}
 
+          {/* Invoice Status Filter (for Tax Invoice Register) */}
+          {reportType === 'tax_invoice' && (
+            <select
+              value={invoiceStatusFilter}
+              onChange={e => setInvoiceStatusFilter(e.target.value)}
+              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200/70 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 cursor-pointer focus:outline-hidden"
+            >
+              <option value="all">📑 All Invoices (Active & Cancelled)</option>
+              <option value="active">✅ Active Invoices Only</option>
+              <option value="cancelled">❌ Cancelled / Voided Invoices</option>
+            </select>
+          )}
+
           {/* Order Type Filter */}
           <select
             value={orderTypeFilter}
@@ -1845,17 +1891,15 @@ export default function BillingReportsTab() {
                       {/* Document Actions Column */}
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {!isReturnOrCancel && (
-                            <a
-                              href={o.isReplacementInvoice ? `${SERVER_URL}/orders/${o.baseOrderId || o.orderId || o.id}/exchange-invoice` : `${SERVER_URL}/orders/${o.id || o._id}/invoice`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold rounded-lg transition-colors border border-gray-200"
-                              title={o.isReplacementInvoice ? "Download Replacement Tax Invoice PDF" : "Download Invoice PDF"}
-                            >
-                              PDF
-                            </a>
-                          )}
+                          <a
+                            href={o.isReplacementInvoice ? `${SERVER_URL}/orders/${o.baseOrderId || o.orderId || o.id}/exchange-invoice` : `${SERVER_URL}/orders/${o.id || o._id}/invoice`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold rounded-lg transition-colors border border-gray-200"
+                            title={o.isReplacementInvoice ? "Download Replacement Tax Invoice PDF" : "Download Invoice PDF"}
+                          >
+                            PDF
+                          </a>
                           {(isReturnOrCancel || o.isExchange || o.isCreditNoteOrder) && (
                             <a
                               href={`${SERVER_URL}/orders/${o.baseOrderId || o.orderId || o.id || o._id}/credit-note`}
