@@ -2,7 +2,7 @@ export const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000
 export const API_BASE_URL = `${SERVER_URL}/seller`;
 
 // Helper to get auth header dynamically for whichever user is logged in
-const getAuthHeaders = () => {
+export const getAuthHeaders = () => {
   let token = localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
   const userProfStr = localStorage.getItem('seller_user_profile') || localStorage.getItem('book_vardi_user_profile') || localStorage.getItem('bv_seller_reg_data') || localStorage.getItem('book_vardi_seller_profile');
   let userPhone = localStorage.getItem('bv_user_phone') || localStorage.getItem('user_phone') || '';

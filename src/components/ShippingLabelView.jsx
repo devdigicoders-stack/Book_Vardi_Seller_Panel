@@ -1,17 +1,19 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { 
   Printer, 
   Download, 
   ExternalLink, 
-  QrCode, 
-  Barcode as BarcodeIcon, 
   Truck, 
   CheckCircle2, 
   ShieldCheck, 
   Package,
-  Layers
+  RefreshCw,
+  FileText,
+  AlertCircle,
+  Copy,
+  Check
 } from 'lucide-react';
-import { SERVER_URL } from '../utils/api';
+import { SERVER_URL, getAuthHeaders } from '../utils/api';
 
 // Code 128-B Pattern Table (Standard ISO/IEC 15417)
 const CODE128_PATTERNS = [
@@ -348,6 +350,54 @@ export default function ShippingLabelView({
   const invoiceDateStr = new Date().toLocaleDateString('en-IN');
   const officialInvoiceNumber = invoiceNumber || order.invoiceNumber || `NSD-${cleanOrderId.slice(-6)}`;
 
+  const [carrierLabelUrl, setCarrierLabelUrl] = useState(
+    order.shippingLabelUrl || order.shipmentDetails?.shippingLabelUrl || ''
+  );
+  const [isFetchingLabel, setIsFetchingLabel] = useState(false);
+  const [activeTab, setActiveTab] = useState('carrier');
+  const [copiedAwb, setCopiedAwb] = useState(false);
+
+  useEffect(() => {
+    const existing = order.shippingLabelUrl || order.shipmentDetails?.shippingLabelUrl;
+    if (existing && existing !== carrierLabelUrl) {
+      setCarrierLabelUrl(existing);
+    }
+  }, [order.shippingLabelUrl, order.shipmentDetails?.shippingLabelUrl]);
+
+  const fetchLiveLabel = async () => {
+    const orderIdentifier = cleanOrderId || order._id || order.id;
+    if (!orderIdentifier) return;
+    setIsFetchingLabel(true);
+    try {
+      const headers = typeof getAuthHeaders === 'function' ? getAuthHeaders() : {};
+      const res = await fetch(`${SERVER_URL}/delivery-partners/label/${encodeURIComponent(orderIdentifier)}`, {
+        headers
+      });
+      const data = await res.json();
+      if (data?.success && data?.labelUrl) {
+        setCarrierLabelUrl(data.labelUrl);
+      }
+    } catch (e) {
+      console.warn("Could not fetch carrier shipping label:", e.message);
+    } finally {
+      setIsFetchingLabel(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!carrierLabelUrl && cleanOrderId) {
+      fetchLiveLabel();
+    }
+  }, [cleanOrderId]);
+
+  const handleCopyAwb = () => {
+    if (awbNumber) {
+      navigator.clipboard?.writeText(awbNumber);
+      setCopiedAwb(true);
+      setTimeout(() => setCopiedAwb(false), 2000);
+    }
+  };
+
   const handlePrint4x6 = () => {
     printShippingLabel('printableShippingLabelArea', '4x6');
   };
@@ -358,67 +408,253 @@ export default function ShippingLabelView({
 
   return (
     <div className="space-y-4">
-      {/* Action Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-gray-50 p-3 rounded-2xl border border-gray-200">
-        <div className="flex items-center gap-2">
-          <span className="p-1.5 bg-amber-100 text-amber-900 rounded-lg">
-            <ScanBarcodeIcon size={16} />
-          </span>
-          <div>
-            <span className="font-extrabold text-xs text-gray-900 block leading-tight">
-              E-Commerce Shipping Label & Packing Slip
-            </span>
-            <span className="text-[10px] text-gray-500">
-              Standard 4x6" Parcel Sticker • Barcode & QR Ready for Courier Partner Scan
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {(order.shippingLabelUrl || order.shipmentDetails?.shippingLabelUrl) && (
-            <a
-              href={order.shippingLabelUrl || order.shipmentDetails?.shippingLabelUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-              title="Download & print official carrier PDF shipping label (Amazon Shipping / Delhivery)"
-            >
-              <ExternalLink size={13} />
-              <span>Official Carrier Label (PDF)</span>
-            </a>
-          )}
-
-          <button
-            type="button"
-            onClick={handlePrint4x6}
-            className="px-3.5 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-            title="Print 4x6 inch thermal sticker label"
-          >
-            <Printer size={13} />
-            <span>Print 4x6" Sticker</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrintA4}
-            className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-800 font-bold text-xs rounded-xl border border-gray-300 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-            title="Print on standard A4 paper"
-          >
-            <Printer size={13} />
-            <span>Print A4</span>
-          </button>
-
-          {onSwitchToInvoice && (
+      {/* Tab Switcher & Action Toolbar */}
+      <div className="bg-gray-50 p-3 sm:p-4 rounded-2xl border border-gray-200 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Main Mode Tabs */}
+          <div className="flex items-center gap-2 bg-gray-200/70 p-1 rounded-xl">
             <button
               type="button"
-              onClick={onSwitchToInvoice}
-              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              onClick={() => setActiveTab('carrier')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'carrier'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'
+              }`}
             >
-              View Full Tax Invoice
+              <Truck size={14} />
+              <span>Official Courier Slip (PDF)</span>
+              {carrierLabelUrl ? (
+                <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">PDF Ready</span>
+              ) : (
+                <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-bold">Shiprocket</span>
+              )}
             </button>
-          )}
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('internal')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'internal'
+                  ? 'bg-teal-800 text-white shadow-xs'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200'
+              }`}
+            >
+              <Package size={14} />
+              <span>Store Packing Slip (4x6")</span>
+            </button>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {carrierLabelUrl && (
+              <>
+                <a
+                  href={carrierLabelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Open real carrier PDF in new window"
+                >
+                  <ExternalLink size={13} />
+                  <span>Open Official PDF</span>
+                </a>
+
+                <a
+                  href={carrierLabelUrl}
+                  download={`Carrier_Label_${cleanOrderId}.pdf`}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Download carrier PDF label"
+                >
+                  <Download size={13} />
+                  <span>Download PDF</span>
+                </a>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={fetchLiveLabel}
+              disabled={isFetchingLabel}
+              className="px-2.5 py-1.5 bg-white hover:bg-gray-100 text-gray-700 font-bold text-xs rounded-xl border border-gray-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Refresh label status from Shiprocket"
+            >
+              <RefreshCw size={12} className={isFetchingLabel ? 'animate-spin text-emerald-600' : ''} />
+              <span>{isFetchingLabel ? 'Checking...' : 'Refresh'}</span>
+            </button>
+
+            {activeTab === 'internal' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handlePrint4x6}
+                  className="px-3.5 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Print 4x6 inch thermal sticker label"
+                >
+                  <Printer size={13} />
+                  <span>Print 4x6" Sticker</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintA4}
+                  className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-800 font-bold text-xs rounded-xl border border-gray-300 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  title="Print on standard A4 paper"
+                >
+                  <Printer size={13} />
+                  <span>Print A4</span>
+                </button>
+              </>
+            )}
+
+            {onSwitchToInvoice && (
+              <button
+                type="button"
+                onClick={onSwitchToInvoice}
+                className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                View Full Tax Invoice
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* VIEW 1: OFFICIAL COURIER LABEL (PDF) */}
+      {activeTab === 'carrier' && (
+        <div className="space-y-4">
+          {carrierLabelUrl ? (
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+              {/* Official Carrier Banner */}
+              <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 text-white p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/15 rounded-xl backdrop-blur-xs">
+                    <Truck size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-sm uppercase tracking-wide">Official Carrier Shipping Slip</span>
+                      <span className="bg-white text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">Delhivery / Amazon Shipping</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-emerald-100 font-medium mt-1 flex-wrap">
+                      <span>Courier: <strong className="text-white font-extrabold">{courierName}</strong></span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1 font-mono">
+                        AWB: <strong className="text-white font-extrabold">{awbNumber}</strong>
+                        <button
+                          type="button"
+                          onClick={handleCopyAwb}
+                          className="p-1 hover:bg-white/20 rounded cursor-pointer transition-colors"
+                          title="Copy AWB number"
+                        >
+                          {copiedAwb ? <Check size={12} className="text-emerald-300" /> : <Copy size={12} />}
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <a
+                    href={carrierLabelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-900 font-black text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Open / Print PDF</span>
+                  </a>
+                  <a
+                    href={carrierLabelUrl}
+                    download={`Shipping_Label_${cleanOrderId}.pdf`}
+                    className="px-3.5 py-2 bg-emerald-900/60 hover:bg-emerald-900 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Download size={14} />
+                    <span>Download</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Embedded PDF Viewer */}
+              <div className="p-4 bg-gray-100 flex flex-col items-center">
+                <div className="w-full max-w-4xl bg-white rounded-xl shadow-md border border-gray-300 overflow-hidden">
+                  <iframe
+                    src={carrierLabelUrl}
+                    title="Official Courier Label PDF"
+                    className="w-full h-[680px] border-0"
+                  />
+                </div>
+                <div className="mt-3 text-center text-xs text-gray-500">
+                  💡 If the PDF does not display inside the preview frame above,{' '}
+                  <a
+                    href={carrierLabelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-700 font-extrabold underline hover:text-emerald-800"
+                  >
+                    click here to open & print the official PDF in a new tab
+                  </a>.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border-2 border-dashed border-amber-300 p-8 text-center space-y-4">
+              <div className="w-16 h-16 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <Truck size={32} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-gray-900">Official Carrier Shipping Slip</h3>
+                <p className="text-xs text-gray-600 max-w-md mx-auto">
+                  {order.courierName
+                    ? `AWB ${awbNumber} has been generated with ${order.courierName}. Click below to fetch the official PDF label directly from Shiprocket.`
+                    : `Carrier shipment has been created. Click below to fetch the official Delhivery / Amazon Shipping PDF label.`}
+                </p>
+              </div>
+
+              <div className="flex justify-center items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={fetchLiveLabel}
+                  disabled={isFetchingLabel}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <RefreshCw size={14} className={isFetchingLabel ? 'animate-spin' : ''} />
+                  <span>{isFetchingLabel ? 'Fetching Real Label...' : '⚡ Fetch Real Courier Label from Shiprocket'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('internal')}
+                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  View Store Packing Slip (4x6")
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW 2: STORE PACKING SLIP & 4x6" STICKER */}
+      {activeTab === 'internal' && (
+        <div className="space-y-4">
+          {carrierLabelUrl && (
+            <div className="flex items-center justify-between gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <span>
+                  Real official courier label (<strong>{courierName}</strong> - AWB <strong>{awbNumber}</strong>) is ready!
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('carrier')}
+                className="px-3 py-1 bg-emerald-600 text-white font-extrabold text-[11px] rounded-lg hover:bg-emerald-700 cursor-pointer"
+              >
+                View Official Carrier Slip (PDF) →
+              </button>
+            </div>
+          )}
 
       {/* Printable Label Container (Exact 4x6 Proportion matching the client reference photo) */}
       <div className="flex justify-center bg-gray-200/50 p-3 sm:p-6 rounded-2xl overflow-x-auto">
@@ -701,6 +937,8 @@ export default function ShippingLabelView({
           </div>
         </div>
       </div>
+        </div>
+      )}
     </div>
   );
 }
