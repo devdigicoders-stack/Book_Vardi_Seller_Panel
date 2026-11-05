@@ -1013,7 +1013,9 @@ export default function OrdersTab() {
                 </tr>
               ) : (
                 filteredOrders.map((o, idx) => {
-                  const conf = STATUS_CONFIG[o.status] || STATUS_CONFIG.Pending;
+                  const isCancelledRow = !hasActiveReturnRequest(o) && Boolean(o.cancelledAt || String(o.status || '').toLowerCase() === 'cancelled' || (o.cancellationReason && !o.returnRequest?.type));
+                  const displayRowStatus = isCancelledRow ? "Cancelled" : o.status;
+                  const conf = STATUS_CONFIG[displayRowStatus] || STATUS_CONFIG.Pending;
                   const Icon = conf.icon;
                   const isChecked = selectedOrderIds.includes(o.id);
 
@@ -1109,7 +1111,7 @@ export default function OrdersTab() {
                             /* Process-driven: Once an order is Confirmed, status follows fulfillment workflow (Pack & Ship -> Mark Delivered) */
                             <div className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 w-fit ${conf.bg} ${conf.text} ${conf.border}`}>
                               <Icon size={12} />
-                              <span>{o.status || 'Pending'}</span>
+                              <span>{displayRowStatus || "Pending"}</span>
                             </div>
                           )}
                           {(o.status === 'Cancelled' || o.cancellationReason) && (
@@ -1216,9 +1218,16 @@ export default function OrdersTab() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-gray-900 text-base">Order ID: {formatDisplayOrderId(activeOrderModal.orderId || activeOrderModal.id)}</h3>
-                    <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${STATUS_CONFIG[activeOrderModal.status]?.bg || 'bg-gray-100'} ${STATUS_CONFIG[activeOrderModal.status]?.text || 'text-gray-800'} ${STATUS_CONFIG[activeOrderModal.status]?.border || 'border-gray-200'}`}>
-                      {activeOrderModal.status}
-                    </span>
+                    {(() => {
+                      const isCancelledModal = !hasActiveReturnRequest(activeOrderModal) && Boolean(activeOrderModal.cancelledAt || String(activeOrderModal.status || '').toLowerCase() === 'cancelled' || (activeOrderModal.cancellationReason && !activeOrderModal.returnRequest?.type));
+                      const displayModalStatus = isCancelledModal ? "Cancelled" : activeOrderModal.status;
+                      const badgeConf = STATUS_CONFIG[displayModalStatus] || STATUS_CONFIG.Pending;
+                      return (
+                        <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${badgeConf.bg || "bg-gray-100"} ${badgeConf.text || "text-gray-800"} ${badgeConf.border || "border-gray-200"}`}>
+                          {displayModalStatus}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-0.5">
                     <span>Placed on {activeOrderModal.date}</span>
@@ -1285,7 +1294,16 @@ export default function OrdersTab() {
                     'pickup_scheduled', 'product_received', 'product_return_received',
                     'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
                   ];
-                  const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
+                  const hasCompletedRefundUI = Boolean(
+    ['refund_completed', 'refunded', 'completed', 'refund_processed'].includes(String(activeOrderModal.returnRequest?.refundStatus || '').toLowerCase().trim()) ||
+    ['refund completed', 'refund_completed', 'refunded', 'completed', 'refund processed', 'refund_processed'].includes(String(activeOrderModal.refundStatus || '').toLowerCase().trim()) ||
+    activeOrderModal.settlementStatus === 'refunded' ||
+    Boolean(activeOrderModal.returnRequest?.refundTxnId) ||
+    Boolean(activeOrderModal.refundTxnId) ||
+    Boolean(activeOrderModal.sellerCreditNoteNo) ||
+    Boolean(activeOrderModal.creditNoteNumber)
+  );
+  const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s)) || hasCompletedRefundUI;
                   const isCancelled = String(activeOrderModal.status).toLowerCase() === 'cancelled' || Boolean(activeOrderModal.cancelledAt);
                   const canShowCreditNote = isOrderExchange ? isReturnAccepted : (isReturnAccepted || isCancelled);
                   const isPendingApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
@@ -1297,16 +1315,18 @@ export default function OrdersTab() {
                   return (
                     <>
                       {canShowCreditNote && (
-                        <a
-                          href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInvoiceModalMode('credit_note');
+                            setIsInvoiceModalOpen(true);
+                          }}
                           className="flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl transition-colors cursor-pointer text-xs bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200"
-                          title="Download GST Credit Note under Section 34 of CGST Act (Original Returned Item)"
+                          title="View & Download GST Credit Note under Section 34 of CGST Act"
                         >
                           <FileText size={14} />
                           <span>GST Credit Note</span>
-                        </a>
+                        </button>
                       )}
                       {isPendingApproval && (
                         <span
@@ -1345,7 +1365,7 @@ export default function OrdersTab() {
             <div className="p-6 space-y-5 max-h-[78vh] overflow-y-auto">
 
               {/* Customer Cancellation Alert Card & Full Refund Workflow */}
-              {(activeOrderModal.status === 'Cancelled' || activeOrderModal.cancellationReason || activeOrderModal.cancelledBy || activeOrderModal.cancelledAt) && (
+              {!hasActiveReturnRequest(activeOrderModal) && (activeOrderModal.status === 'Cancelled' || activeOrderModal.cancelledAt || (activeOrderModal.cancellationReason && !activeOrderModal.returnRequest?.type)) && (
                 <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3 shadow-xs">
                   
                   {/* Header */}
@@ -2005,14 +2025,7 @@ export default function OrdersTab() {
                               <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-[11px] bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
                                 <span>✅ Lifecycle Completed</span>
                                 <div className="flex items-center gap-1.5 ml-1">
-                                  <a
-                                    href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="underline text-rose-800"
-                                  >
-                                    Credit Note
-                                  </a>
+                                  <button type="button" onClick={() => { setInvoiceModalMode('credit_note'); setIsInvoiceModalOpen(true); }} className="underline text-rose-800 cursor-pointer">Credit Note</button>
                                   <span className="text-gray-400">|</span>
                                   <a
                                     href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}
@@ -2121,25 +2134,10 @@ export default function OrdersTab() {
                                 <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-[11px] bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
                                   <span>✅ Lifecycle Completed</span>
                                   {isReturn ? (
-                                    <a
-                                      href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="underline text-emerald-900 ml-1"
-                                    >
-                                      View Credit Note
-                                    </a>
+                                    <button type="button" onClick={() => { setInvoiceModalMode('credit_note'); setIsInvoiceModalOpen(true); }} className="underline text-emerald-900 ml-1 cursor-pointer">View Credit Note</button>
                                   ) : (
                                     <div className="flex items-center gap-1.5 ml-1">
-                                      <a
-                                        href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/credit-note`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="underline text-rose-800"
-                                        title="Credit Note for returned item"
-                                      >
-                                        Credit Note
-                                      </a>
+                                      <button type="button" onClick={() => { setInvoiceModalMode('credit_note'); setIsInvoiceModalOpen(true); }} className="underline text-rose-800 cursor-pointer" title="Credit Note for returned item">Credit Note</button>
                                       <span className="text-gray-400">|</span>
                                       <a
                                         href={`${SERVER_URL}/orders/${activeOrderModal.id || activeOrderModal._id}/exchange-invoice`}

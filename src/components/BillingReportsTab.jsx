@@ -336,7 +336,10 @@ export default function BillingReportsTab() {
       const orderDate = parseOrderDate(o.date, o.createdAt);
       const orderIdStr = o.orderId || (o._id ? o._id.toString().substring(0, 8).toUpperCase() : 'ORD');
       const invoiceNo = o.sellerInvoiceNo || o.invoiceNumber || getSellerInvoiceNumber(o, sellerUser || settings, orders);
-      const creditNoteNo = o.sellerCreditNoteNo || o.creditNoteNumber || getSellerCreditNoteNumber(o, sellerUser || settings, orders);
+      const isValidSequentialCN = (cn) => typeof cn === 'string' && /^[A-Z0-9]{2,}CN\d+$/i.test(cn);
+      const creditNoteNo = (isValidSequentialCN(o.sellerCreditNoteNo) ? o.sellerCreditNoteNo : null) ||
+                           (isValidSequentialCN(o.creditNoteNumber) ? o.creditNoteNumber : null) ||
+                           getSellerCreditNoteNumber(o, sellerUser || settings, orders);
       const isExchDelivered = isOrderExchangeDelivered(o);
       const exchangeInvoiceNo = o.exchangeInvoiceNumber || o.sellerExchangeInvoiceNo || getSellerExchangeInvoiceNumber(o, sellerUser || settings, orders);
 

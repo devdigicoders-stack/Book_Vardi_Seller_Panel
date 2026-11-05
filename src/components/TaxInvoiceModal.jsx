@@ -13,7 +13,8 @@ import {
   DollarSign,
   Truck,
   ExternalLink,
-  BarcodeIcon 
+  BarcodeIcon,
+  RotateCcw
 } from 'lucide-react';
 import { useSellerData, readActiveSellerSettings, readActiveSellerProfile, stripCustomerPhoneFromAddress } from '../context/SellerDataContext';
 import { SERVER_URL } from '../utils/api';
@@ -220,8 +221,7 @@ export function parseStateInfo(sourceObj, fallbackString = '') {
   return { key: 'uttar_pradesh', name: 'Uttar Pradesh' };
 }
 
-export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: passedSellerUser, initialMode = 'invoice' }) {
-  if (!isOpen || !order) return null;
+function TaxInvoiceModalContent({ isOpen, onClose, order, sellerUser: passedSellerUser, initialMode = 'invoice' }) {
 
   const isSelfDelivery = Boolean(
     order.deliveryMode === 'self_delivery' ||
@@ -234,6 +234,21 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
   ) && (!order.courierName || order.courierName === 'N/A' || order.courierName === '');
 
   const [documentMode, setDocumentMode] = useState(isSelfDelivery ? 'invoice' : (initialMode || 'invoice'));
+
+  const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+  const normStatus = rawStatus.replace(/[\s-]+/g, '_');
+  const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || Boolean(order.isCancelled) || Boolean(order.cancelledAt);
+  const hasCreditNote = Boolean(
+    order.creditNoteNumber || 
+    order.sellerCreditNoteNo || 
+    order.settlementStatus === 'refunded' || 
+    isCancelled || 
+    ['refund_completed', 'refund_processed', 'refunded'].includes(normStatus) ||
+    Boolean(order.returnRequest && ['refund_completed', 'refund_processed', 'refunded', 'approved'].includes(String(order.returnRequest.status || order.returnRequest.refundStatus || '').toLowerCase().trim())) ||
+    Boolean(order.refundStatus && ['refund completed', 'refund_completed', 'refunded', 'completed', 'refund processed', 'refund_processed'].includes(String(order.refundStatus).toLowerCase().trim()))
+  );
+  const isCreditNoteMode = documentMode === 'credit_note';
+  const isCreditNote = isCreditNoteMode;
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedSellerKey, setSelectedSellerKey] = useState(null);
 
@@ -604,10 +619,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ');
 
-  const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
-  const normStatus = rawStatus.replace(/[\s-]+/g, '_');
-  const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || Boolean(order.isCancelled) || Boolean(order.cancelledAt);
-
+  
   const isBulkOrder = Boolean(
     order.isBulkOrder ||
     order.isSchoolOrder ||
@@ -986,6 +998,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
     return getSellerInvoiceNumber(order, resolvedSeller, contextOrders);
   }, [order, resolvedSeller, contextOrders]);
 
+  const resolvedCreditNoteNumber = useMemo(() => {
+    return getSellerCreditNoteNumber(order, resolvedSeller, contextOrders);
+  }, [order, resolvedSeller, contextOrders]);
+
   // Dynamic Intra-State vs Inter-State detection
   const sellerStateInfo = parseStateInfo(resolvedSeller, `${resolvedSeller.city} ${resolvedSeller.state}`);
   const customerStateInfo = parseStateInfo(shippingAddr, `${formattedAddressStr} ${shippingAddr?.state || ''}`);
@@ -1358,7 +1374,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       const orderIdentifier = String(rawId).replace(/^#/, '').trim();
       const sellerParam = activeSellerGroup?.sellerId || activeSellerGroup?.storeName || activeSellerUser?._id || activeSellerUser?.storeName || '';
       const queryStr = sellerParam ? `?sellerId=${encodeURIComponent(sellerParam)}&view=seller` : '?view=seller';
-      const res = await fetch(`${SERVER_URL}/orders/${orderIdentifier}/invoice${queryStr}`, {
+      const endpoint = isCreditNoteMode ? 'credit-note' : 'invoice';
+      const res = await fetch(`${SERVER_URL}/orders/${orderIdentifier}/${endpoint}${queryStr}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         }
@@ -1369,7 +1386,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
         const link = document.createElement('a');
         link.href = url;
         const sellerSlug = (resolvedSeller?.storeName || 'Seller').replace(/[^a-zA-Z0-9_-]/g, '_');
-        link.download = `Invoice_${orderIdentifier}_${sellerSlug}.pdf`;
+        link.download = `${isCreditNoteMode ? 'CreditNote' : 'Invoice'}_${orderIdentifier}_${sellerSlug}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -1400,7 +1417,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
 
     const rawId = order.id || order.orderId || order._id || 'ORDER';
     const cleanId = resolvedInvoiceNumber || String(rawId).replace(/^#/, '').trim();
-    const docTitle = `Tax_Invoice_${cleanId}`;
+    const docTitle = `${isCreditNote ? 'CreditNote' : 'Tax_Invoice'}_${isCreditNote ? resolvedCreditNoteNumber : cleanId}`;
 
     const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
       .map(el => el.outerHTML)
@@ -1501,22 +1518,39 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
           </div>
 
           <div className="flex items-center gap-2">
-            {/* View Switcher: Tax Invoice vs Shipping Label (Only for Courier Parcels) */}
-            {!isSelfDelivery && (
-              <div className="flex items-center gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800 shrink-0">
+            {/* View Switcher: Tax Invoice vs Credit Note vs Shipping Label */}
+            <div className="flex items-center gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setDocumentMode('invoice')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  documentMode === 'invoice'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+                title="View Standard GST Tax Invoice"
+              >
+                <FileText size={13} />
+                <span>Invoice</span>
+              </button>
+
+              {hasCreditNote && (
                 <button
                   type="button"
-                  onClick={() => setDocumentMode('invoice')}
+                  onClick={() => setDocumentMode('credit_note')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    documentMode === 'invoice'
-                      ? 'bg-emerald-600 text-white shadow-xs'
+                    documentMode === 'credit_note'
+                      ? 'bg-rose-600 text-white shadow-xs'
                       : 'text-gray-400 hover:text-white'
                   }`}
-                  title="View Standard GST Tax Invoice"
+                  title="View Official GST Credit Note"
                 >
-                  <FileText size={13} />
-                  <span>Invoice</span>
+                  <RotateCcw size={13} />
+                  <span>Credit Note</span>
                 </button>
+              )}
+
+              {!isSelfDelivery && (
                 <button
                   type="button"
                   onClick={() => setDocumentMode('shipping_label')}
@@ -1530,25 +1564,25 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
                   <BarcodeIcon size={13} />
                   <span>Shipping Label</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
-            {confirmed && documentMode === 'invoice' && (
+            {confirmed && documentMode !== 'shipping_label' && (
               <>
                 <button
                   onClick={handleDownloadPDF}
                   disabled={isDownloading}
-                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-gray-950 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                  title="Download Official GST Tax Invoice PDF"
+                  className={`px-3 py-1.5 ${isCreditNoteMode ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-emerald-500 hover:bg-emerald-600 text-gray-950'} font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50`}
+                  title={`Download Official GST ${isCreditNoteMode ? 'Credit Note' : 'Tax Invoice'} PDF`}
                 >
                   <Download size={13} className={isDownloading ? 'animate-bounce' : ''} />
                   {isDownloading ? 'Downloading...' : 'Download PDF'}
                 </button>
                 <button
                   onClick={handlePrint}
-                  className="px-3 py-1.5 bg-brand-teal hover:bg-teal-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className={`px-3 py-1.5 ${isCreditNoteMode ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-brand-teal hover:bg-teal-700 text-white'} font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs`}
                 >
-                  <Printer size={13} /> Print Invoice
+                  <Printer size={13} /> {isCreditNoteMode ? 'Print Credit Note' : 'Print Invoice'}
                 </button>
               </>
             )}
@@ -1664,9 +1698,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
               />
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="bg-brand-teal text-white font-black text-xs px-2 py-0.5 rounded tracking-wider uppercase">Book Vardi</span>
-                  <span className="text-xs font-extrabold text-emerald-700 flex items-center gap-1">
-                    <ShieldCheck size={14} /> Official Verified Invoice
+                  <span className={`${isCreditNoteMode ? 'bg-rose-600' : 'bg-brand-teal'} text-white font-black text-xs px-2 py-0.5 rounded tracking-wider uppercase`}>Book Vardi</span>
+                  <span className={`text-xs font-extrabold ${isCreditNoteMode ? 'text-rose-700' : 'text-emerald-700'} flex items-center gap-1`}>
+                    <ShieldCheck size={14} /> {isCreditNoteMode ? 'Official Verified Credit Note (Sec 34)' : 'Official Verified Invoice'}
                   </span>
                 </div>
                 <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight uppercase">
@@ -1676,12 +1710,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
               </div>
             </div>
 
-            <div className="sm:text-right border-l-2 sm:border-l-0 sm:border-r-0 border-brand-teal pl-3 sm:pl-0">
-              <h2 className="font-display font-black text-lg text-gray-900 uppercase tracking-wider">
-                TAX INVOICE
+            <div className={`sm:text-right border-l-2 sm:border-l-0 sm:border-r-0 ${isCreditNoteMode ? 'border-rose-600' : 'border-brand-teal'} pl-3 sm:pl-0`}>
+              <h2 className={`font-display font-black text-lg uppercase tracking-wider ${isCreditNoteMode ? 'text-rose-600' : 'text-gray-900'}`}>
+                {isCreditNoteMode ? 'CREDIT NOTE' : 'TAX INVOICE'}
               </h2>
-              <p className="text-xs font-bold text-gray-700">Invoice No: <strong className="font-mono text-brand-teal">{resolvedInvoiceNumber}</strong></p>
-              <p className="text-[11px] text-gray-500">Invoice Date: {order.date || new Date().toLocaleDateString('en-GB')}</p>
+              <p className="text-xs font-bold text-gray-700">
+                {isCreditNoteMode ? 'Credit Note No: ' : 'Invoice No: '}
+                <strong className={`font-mono ${isCreditNoteMode ? 'text-rose-600' : 'text-brand-teal'}`}>{isCreditNoteMode ? resolvedCreditNoteNumber : resolvedInvoiceNumber}</strong>
+              </p>
+              <p className="text-[11px] text-gray-500">{isCreditNoteMode ? 'Reversal Date: ' : 'Invoice Date: '}{order.date || new Date().toLocaleDateString('en-GB')}</p>
             </div>
           </div>
 
@@ -2213,4 +2250,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, sellerUser: pa
       </div>
     </div>
   );
+}
+
+
+export default function TaxInvoiceModal(props) {
+  if (!props.isOpen || !props.order) return null;
+  return <TaxInvoiceModalContent {...props} />;
 }
