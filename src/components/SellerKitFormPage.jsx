@@ -287,6 +287,7 @@ export default function SellerKitFormPage({
       originalPrice: mrp,
       size: variantLabel || prodSizes[0] || '',
       availableSizes: prodSizes,
+      sizeVariants: Array.isArray(prod.sizeVariants) ? prod.sizeVariants : [],
       color: prod.colors?.[0] || '',
       image: itemImg
     };
