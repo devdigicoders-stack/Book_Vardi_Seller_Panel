@@ -274,20 +274,19 @@ export default function SellerKitFormPage({
 
     const itemImg = selectedVariant?.image || prod.images?.[0] || prod.image || '';
 
-    const variantLabel = selectedVariant
-      ? (selectedVariant.size || selectedVariant.measureValue || '')
-      : '';
-
-    const itemName = variantLabel ? `${prod.name} (${variantLabel})` : prod.name;
+    const prodSizes = Array.isArray(prod.sizes) && prod.sizes.length > 0
+      ? prod.sizes
+      : (Array.isArray(prod.sizeVariants) ? prod.sizeVariants.map(v => typeof v === 'object' ? (v.size || v.measureValue) : v).filter(Boolean) : []);
 
     const newItem = {
       productId: prod.id || prod._id,
-      name: itemName,
+      name: prod.name,
       quantity: 1,
       unitPrice,
       totalPrice: unitPrice,
       originalPrice: mrp,
-      size: variantLabel,
+      size: variantLabel || prodSizes[0] || '',
+      availableSizes: prodSizes,
       color: prod.colors?.[0] || '',
       image: itemImg
     };
@@ -1046,8 +1045,14 @@ export default function SellerKitFormPage({
                                 )}
                                 <div>
                                   <div className="font-bold text-gray-900">{item.name}</div>
-                                  {item.size && (
+                                  {item.availableSizes && item.availableSizes.length > 0 ? (
+                                    <div className="text-[10px] text-brand-teal font-semibold mt-0.5">
+                                      Multi-Sizes: {item.availableSizes.join(', ')}
+                                    </div>
+                                  ) : item.size ? (
                                     <div className="text-[10px] text-brand-teal font-semibold">Size: {item.size}</div>
+                                  ) : (
+                                    <div className="text-[10px] text-gray-400 font-semibold">Free Size</div>
                                   )}
                                 </div>
                               </div>
