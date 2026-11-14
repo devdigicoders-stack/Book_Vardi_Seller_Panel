@@ -142,6 +142,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
     colors: '',
     material: '',
     brand: '',
+    hsn: '6203',
     gst: '5',
     isGstInclusive: true,
     tags: '',
@@ -357,6 +358,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         colors: Array.isArray(product.colors) ? product.colors.join(', ') : (product.colors || ''),
         material: product.material || '',
         brand: product.brand || '',
+        hsn: product.hsn || product.hsnCode || '6203',
         gst: parsedGst,
         isGstInclusive: parseBool(product.isGstInclusive, true),
         tags: Array.isArray(product.tags) ? product.tags.join(', ') : (product.tags || ''),
@@ -485,6 +487,7 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
         colors: '',
         material: '',
         brand: '',
+        hsn: '6203',
         gst: '5',
         tags: '',
         status: 'Pending',
@@ -865,6 +868,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
           colors: parsedColors,
           material: formData.material || '',
           brand: formData.brand || '',
+          hsn: formData.hsn ? String(formData.hsn).trim() : '6203',
+          hsnCode: formData.hsn ? String(formData.hsn).trim() : '6203',
           gst: finalGst,
           gstPercentage: finalGst,
           isGstInclusive: parseBool(formData.isGstInclusive, true),
@@ -1326,8 +1331,8 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                   </div>
                 </div>
 
-                {/* Brand & Material */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Brand, Material & HSN Code */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Brand Name</label>
                     <input
@@ -1347,6 +1352,42 @@ export default function SellerProductFormPage({ product, existingProducts = [], 
                       placeholder="e.g. 100% Premium Cotton, Oxford Weave"
                       className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none"
                     />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-gray-700">HSN Code *</label>
+                      <span className="text-[10px] text-teal-700 font-bold bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200">GST Invoice</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.hsn}
+                      onChange={e => setFormData({ ...formData, hsn: e.target.value })}
+                      placeholder="e.g. 6203, 4901, 4820"
+                      className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none font-mono focus:border-teal-500 focus:bg-white"
+                    />
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {[
+                        { code: '6203', label: 'Uniform (6203)' },
+                        { code: '4901', label: 'Books (4901)' },
+                        { code: '4820', label: 'Stationery (4820)' },
+                        { code: '6403', label: 'Shoes (6403)' },
+                        { code: '4202', label: 'Bags (4202)' },
+                        { code: '6505', label: 'Caps (6505)' }
+                      ].map(item => (
+                        <button
+                          key={item.code}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, hsn: item.code }))}
+                          className={`text-[9.5px] px-1.5 py-0.5 rounded-md font-bold transition-all cursor-pointer border ${
+                            formData.hsn === item.code
+                              ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
+                              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 

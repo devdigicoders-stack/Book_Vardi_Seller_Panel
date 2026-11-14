@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { SERVER_URL, getAuthHeaders } from '../utils/api';
 import { parseStateInfo } from './TaxInvoiceModal';
+import { resolveHsnCode } from '../utils/invoiceHelper';
 
 // Code 128-B Pattern Table (Standard ISO/IEC 15417)
 const CODE128_PATTERNS = [
@@ -877,9 +878,11 @@ export default function ShippingLabelView({
                   const price = Number(item.finalPrice ?? item.price ?? 0);
                   const lineTotal = price * qty;
                   const candHsn = item?.hsnCode || item?.hsn || item?.productId?.hsnCode || item?.productId?.hsn;
-                  const cat = String(item.category || item?.productId?.category || item.name || '').toLowerCase();
+                  const cat = String(item.category || item?.productId?.category || '').toLowerCase();
+                  const subCat = String(item.subCategory || item?.productId?.subCategory || '').toLowerCase();
+                  const prodName = String(item.name || item?.productId?.name || '').toLowerCase();
                   const isBook = cat.includes('book') || cat.includes('textbook');
-                  const hsn = candHsn || (isBook ? '4901' : (cat.includes('shoe') || cat.includes('footwear') ? '6403' : (cat.includes('stationery') || cat.includes('bag') ? '4202' : '6203')));
+                  const hsn = resolveHsnCode(candHsn, cat, subCat, prodName);
                   const explicitGst = item?.productId?.gst ?? item?.productId?.gstPercentage ?? item?.productId?.gstPercent ?? item?.productId?.gstRate ?? item?.productId?.taxRate ?? item?.gstPercent ?? item?.gstPercentage ?? item?.gstRate ?? item?.gst ?? item?.taxRate;
                   const taxRate = (explicitGst !== undefined && explicitGst !== null && !isNaN(Number(explicitGst))) ? Number(explicitGst) : (isBook ? 0 : 5);
                   const taxable = taxRate > 0 ? lineTotal / (1 + taxRate / 100) : lineTotal;

@@ -264,3 +264,45 @@ export const getSellerExchangeInvoiceNumber = (order, seller = null, allOrders =
 
   return null;
 };
+
+/**
+ * Resolves standard GST HSN/SAC code based on explicit product HSN or category/name heuristics.
+ */
+export const resolveHsnCode = (explicitHsn, category = '', subCategory = '', name = '') => {
+  if (explicitHsn !== undefined && explicitHsn !== null && String(explicitHsn).trim() !== '') {
+    const clean = String(explicitHsn).trim();
+    if (clean && clean !== 'N/A' && clean !== '-' && clean !== 'undefined' && clean !== 'null') {
+      return clean;
+    }
+  }
+  const text = `${category} ${subCategory} ${name}`.toLowerCase();
+  if (text.includes('textbook') || text.includes('printed book') || text.includes('pustak') || (text.includes('book') && !text.includes('notebook') && !text.includes('scrapbook'))) {
+    return '4901';
+  }
+  if (text.includes('notebook') || text.includes('copy') || text.includes('register') || text.includes('stationery') || text.includes('pen') || text.includes('pencil') || text.includes('diary') || text.includes('scrapbook')) {
+    return '4820';
+  }
+  if (text.includes('shoe') || text.includes('footwear') || text.includes('boot') || text.includes('sandal') || text.includes('juta')) {
+    return '6403';
+  }
+  if (text.includes('bag') || text.includes('backpack') || text.includes('basta')) {
+    return '4202';
+  }
+  if (text.includes('cap') || text.includes('woolen cap') || text.includes('hat') || text.includes('topi')) {
+    return '6505';
+  }
+  if (text.includes('sweater') || text.includes('cardigan') || text.includes('pullover') || text.includes('hoodie')) {
+    return '6110';
+  }
+  if (text.includes('t-shirt') || text.includes('tshirt') || text.includes('polo')) {
+    return '6109';
+  }
+  if (text.includes('sock') || text.includes('moze')) {
+    return '6115';
+  }
+  if (text.includes('tie') || text.includes('belt')) {
+    return '6217';
+  }
+  return '6203'; // Default School Uniform / Apparel
+};
+

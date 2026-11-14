@@ -32,7 +32,7 @@ import {
 import * as XLSX from 'xlsx';
 import { useSellerData } from '../context/SellerDataContext';
 import { SERVER_URL } from '../utils/api';
-import { getSellerInvoiceNumber, getSellerCreditNoteNumber, getSellerExchangeInvoiceNumber, isOrderExchangeDelivered } from '../utils/invoiceHelper';
+import { getSellerInvoiceNumber, getSellerCreditNoteNumber, getSellerExchangeInvoiceNumber, isOrderExchangeDelivered, resolveHsnCode } from '../utils/invoiceHelper';
 
 // Helper to check if an order is Third-Party Courier or Direct Self-Delivery
 const isOrderThirdPartyCourier = (o) => {
@@ -798,6 +798,66 @@ export default function BillingReportsTab() {
     };
   }, [filteredOrders]);
 
+  // HSN / SAC Wise Billing Calculation & Aggregation (GSTR-1 Table 12)
+  const hsnAggregations = useMemo(() => {
+    const map = {};
+    (filteredOrders || []).forEach(o => {
+      const isReturnOrCancel = o.isCancelled || o.isRefunded;
+      const sign = isReturnOrCancel ? -1 : 1;
+      const isIntra = !o.isInterState;
+
+      (o.items || []).forEach(it => {
+        const hsn = resolveHsnCode(it.hsnCode || it.hsn || it.productId?.hsnCode || it.productId?.hsn, it.category, it.subCategory, it.name);
+        if (!map[hsn]) {
+          map[hsn] = {
+            hsn,
+            desc: it.category || it.name || 'School Product',
+            uqc: it.isMeterBased ? 'MTR' : 'PCS',
+            totalQty: 0,
+            totalGross: 0,
+            taxableVal: 0,
+            cgst: 0,
+            sgst: 0,
+            igst: 0,
+            totalTax: 0,
+            totalValue: 0,
+            rate: resolveItemGstRate(it)
+          };
+        }
+        const qty = (Number(it.quantity) || 1) * sign;
+        const lineGross = (Number(it.price || it.finalPrice || 0) * (Number(it.quantity) || 1)) * sign;
+        const discount = Number(it.offerDiscount || it.discount || 0) * sign;
+        const netPayable = lineGross - discount;
+        const rate = map[hsn].rate;
+        let lineTaxable = netPayable;
+        let lineTax = 0;
+        if (rate > 0) {
+          lineTaxable = Math.round((netPayable / (1 + rate / 100)) * 100) / 100;
+          lineTax = Math.round((netPayable - lineTaxable) * 100) / 100;
+        }
+
+        map[hsn].totalQty += qty;
+        map[hsn].totalGross += lineGross;
+        map[hsn].taxableVal += lineTaxable;
+        map[hsn].totalTax += lineTax;
+        map[hsn].totalValue += netPayable;
+
+        if (rate > 0) {
+          if (isIntra) {
+            const cgst = Math.round((lineTax / 2) * 100) / 100;
+            const sgst = Math.round((lineTax - cgst) * 100) / 100;
+            map[hsn].cgst += cgst;
+            map[hsn].sgst += sgst;
+          } else {
+            map[hsn].igst += lineTax;
+          }
+        }
+      });
+    });
+
+    return Object.values(map);
+  }, [filteredOrders]);
+
   // Report Title and Badges config
   const reportConfig = useMemo(() => {
     switch (reportType) {
@@ -830,6 +890,12 @@ export default function BillingReportsTab() {
           title: 'GST TCS Collected Register (Section 52)',
           badge: 'GST TCS REGISTER',
           filename: 'GST_TCS_Report'
+        };
+      case 'hsn_summary':
+        return {
+          title: 'Store HSN / SAC Wise Tax Breakdown (GSTR-1 Table 12)',
+          badge: 'HSN TAX BREAKDOWN',
+          filename: 'HSN_Wise_Summary_Report'
         };
       case 'master':
       default:
@@ -1136,6 +1202,75 @@ export default function BillingReportsTab() {
       return { tableHeaders: headers, getRowCells: getCells, getExcelRow: getXlsx, totalRowPrint: totalRow };
     }
 
+    // 6. HSN / SAC Wise Tax Breakdown (GSTR-1 Table 12)
+    if (reportType === 'hsn_summary') {
+      const headers = [
+        { label: 'S.No', align: 'left' },
+        { label: 'HSN / SAC Code', align: 'left' },
+        { label: 'Description', align: 'left' },
+        { label: 'UQC', align: 'center' },
+        { label: 'Total Quantity', align: 'center' },
+        { label: 'Taxable Value', align: 'right' },
+        { label: 'CGST', align: 'right' },
+        { label: 'SGST', align: 'right' },
+        { label: 'IGST', align: 'right' },
+        { label: 'Total Tax', align: 'right' },
+        { label: 'Total Value', align: 'right' }
+      ];
+
+      const getCells = (h, idx) => [
+        idx + 1,
+        h.hsn,
+        h.desc,
+        h.uqc || 'PCS',
+        h.totalQty,
+        `₹${h.taxableVal.toFixed(2)}`,
+        `₹${h.cgst.toFixed(2)}`,
+        `₹${h.sgst.toFixed(2)}`,
+        `₹${h.igst.toFixed(2)}`,
+        `₹${h.totalTax.toFixed(2)}`,
+        `₹${h.totalValue.toFixed(2)}`
+      ];
+
+      const getXlsx = (h, idx) => ({
+        'S.No': idx + 1,
+        'HSN / SAC Code': h.hsn,
+        'Description': h.desc,
+        'UQC': h.uqc || 'PCS',
+        'Total Quantity': h.totalQty,
+        'Taxable Value (₹)': h.taxableVal.toFixed(2),
+        'CGST (₹)': h.cgst.toFixed(2),
+        'SGST (₹)': h.sgst.toFixed(2),
+        'IGST (₹)': h.igst.toFixed(2),
+        'Total Tax Amount (₹)': h.totalTax.toFixed(2),
+        'Total Invoice Value (₹)': h.totalValue.toFixed(2)
+      });
+
+      const totalHsnTaxable = hsnAggregations.reduce((s, it) => s + it.taxableVal, 0);
+      const totalHsnCgst = hsnAggregations.reduce((s, it) => s + it.cgst, 0);
+      const totalHsnSgst = hsnAggregations.reduce((s, it) => s + it.sgst, 0);
+      const totalHsnIgst = hsnAggregations.reduce((s, it) => s + it.igst, 0);
+      const totalHsnTax = hsnAggregations.reduce((s, it) => s + it.totalTax, 0);
+      const totalHsnValue = hsnAggregations.reduce((s, it) => s + it.totalValue, 0);
+      const totalHsnQty = hsnAggregations.reduce((s, it) => s + it.totalQty, 0);
+
+      const totalRow = [
+        'TOTAL',
+        `${hsnAggregations.length} HSN Codes`,
+        '',
+        '',
+        `${totalHsnQty}`,
+        `₹${totalHsnTaxable.toFixed(2)}`,
+        `₹${totalHsnCgst.toFixed(2)}`,
+        `₹${totalHsnSgst.toFixed(2)}`,
+        `₹${totalHsnIgst.toFixed(2)}`,
+        `₹${totalHsnTax.toFixed(2)}`,
+        `₹${totalHsnValue.toFixed(2)}`
+      ];
+
+      return { tableHeaders: headers, getRowCells: getCells, getExcelRow: getXlsx, totalRowPrint: totalRow };
+    }
+
     // Default: Master Register
     const headers = [
       { label: 'S.No', align: 'left' },
@@ -1217,7 +1352,8 @@ export default function BillingReportsTab() {
   const handleExportExcel = () => {
     setIsExporting(true);
     try {
-      const rows = filteredOrders.map((o, idx) => getExcelRow(o, idx));
+      const dataToExport = reportType === 'hsn_summary' ? hsnAggregations : filteredOrders;
+      const rows = dataToExport.map((o, idx) => getExcelRow(o, idx));
 
       // Append Summary Total Row
       if (rows.length > 0) {
@@ -1225,7 +1361,23 @@ export default function BillingReportsTab() {
         Object.keys(rows[0]).forEach(k => {
           if (k !== 'S.No') totalEntry[k] = '';
         });
-        if (reportType === 'tax_invoice') {
+        if (reportType === 'hsn_summary') {
+          const totalHsnTaxable = hsnAggregations.reduce((s, it) => s + it.taxableVal, 0);
+          const totalHsnCgst = hsnAggregations.reduce((s, it) => s + it.cgst, 0);
+          const totalHsnSgst = hsnAggregations.reduce((s, it) => s + it.sgst, 0);
+          const totalHsnIgst = hsnAggregations.reduce((s, it) => s + it.igst, 0);
+          const totalHsnTax = hsnAggregations.reduce((s, it) => s + it.totalTax, 0);
+          const totalHsnValue = hsnAggregations.reduce((s, it) => s + it.totalValue, 0);
+          const totalHsnQty = hsnAggregations.reduce((s, it) => s + it.totalQty, 0);
+          totalEntry['HSN / SAC Code'] = `${hsnAggregations.length} HSN Codes`;
+          totalEntry['Total Quantity'] = totalHsnQty;
+          totalEntry['Taxable Value (₹)'] = totalHsnTaxable.toFixed(2);
+          totalEntry['CGST (₹)'] = totalHsnCgst.toFixed(2);
+          totalEntry['SGST (₹)'] = totalHsnSgst.toFixed(2);
+          totalEntry['IGST (₹)'] = totalHsnIgst.toFixed(2);
+          totalEntry['Total Tax Amount (₹)'] = totalHsnTax.toFixed(2);
+          totalEntry['Total Invoice Value (₹)'] = totalHsnValue.toFixed(2);
+        } else if (reportType === 'tax_invoice') {
           totalEntry['Invoice No'] = `${metrics.orderCount} Invoices`;
           totalEntry['Taxable Value (₹)'] = metrics.totalTaxable.toFixed(2);
           totalEntry['CGST (₹)'] = metrics.totalCgst.toFixed(2);
@@ -1424,6 +1576,7 @@ export default function BillingReportsTab() {
             { id: 'tax_invoice', label: '📄 Tax Invoice Report', badge: 'Sec 31' },
             { id: 'credit_note', label: '↩️ Credit Note Report', badge: 'Sec 34' },
             { id: 'commission', label: '💼 Commission Statement', badge: 'Platform Fee' },
+            { id: 'hsn_summary', label: '📦 HSN Wise Summary', badge: 'GSTR-1 Table 12' },
             { id: 'tds', label: '🏛️ TDS Report', badge: 'Sec 194-O (0.1%)' },
             { id: 'tcs', label: '⚖️ GST TCS Report', badge: 'Sec 52 (0.5%)' }
           ].map(tab => {
@@ -1847,6 +2000,40 @@ export default function BillingReportsTab() {
           </div>
         </div>
 
+        {/* HSN-Wise Summary Calculation Banner (When on Master or HSN Report) */}
+        {(reportType === 'master' || reportType === 'hsn_summary') && hsnAggregations.length > 0 && (
+          <div className="p-4 bg-teal-50/50 border-b border-teal-100">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded-md bg-teal-600 text-white text-xs">📦</span>
+                <span className="text-xs font-black text-teal-950 uppercase tracking-wider">HSN Wise Sales &amp; Tax Calculation (GSTR-1 Table 12)</span>
+              </div>
+              <span className="text-[10px] font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded-full border border-teal-300">
+                {hsnAggregations.length} HSN Categories
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {hsnAggregations.map((h, i) => (
+                <div key={i} className="bg-white p-2.5 rounded-xl border border-teal-200/80 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-extrabold text-xs text-brand-teal">HSN {h.hsn}</span>
+                    <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.2 rounded">{h.rate}% GST</span>
+                  </div>
+                  <div className="text-[11px] font-bold text-gray-800 truncate mt-0.5">{h.desc}</div>
+                  <div className="flex items-center justify-between text-[11px] mt-1.5 pt-1.5 border-t border-gray-100">
+                    <span className="text-gray-500">Qty: <strong className="text-gray-900">{h.totalQty} {h.uqc}</strong></span>
+                    <span className="text-gray-500">Taxable: <strong className="font-mono text-gray-900">₹{h.taxableVal.toFixed(2)}</strong></span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] mt-0.5">
+                    <span className="text-gray-500">Total Tax: <strong className="font-mono text-teal-700">₹{h.totalTax.toFixed(2)}</strong></span>
+                    <span className="text-gray-500">Total: <strong className="font-mono text-gray-900">₹{h.totalValue.toFixed(2)}</strong></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -1856,20 +2043,56 @@ export default function BillingReportsTab() {
                     {th.label}
                   </th>
                 ))}
-                <th className="py-3 px-3 text-center">Docs</th>
+                {reportType !== 'hsn_summary' && <th className="py-3 px-3 text-center">Docs</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredOrders.length === 0 ? (
-                <tr>
-                  <td colSpan={tableHeaders.length + 1} className="py-12 text-center text-gray-400">
-                    <AlertCircle size={32} className="mx-auto text-gray-300 mb-2" />
-                    <p className="text-sm font-semibold">No transactions found for the selected report filters.</p>
-                    <p className="text-xs text-gray-400 mt-1">Try switching to "Month-Wise", "Day-Wise", or selecting "All Time".</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredOrders.map((o, idx) => {
+              {(() => {
+                const displayRows = reportType === 'hsn_summary' ? hsnAggregations : filteredOrders;
+                if (displayRows.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={tableHeaders.length + (reportType === 'hsn_summary' ? 0 : 1)} className="py-12 text-center text-gray-400">
+                        <AlertCircle size={32} className="mx-auto text-gray-300 mb-2" />
+                        <p className="text-sm font-semibold">No transactions found for the selected report filters.</p>
+                        <p className="text-xs text-gray-400 mt-1">Try switching to "Month-Wise", "Day-Wise", or selecting "All Time".</p>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                if (reportType === 'hsn_summary') {
+                  return displayRows.map((h, idx) => {
+                    const cells = getRowCells(h, idx);
+                    return (
+                      <tr key={idx} className="hover:bg-gray-50/70 transition-colors">
+                        {cells.map((val, cIdx) => {
+                          const align = tableHeaders[cIdx]?.align || 'left';
+                          return (
+                            <td
+                              key={cIdx}
+                              className={`py-3 px-3 text-gray-800 ${
+                                align === 'right'
+                                  ? 'text-right font-mono font-semibold'
+                                  : align === 'center'
+                                    ? 'text-center'
+                                    : 'text-left'
+                              }`}
+                            >
+                              {cIdx === 1 ? (
+                                <span className="font-mono font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                                  {val}
+                                </span>
+                              ) : val}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  });
+                }
+
+                return displayRows.map((o, idx) => {
                   const cells = getRowCells(o, idx);
                   const isReturnOrCancel = o.isCancelled || o.isRefunded || o.isReturn;
                   return (
@@ -1918,8 +2141,8 @@ export default function BillingReportsTab() {
                       </td>
                     </tr>
                   );
-                })
-              )}
+                });
+              })()}
             </tbody>
             {/* TOTAL FOOTER ROW */}
             {filteredOrders.length > 0 && totalRowPrint && (
