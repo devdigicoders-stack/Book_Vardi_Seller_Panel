@@ -188,6 +188,105 @@ const evaluateOrderMaturity = (order) => {
   };
 };
 
+// Helper to accurately resolve seller-specific gross sale for an order
+// Excludes 3rd-party customer shipping charges (freight) which belong to courier / platform
+const resolveSellerOrderGross = (o, sellerUser) => {
+  if (!o) return 0;
+  const isCancelledOrRefunded = Boolean(
+    String(o.overallStatus || o.status || '').toLowerCase().includes('refund') ||
+    String(o.overallStatus || o.status || '').toLowerCase().includes('cancel') ||
+    o.settlementStatus === 'refunded' || o.settlementStatus === 'cancelled'
+  );
+
+  // If order has items, take only the items belonging to this seller
+  if (Array.isArray(o.items) && o.items.length > 0) {
+    const sId = String(sellerUser?.id || sellerUser?._id || '').trim();
+    const sStore = String(sellerUser?.storeName || sellerUser?.sellerStoreName || '').trim().toLowerCase();
+    
+    const matching = o.items.filter(it => {
+      if (!sId && !sStore) return true;
+      const itId = String(it.sellerId?._id || it.sellerId || '').trim();
+      const itStore = String(it.storeName || it.sellerStoreName || '').trim().toLowerCase();
+      return (sId && itId === sId) || (sStore && itStore === sStore);
+    });
+
+    const targetItems = matching.length > 0 ? matching : o.items;
+    const itemsTotal = targetItems.reduce((acc, it) => {
+      const itTotal = Number(it.total !== undefined ? it.total : (Number(it.finalPrice || it.price || 0) * Number(it.quantity || 1)));
+      return acc + (isNaN(itTotal) ? 0 : itTotal);
+    }, 0);
+
+    const isThirdParty = checkOrderIsThirdParty(o);
+    // In Self-Delivery only, delivery fee collected from customer belongs to the seller
+    const custShipping = Number(o.shippingAmount ?? o.shippingFee ?? o.shippingCost ?? 0);
+    const selfShipping = (!isThirdParty && !isCancelledOrRefunded) ? custShipping : 0;
+
+    return Math.round((itemsTotal + selfShipping) * 100) / 100;
+  }
+
+  // Fallback: if subtotal exists (net product sale)
+  if (o.subtotal !== undefined && o.subtotal !== null && Number(o.subtotal) > 0) {
+    const isThirdParty = checkOrderIsThirdParty(o);
+    const custShipping = Number(o.shippingAmount ?? o.shippingFee ?? o.shippingCost ?? 0);
+    const selfShipping = (!isThirdParty && !isCancelledOrRefunded) ? custShipping : 0;
+    return Math.round((Number(o.subtotal) + selfShipping) * 100) / 100;
+  }
+
+  // Fallback if totalAmount was stored with shipping:
+  const total = Number(o.total || o.totalAmount || 0);
+  const shipping = Number(o.shippingAmount ?? o.shippingFee ?? o.shippingCost ?? 0);
+  const isThirdParty = checkOrderIsThirdParty(o);
+  if (isThirdParty && shipping > 0 && total > shipping) {
+    return Math.round((total - shipping) * 100) / 100;
+  }
+  return total;
+};
+
+// Helper to accurately resolve seller-specific net settlement
+const resolveSellerOrderNet = (o, sellerUser, fallbackDeductions = 0) => {
+  if (!o) return 0;
+  const isCancelledOrRefunded = Boolean(
+    String(o.overallStatus || o.status || '').toLowerCase().includes('refund') ||
+    String(o.overallStatus || o.status || '').toLowerCase().includes('cancel') ||
+    o.settlementStatus === 'refunded' || o.settlementStatus === 'cancelled'
+  );
+  if (isCancelledOrRefunded) return 0;
+
+  // Check item-level net settlement amounts computed by settlement engine
+  if (Array.isArray(o.items) && o.items.length > 0) {
+    const sId = String(sellerUser?.id || sellerUser?._id || '').trim();
+    const sStore = String(sellerUser?.storeName || sellerUser?.sellerStoreName || '').trim().toLowerCase();
+    
+    const matching = o.items.filter(it => {
+      if (!sId && !sStore) return true;
+      const itId = String(it.sellerId?._id || it.sellerId || '').trim();
+      const itStore = String(it.storeName || it.sellerStoreName || '').trim().toLowerCase();
+      return (sId && itId === sId) || (sStore && itStore === sStore);
+    });
+
+    const targetItems = matching.length > 0 ? matching : o.items;
+    const hasItemNets = targetItems.some(it => it.netSettlementAmount !== undefined && it.netSettlementAmount !== null);
+    if (hasItemNets) {
+      return targetItems.reduce((acc, it) => {
+        const isItRef = String(it.status || '').toLowerCase().includes('refund') || 
+                        String(it.status || '').toLowerCase().includes('cancel') ||
+                        it.settlementStatus === 'refunded' || it.settlementStatus === 'cancelled';
+        if (isItRef) return acc;
+        return acc + Math.max(0, Number(it.netSettlementAmount || 0));
+      }, 0);
+    }
+  }
+
+  // Check order-level settlement net
+  if (o.settlement?.netSettlementAmount !== undefined && o.settlement?.netSettlementAmount !== null) {
+    return Number(o.settlement.netSettlementAmount);
+  }
+
+  // Fallback: gross - deductions
+  const gross = resolveSellerOrderGross(o, sellerUser);
+  return Math.max(0, Math.round((gross - fallbackDeductions) * 100) / 100);
+};
+
 export default function FinanceTab() {
   const { 
     finance = {}, 
@@ -390,7 +489,18 @@ export default function FinanceTab() {
     let totalFinalSettlement = 0;
 
     orders.forEach(o => {
-      const gross = Number(o.total || o.totalAmount || 0);
+      const isMaturity = evaluateOrderMaturity(o);
+      const isCancelledOrRef = Boolean(
+        isMaturity.isRefunded ||
+        String(o.overallStatus || o.status || '').toLowerCase().includes('refund') ||
+        String(o.overallStatus || o.status || '').toLowerCase().includes('cancel') ||
+        o.settlementStatus === 'refunded' || o.settlementStatus === 'cancelled'
+      );
+      if (isCancelledOrRef) {
+        return; // Exclude refunded/cancelled orders from active settlement
+      }
+
+      const gross = resolveSellerOrderGross(o, sellerUser);
       const commRate = Number(o.commissionRate ?? o.settlement?.commissionRate ?? commissionRate ?? 10);
       
       const commAmount = o.settlement?.commissionAmount !== undefined
@@ -450,9 +560,6 @@ export default function FinanceTab() {
       }
 
       // COD Charges Policy:
-      // Self Delivery: COD charge belongs to Seller (₹0 portal deduction)
-      // Courier Delivery: COD charge belongs to Portal
-      // Exemption: 09BLMPK2840L2ZN is exempt - no COD charge deduction in courier delivery
       const isSellerExemptGst = isGstExempted(sellerUser?.gstNumber || sellerUser?.gstin || o.sellerDetails?.gstNumber) ||
         String(sellerUser?.storeName || sellerUser?.sellerStoreName || o.sellerStoreName || '').toLowerCase().includes('national school dress');
       const rawCodFee = Number(o.codFee ?? o.codCharges ?? o.settlement?.codChargeAmount ?? 0);
@@ -470,17 +577,7 @@ export default function FinanceTab() {
       }
 
       const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction + codDeduction) * 100) / 100;
-
-      // Rule 3: Cash collected by seller. Seller owes portal (-deductions).
-      // Rule 1, 2 & 4: Portal collected cash (online or courier) and pays seller (gross - deductions).
-      let finalNet;
-      if (o.settlement?.netSettlementAmount !== undefined && (isRule3 ? o.settlement.netSettlementAmount <= 0 : o.settlement.netSettlementAmount >= 0)) {
-        finalNet = Number(o.settlement.netSettlementAmount);
-      } else if (isRule3) {
-        finalNet = Math.round(-deductions * 100) / 100;
-      } else {
-        finalNet = Math.max(0, Math.round((gross - deductions) * 100) / 100);
-      }
+      const finalNet = resolveSellerOrderNet(o, sellerUser, deductions);
 
       grossSales += gross;
       totalPortalCommission += commAmount;
@@ -514,7 +611,18 @@ export default function FinanceTab() {
     };
 
     orders.forEach(o => {
-      const gross = Number(o.total || o.totalAmount || 0);
+      const isMaturity = evaluateOrderMaturity(o);
+      const isCancelledOrRef = Boolean(
+        isMaturity.isRefunded ||
+        String(o.overallStatus || o.status || '').toLowerCase().includes('refund') ||
+        String(o.overallStatus || o.status || '').toLowerCase().includes('cancel') ||
+        o.settlementStatus === 'refunded' || o.settlementStatus === 'cancelled'
+      );
+      if (isCancelledOrRef) {
+        return;
+      }
+
+      const gross = resolveSellerOrderGross(o, sellerUser);
       const commRate = Number(o.commissionRate ?? o.settlement?.commissionRate ?? commissionRate ?? 10);
       const commAmount = o.settlement?.commissionAmount !== undefined
         ? Number(o.settlement.commissionAmount)
@@ -559,7 +667,7 @@ export default function FinanceTab() {
       }
 
       const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
-      const finalNet = isRule3 ? Math.round(-deductions * 100) / 100 : Math.max(0, Math.round((gross - deductions) * 100) / 100);
+      const finalNet = resolveSellerOrderNet(o, sellerUser, deductions);
 
       rules[ruleKey].gross += gross;
       rules[ruleKey].comm += commAmount;
@@ -601,7 +709,7 @@ export default function FinanceTab() {
         return !maturity.isDelivered || !maturity.isMatured;
       })
       .reduce((sum, o) => {
-        const gross = Number(o.total || o.totalAmount || 0);
+        const gross = resolveSellerOrderGross(o, sellerUser);
         const commRate = Number(o.commissionRate ?? commissionRate ?? 10);
         const commAmount = o.settlement?.commissionAmount !== undefined ? Number(o.settlement.commissionAmount) : Math.round(((gross * commRate) / 100) * 100) / 100;
         const gstComm = o.settlement?.gstOnCommissionAmount !== undefined ? Number(o.settlement.gstOnCommissionAmount) : Math.round(((commAmount * 18) / 100) * 100) / 100;
@@ -636,7 +744,8 @@ export default function FinanceTab() {
         }
 
         const deductions = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
-        return sum + Math.max(0, Math.round((gross - deductions) * 100) / 100);
+        const net = resolveSellerOrderNet(o, sellerUser, deductions);
+        return sum + Math.max(0, Number(net || 0));
       }, 0);
   }, [orders, commissionRate, finance]);
 
@@ -653,11 +762,19 @@ export default function FinanceTab() {
 
     // Order credits & COD settlement adjustments
     orders.forEach(o => {
-      const gross = Number(o.total || o.totalAmount || 0);
+      const maturity = evaluateOrderMaturity(o);
+      const isCancelledOrRef = Boolean(
+        maturity.isRefunded ||
+        String(o.overallStatus || o.status || '').toLowerCase().includes('refund') ||
+        String(o.overallStatus || o.status || '').toLowerCase().includes('cancel') ||
+        o.settlementStatus === 'refunded' || o.settlementStatus === 'cancelled'
+      );
+
+      const gross = isCancelledOrRef ? 0 : resolveSellerOrderGross(o, sellerUser);
       const commRate = Number(o.commissionRate ?? commissionRate ?? 10);
-      const commAmount = o.settlement?.commissionAmount !== undefined ? Number(o.settlement.commissionAmount) : Math.round(((gross * commRate) / 100) * 100) / 100;
-      const gstComm = o.settlement?.gstOnCommissionAmount !== undefined ? Number(o.settlement.gstOnCommissionAmount) : Math.round(((commAmount * 18) / 100) * 100) / 100;
-      const tds = o.settlement?.tdsAmount !== undefined ? Number(o.settlement.tdsAmount) : Math.round(((gross * 0.1) / 100) * 100) / 100;
+      const commAmount = isCancelledOrRef ? 0 : (o.settlement?.commissionAmount !== undefined ? Number(o.settlement.commissionAmount) : Math.round(((gross * commRate) / 100) * 100) / 100);
+      const gstComm = isCancelledOrRef ? 0 : (o.settlement?.gstOnCommissionAmount !== undefined ? Number(o.settlement.gstOnCommissionAmount) : Math.round(((commAmount * 18) / 100) * 100) / 100);
+      const tds = isCancelledOrRef ? 0 : (o.settlement?.tdsAmount !== undefined ? Number(o.settlement.tdsAmount) : Math.round(((gross * 0.1) / 100) * 100) / 100);
 
       const isThirdParty = checkOrderIsThirdParty(o);
       const rawPayment = String(o.paymentMethod || o.paymentMode || o.paymentType || '').toUpperCase();
@@ -665,7 +782,7 @@ export default function FinanceTab() {
       const isRule3 = isCod && !isThirdParty;
 
       // Rule 3: 0% GST TCS when portal does not collect customer cash
-      const gstTcs = isRule3
+      const gstTcs = (isRule3 || isCancelledOrRef)
         ? 0
         : (o.settlement?.gstTcsAmount !== undefined ? Number(o.settlement.gstTcsAmount) : Math.round((((gross / 1.05) * 0.5) / 100) * 100) / 100);
 
@@ -682,7 +799,7 @@ export default function FinanceTab() {
       }
 
       let delivDeduction = 0;
-      if (isRule3) {
+      if (isRule3 || isCancelledOrRef) {
         delivDeduction = 0;
       } else if (o.settlement?.totalDeliveryDeduction !== undefined) {
         delivDeduction = Number(o.settlement.totalDeliveryDeduction);
@@ -695,19 +812,11 @@ export default function FinanceTab() {
 
       const totalDed = Math.round((commAmount + gstComm + tds + gstTcs + delivDeduction) * 100) / 100;
       const isRule4 = isCod && isThirdParty;
-      let finalNet;
-      if (o.settlement?.netSettlementAmount !== undefined) {
-        finalNet = Number(o.settlement.netSettlementAmount);
-      } else if (isRule3) {
-        finalNet = Math.round(-totalDed * 100) / 100;
-      } else {
-        finalNet = Math.max(0, Math.round((gross - totalDed) * 100) / 100);
-      }
+      const finalNet = isCancelledOrRef ? 0 : resolveSellerOrderNet(o, sellerUser, totalDed);
 
-      const maturity = evaluateOrderMaturity(o);
       let statusLabel = 'Pending Dispatch';
       let statusType = 'pending';
-      if (maturity.isRefunded) {
+      if (isCancelledOrRef) {
         statusLabel = 'Refunded (Settlement Reversed)';
         statusType = 'refunded';
       } else if (maturity.isDelivered) {
@@ -727,14 +836,18 @@ export default function FinanceTab() {
       }
 
       list.push({
-        id: `TXN-ORD-${o.id}`,
+        id: `TXN-ORD-${o.id || o.orderId}`,
         date: o.date || 'Recent Order',
-        description: isRule3 
-          ? `COD Sale #${o.id} (Cash collected by seller - Portal fee)`
+        description: isCancelledOrRef
+          ? `Customer Return Refund #${o.orderId || o.id} (Settlement reversed to ₹0.00 under Sec 34)`
+          : isRule3 
+          ? `COD Sale #${o.orderId || o.id} (Cash collected by seller - Portal fee)`
           : isRule4
-          ? `COD Sale #${o.id} (Courier remits cash to portal - Payout credit)`
-          : `Customer Sale #${o.id} (${o.customerName || 'Buyer'})`,
-        type: isRule3 ? 'Payable (COD)' : (isRule4 ? 'Credit (COD Courier)' : 'Credit'),
+          ? `COD Sale #${o.orderId || o.id} (Courier remits cash to portal - Payout credit)`
+          : `Customer Sale #${o.orderId || o.id} (${o.customerName || 'Buyer'}) [Net Product Sale: ₹${gross.toFixed(2)}]`,
+        type: isCancelledOrRef
+          ? 'Refunded (Reversed)'
+          : isRule3 ? 'Payable (COD)' : (isRule4 ? 'Credit (COD Courier)' : 'Credit'),
         grossAmount: gross,
         amount: finalNet,
         isRule3,
@@ -942,7 +1055,7 @@ export default function FinanceTab() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
               <div className="flex items-start gap-1.5">
                 <span className="text-amber-800 font-bold">•</span>
-                <span><strong>Gross Sale:</strong> ग्राहक से प्राप्त कुल बिक्री राशि (Total Sales Value)।</span>
+                <span><strong>Gross Sale:</strong> सेलर के उत्पादों की वास्तविक बिक्री राशि (Net Product Sale — थर्ड-पार्टी कूरियर चार्ज छोड़कर)।</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-amber-800 font-bold">•</span>
@@ -958,13 +1071,19 @@ export default function FinanceTab() {
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-amber-800 font-bold">•</span>
-                <span><strong>GST TCS:</strong> 0.5% (0.25% CGST + 0.25% SGST / 0.5% IGST) — जहाँ GST कानून अनुसार लागू हो (किताबों पर 0%)।</span>
+                <span><strong>GST TCS:</strong> 0.5% (0.25% CGST + 0.25% SGST / 0.5% IGST) — जहाँ GST कानून अनुसार लागू हो (किताबों व छूट प्राप्त सेलर पर 0%)।</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-amber-800 font-bold">•</span>
-                <span><strong>Delivery Charges (कूरियर डिलीवरी खर्च - GST सहित):</strong> डिलीवरी का खर्च (GST सहित) तभी काटें, जब यह खर्च सेलर के जिम्मे हो।</span>
+                <span><strong>Delivery Charges:</strong> ग्राहक द्वारा वहन (Paid by Customer) होने पर सेलर से ₹0.00 कटौती। कूरियर फ्रेट सीधे लॉजिस्टिक्स को जाता है।</span>
               </div>
-              <div className="flex items-start gap-1.5 md:col-span-2 bg-amber-100 p-2.5 rounded-lg border border-amber-300 text-amber-950 font-medium">
+              <div className="flex items-start gap-1.5 md:col-span-2 bg-amber-100/90 p-2.5 rounded-lg border border-amber-300 text-amber-950 font-medium leading-relaxed">
+                <span className="text-amber-900 font-bold">🚚</span>
+                <span>
+                  <strong>स्पष्टीकरण (कूरियर फ्रेट व रिफंड नियम):</strong> ग्राहक द्वारा दिया गया शिपिंग चार्ज (उदा. ₹49) कूरियर पार्टनर (Shiprocket) को जाता है और सेलर के खाते में नहीं जुड़ता। सेलर का पेआउट हमेशा <strong>Net Product Sale (उदा. ₹50.00)</strong> पर ही होता है। ऑर्डर डिलीवरी से पूर्व रद्द होने पर ग्राहक को 100% रिफंड होता है; डिलीवरी के बाद रिटर्न पर ग्राहक को प्रोडक्ट राशि रिफंड होती है और सेलर सेटलमेंट ₹0.00 पर रिवर्स (Credit Note under Sec 34) हो जाता है।
+                </span>
+              </div>
+              <div className="flex items-start gap-1.5 md:col-span-2 bg-amber-100/50 p-2 rounded-lg border border-amber-200">
                 <span className="font-extrabold text-amber-900 shrink-0">✨ ₹{resolvedFreeDeliveryThreshold} या अधिक के ऑर्डर पर:</span>
                 <span>यदि डिलीवरी का खर्च एडमिन उठाता है, तो सेलर से डिलीवरी चार्ज और उसका GST नहीं काटना है (सेलर से ₹0 डिलीवरी कटौती)।</span>
               </div>
