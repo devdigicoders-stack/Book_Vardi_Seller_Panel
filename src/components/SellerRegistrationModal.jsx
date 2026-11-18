@@ -127,7 +127,7 @@ export const INITIAL_FORM_STATE = {
   // Step 10: Agreements
   acceptedTerms: false,
   acceptedCommissionRate: false,
-  acceptedReturnPolicy: false,
+  acceptedReturnPolicy: true,
   authorizedSignatoryConfirmation: false,
 
   // Metadata
@@ -809,20 +809,33 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     const rawAadhaar = String(formData.ownerAadhaarLast4 || '').replace(/\D/g, '');
     const cleanLast4 = rawAadhaar.length >= 4 ? rawAadhaar.slice(-4) : rawAadhaar;
 
-    if (submitSellerApplication) {
-      submitSellerApplication({
-        ...formData,
-        ownerAadhaarLast4: cleanLast4,
-        aadhaarNumber: rawAadhaar || formData.aadhaarNumber || cleanLast4,
-        status: 'pending',
-        submissionStatus: 'pending',
-        submittedAt: new Date().toLocaleDateString()
-      });
-    }
+    try {
+      if (submitSellerApplication) {
+        const res = await submitSellerApplication({
+          ...formData,
+          ownerAadhaarLast4: cleanLast4,
+          aadhaarNumber: rawAadhaar || formData.aadhaarNumber || cleanLast4,
+          acceptedReturnPolicy: formData.acceptedReturnPolicy !== undefined ? formData.acceptedReturnPolicy : true,
+          status: 'pending',
+          submissionStatus: 'pending',
+          submittedAt: new Date().toLocaleDateString()
+        });
 
-    setIsSubmitting(false);
-    setStep(11);
-    if (showToast) showToast('🎉 Seller Registration Application Submitted! Pending Admin Approval.');
+        if (res && res.success === false) {
+          if (showToast) showToast(`❌ Submission Failed: ${res.message || 'Please check all required fields.'}`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      setIsSubmitting(false);
+      setStep(11);
+      if (showToast) showToast('🎉 Seller Registration Application Submitted! Pending Admin Approval.');
+    } catch (err) {
+      console.error('Registration submission error:', err);
+      if (showToast) showToast(`❌ Submission Error: ${err.message || 'Network error'}`);
+      setIsSubmitting(false);
+    }
   };
 
   const progressPercentage = Math.round(((step - 1) / 11) * 100);
@@ -2193,6 +2206,18 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   />
                   <span>
                     <strong>Commission Schedule:</strong> Standard platform fee of 5% (95% Payout) on delivered school supplies with zero listing fee.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.acceptedReturnPolicy ?? true}
+                    onChange={(e) => handleChange('acceptedReturnPolicy', e.target.checked)}
+                    className="mt-0.5 rounded text-brand-teal focus:ring-brand-yellow"
+                  />
+                  <span>
+                    <strong>Student Exchange Assurance & Return Policy:</strong> I agree to accept student replacement / return requests within the 7-day platform window as per BookVardi standards.
                   </span>
                 </label>
 

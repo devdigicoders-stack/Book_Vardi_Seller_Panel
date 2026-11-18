@@ -1369,6 +1369,7 @@ export const SellerDataProvider = ({ children }) => {
       return res;
     } catch (err) {
       console.warn('submitSellerApplication error:', err);
+      return { success: false, message: err?.message || 'Network submission error' };
     }
   };
 

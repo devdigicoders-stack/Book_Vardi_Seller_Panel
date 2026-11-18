@@ -132,7 +132,11 @@ export const submitSellerApplicationApi = async (formData) => {
       },
       body: JSON.stringify(normalized)
     });
-    return await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, message: data.message || `Registration failed with status ${res.status}` };
+    }
+    return data;
   } catch (error) {
     return { success: false, message: error.message };
   }
